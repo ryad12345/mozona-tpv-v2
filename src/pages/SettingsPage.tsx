@@ -17,6 +17,7 @@
 // =====================================================================
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 
 // Componentes de UI
 import { Card, Field, TextInput, TextArea, Toggle } from "../components/settings/FormControls";
@@ -31,7 +32,7 @@ import { LANConnectionPanel }               from "../components/settings/LANConn
 // Iconos
 import {
     IconReceipt, IconSparkles, IconShield,
-    IconCheck, IconX, IconChevronLeft,
+    IconCheck, IconX, IconChevronLeft, IconPlus,
 } from "../components/icons";
 
 import { cn } from "../lib/cn";
@@ -98,6 +99,9 @@ const SERIES_PRESETS = [
 // ---------------------------------------------------------------------
 
 export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
+    // 0) Navegación ------------------------------------------------
+    const navigate = useNavigate();
+    
     // 1) Estado del formulario -----------------------------------------
     const [form, setForm] = useState<RestaurantForm>(() => ({
         ...DEFAULTS,
@@ -108,6 +112,7 @@ export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
     const [saving, setSaving]   = useState(false);
     const [toast,  setToast]    = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
     const [touched, setTouched] = useState(false);
+    const [activeTab, setActiveTab] = useState<"general" | "items" | "tables" | "categories">("general");
 
     // 3) Detección de cambios ------------------------------------------
     const isDirty = useMemo(() => {
@@ -174,6 +179,13 @@ export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
                     shadow-[0_1px_0_rgba(15,23,42,0.04)]
                 "
             >
+                <button
+                    onClick={() => navigate('/app')}
+                    className="h-10 px-4 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-bold rounded-xl flex items-center gap-2 transition active:scale-95"
+                    title="Volver al TPV"
+                >
+                    ⬅ VOLVER AL TPV
+                </button>
                 {onClose && (
                     <button
                         onClick={onClose}
@@ -205,11 +217,61 @@ export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
                 />
             </header>
 
+            {/* TAB NAVIGATION ============================================ */}
+            <div className="bg-white border-b border-slate-200/80 sticky top-16 z-20 px-5">
+                <div className="flex gap-1">
+                    <button
+                        onClick={() => setActiveTab("general")}
+                        className={cn(
+                            "px-4 py-3 text-sm font-semibold border-b-2 transition",
+                            activeTab === "general"
+                                ? "border-blue-600 text-blue-600"
+                                : "border-transparent text-slate-600 hover:text-slate-900"
+                        )}
+                    >
+                        General
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("items")}
+                        className={cn(
+                            "px-4 py-3 text-sm font-semibold border-b-2 transition",
+                            activeTab === "items"
+                                ? "border-blue-600 text-blue-600"
+                                : "border-transparent text-slate-600 hover:text-slate-900"
+                        )}
+                    >
+                        Artículos
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("tables")}
+                        className={cn(
+                            "px-4 py-3 text-sm font-semibold border-b-2 transition",
+                            activeTab === "tables"
+                                ? "border-blue-600 text-blue-600"
+                                : "border-transparent text-slate-600 hover:text-slate-900"
+                        )}
+                    >
+                        Mesas
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("categories")}
+                        className={cn(
+                            "px-4 py-3 text-sm font-semibold border-b-2 transition",
+                            activeTab === "categories"
+                                ? "border-blue-600 text-blue-600"
+                                : "border-transparent text-slate-600 hover:text-slate-900"
+                        )}
+                    >
+                        Categorías
+                    </button>
+                </div>
+            </div>
+
             {/* TOAST ======================================================= */}
             {toast && (
                 <div
                     className={cn(
-                        "fixed top-20 left-1/2 -translate-x-1/2 z-50",
+                        "fixed top-32 left-1/2 -translate-x-1/2 z-50",
                         "px-4 py-2.5 rounded-2xl shadow-lg",
                         "flex items-center gap-2",
                         "text-[13px] font-semibold",
@@ -226,12 +288,11 @@ export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
                 </div>
             )}
 
-            {/* GRID PRINCIPAL ============================================= */}
+            {/* CONTENT ===================================================== */}
             <main className="max-w-6xl mx-auto p-5">
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
-
-                    {/* COL IZQUIERDA: tarjetas ============================== */}
-                    <div className="space-y-5">
+                {activeTab === "general" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+                        <div className="space-y-5">
 
                         {/* 1) Branding & Tema Visual ------------------------ */}
                         <Card
@@ -385,13 +446,75 @@ export function SettingsPage({ initial, onSave, onClose }: SettingsPageProps) {
                         <div className="text-center text-[11.5px] text-slate-400 py-4">
                             MOZONA TPV · v0.1.0 · Los cambios se aplican al guardar
                         </div>
+                        </div>
+                        <aside className="lg:order-last">
+                            <LiveTicketPreview form={form} />
+                        </aside>
                     </div>
+                )}
 
-                    {/* COL DERECHA: vista previa ============================ */}
-                    <aside className="lg:order-last">
-                        <LiveTicketPreview form={form} />
-                    </aside>
-                </div>
+                {activeTab === "items" && (
+                    <div className="space-y-5">
+                        <Card
+                            title="Gestión de Artículos"
+                            subtitle="Añade, edita o elimina platos y bebidas"
+                            icon={<IconSparkles size={18} strokeWidth={1.8} />}
+                        >
+                            <div className="space-y-3">
+                                <button
+                                    className="w-full h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition active:scale-95"
+                                >
+                                    <IconPlus size={18} strokeWidth={2} /> Nuevo Artículo
+                                </button>
+                                <div className="text-sm text-slate-600 py-8 text-center">
+                                    Funcionalidad de gestión de artículos en desarrollo
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
+                {activeTab === "tables" && (
+                    <div className="space-y-5">
+                        <Card
+                            title="Gestión de Mesas"
+                            subtitle="Define mesas, números y zonas (Sala, Terraza, Barra)"
+                            icon={<IconSparkles size={18} strokeWidth={1.8} />}
+                        >
+                            <div className="space-y-3">
+                                <button
+                                    className="w-full h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition active:scale-95"
+                                >
+                                    <IconPlus size={18} strokeWidth={2} /> Nueva Mesa
+                                </button>
+                                <div className="text-sm text-slate-600 py-8 text-center">
+                                    Funcionalidad de gestión de mesas en desarrollo
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
+                {activeTab === "categories" && (
+                    <div className="space-y-5">
+                        <Card
+                            title="Gestión de Categorías"
+                            subtitle="Crea y ordena categorías (Entrantes, Carnes, Pescados, etc.)"
+                            icon={<IconSparkles size={18} strokeWidth={1.8} />}
+                        >
+                            <div className="space-y-3">
+                                <button
+                                    className="w-full h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition active:scale-95"
+                                >
+                                    <IconPlus size={18} strokeWidth={2} /> Nueva Categoría
+                                </button>
+                                <div className="text-sm text-slate-600 py-8 text-center">
+                                    Funcionalidad de gestión de categorías en desarrollo
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
             </main>
 
             {/* BARRA INFERIOR FIJA EN MÓVIL ================================ */}

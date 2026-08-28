@@ -5,6 +5,7 @@
 import type { OrderItem } from "../../lib/types";
 import { fmtEUR, fmtNum } from "../../lib/format";
 import { IconMinus, IconPlus, IconX, IconReceipt } from "../icons";
+import { useRef } from "react";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -33,6 +34,14 @@ export function OrderPanel({
     taxByRate, total, itemCount,
     onIncrement, onDecrement, onRemove, onClear, onPrintPreBill,
 }: OrderPanelProps) {
+    const itemsContainerRef = useRef<HTMLDivElement>(null);
+
+    const scrollItems = (direction: 'up' | 'down') => {
+        if (itemsContainerRef.current) {
+            const amount = direction === 'up' ? -150 : 150;
+            itemsContainerRef.current.scrollBy({ top: amount, behavior: 'smooth' });
+        }
+    };
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200/80 shadow-sm min-h-0">
@@ -67,32 +76,59 @@ export function OrderPanel({
                 )}
             </header>
 
-            {/* Lista de líneas con scroll fluido */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0">
-                {items.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 mb-2">
-                            <IconReceipt size={28} strokeWidth={1.4} />
+            {/* Lista de líneas con scroll fluido y botones táctiles */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0 relative">
+                <div
+                    ref={itemsContainerRef}
+                    className="h-full"
+                >
+                    {items.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 mb-2">
+                                <IconReceipt size={28} strokeWidth={1.4} />
+                            </div>
+                            <p className="text-[13px] font-semibold text-slate-500">
+                                Añade productos desde el catálogo
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                Selecciona una mesa para empezar
+                            </p>
                         </div>
-                        <p className="text-[13px] font-semibold text-slate-500">
-                            Añade productos desde el catálogo
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                            Selecciona una mesa para empezar
-                        </p>
-                    </div>
-                ) : (
-                    <ul className="space-y-1.5">
-                        {items.map(it => (
-                            <OrderLine
-                                key={it.id}
-                                item={it}
-                                onIncrement={() => onIncrement(it.id)}
-                                onDecrement={() => onDecrement(it.id)}
-                                onRemove={() => onRemove(it.id)}
-                            />
-                        ))}
-                    </ul>
+                    ) : (
+                        <ul className="space-y-1.5">
+                            {items.map(it => (
+                                <OrderLine
+                                    key={it.id}
+                                    item={it}
+                                    onIncrement={() => onIncrement(it.id)}
+                                    onDecrement={() => onDecrement(it.id)}
+                                    onRemove={() => onRemove(it.id)}
+                                />
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                {/* Botones flotantes de scroll táctil - vertical */}
+                {items.length > 4 && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => scrollItems('up')}
+                            className="absolute top-1 right-1 w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition text-sm"
+                            title="Desplazar arriba"
+                        >
+                            ▲
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => scrollItems('down')}
+                            className="absolute bottom-1 right-1 w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition text-sm"
+                            title="Desplazar abajo"
+                        >
+                            ▼
+                        </button>
+                    </>
                 )}
             </div>
 

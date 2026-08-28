@@ -52,11 +52,19 @@ export function CatalogPanel({
     const search = controlledSearch ?? localSearch;
     const setSearch = onSearchChange ?? setLocalSearch;
     const categoriesRef = useRef<HTMLDivElement>(null);
+    const productsGridRef = useRef<HTMLDivElement>(null);
 
     const scrollCategories = (direction: 'left' | 'right') => {
         if (categoriesRef.current) {
             const amount = direction === 'left' ? -200 : 200;
             categoriesRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+        }
+    };
+
+    const scrollProducts = (direction: 'up' | 'down') => {
+        if (productsGridRef.current) {
+            const amount = direction === 'up' ? -300 : 300;
+            productsGridRef.current.scrollBy({ top: amount, behavior: 'smooth' });
         }
     };
 
@@ -70,8 +78,12 @@ export function CatalogPanel({
     }, [products, selectedCategoryId, search]);
 
     const productsGrid = (
-        <section className="flex-1 min-h-0 flex flex-col">
-            <div className="grid grid-cols-4 gap-2.5 w-full p-1 content-start flex-1 overflow-y-auto min-h-0">
+        <section className="flex-1 min-h-0 flex flex-col relative">
+            {/* Contenedor principal con overflow */}
+            <div 
+                ref={productsGridRef}
+                className="grid grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 w-full p-2 content-start flex-1 overflow-y-auto min-h-0"
+            >
                 {filteredProducts.length === 0 ? (
                     <div className="col-span-full py-12 text-center text-[12px] text-slate-400">
                         No hay productos que coincidan
@@ -86,6 +98,28 @@ export function CatalogPanel({
                     ))
                 )}
             </div>
+
+            {/* Botones flotantes de scroll táctil - vertical */}
+            {filteredProducts.length > 0 && (
+                <>
+                    <button
+                        type="button"
+                        onClick={() => scrollProducts('up')}
+                        className="absolute top-2 right-2 w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition z-10"
+                        title="Desplazar arriba"
+                    >
+                        ▲
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => scrollProducts('down')}
+                        className="absolute bottom-2 right-2 w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition z-10"
+                        title="Desplazar abajo"
+                    >
+                        ▼
+                    </button>
+                </>
+            )}
         </section>
     );
 
