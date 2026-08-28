@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_settings_props.sh
 #!/bin/bash
 set -e
 
@@ -147,7 +146,3 @@ git commit -m "fix(types): exportar RestaurantForm y aceptar props en SettingsPa
 git push origin main
 
 echo "✅ Compilación exitosa y subida realizada."
-EOF
-
-chmod +x fix_settings_props.sh
-./fix_settings_props.sh
