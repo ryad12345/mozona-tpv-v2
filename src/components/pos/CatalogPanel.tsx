@@ -3,14 +3,18 @@ import React, { useRef, useState, useEffect } from 'react';
 export function CatalogPanel(props: any) {
   const categoriesRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
-  const [customProducts, setCustomProducts] = useState<any[]>([]);
+  const [productsList, setProductsList] = useState<any[]>([]);
   const [internalCategory, setInternalCategory] = useState<string>('all');
 
   useEffect(() => {
     const sync = () => {
       try {
         const raw = localStorage.getItem('pos_custom_products');
-        if (raw) setCustomProducts(JSON.parse(raw));
+        if (raw) {
+          setProductsList(JSON.parse(raw));
+        } else if (props.products && props.products.length > 0) {
+          setProductsList(props.products);
+        }
       } catch (err) {
         console.error(err);
       }
@@ -18,7 +22,7 @@ export function CatalogPanel(props: any) {
     sync();
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
-  }, []);
+  }, [props.products]);
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
 
@@ -29,7 +33,6 @@ export function CatalogPanel(props: any) {
     }
   };
 
-  // Scroll horizontal en la barra de categorías
   const scrollCats = (direction: 'left' | 'right') => {
     if (categoriesRef.current) {
       const offset = direction === 'left' ? -220 : 220;
@@ -37,7 +40,6 @@ export function CatalogPanel(props: any) {
     }
   };
 
-  // Scroll vertical en la cuadrícula de platos
   const scrollGrid = (direction: 'up' | 'down') => {
     if (gridContainerRef.current) {
       const offset = direction === 'up' ? -260 : 260;
@@ -45,10 +47,7 @@ export function CatalogPanel(props: any) {
     }
   };
 
-  const baseList = props.products || [];
-  const allList = [...customProducts, ...baseList];
-
-  const filtered = allList.filter((product: any) => {
+  const filtered = productsList.filter((product: any) => {
     const isAll = !activeCategory || activeCategory === 'all' || activeCategory === 'Todo';
     const productCat = (product.category || product.category_id || '').toString().toLowerCase();
     const currentCat = activeCategory.toString().toLowerCase();
@@ -73,13 +72,12 @@ export function CatalogPanel(props: any) {
 
   return (
     <div className="relative w-full h-full flex flex-col p-2 overflow-hidden bg-white dark:bg-slate-800 rounded-xl">
-      {/* 1. Barra de Categorías Horizontal con Flechas ◀ y ▶ */}
+      {/* 1. Categorías con scroll táctil */}
       <div className="shrink-0 flex items-center gap-1.5 mb-2 pb-1 border-b border-slate-100 dark:border-slate-700">
         <button
           type="button"
           onClick={() => scrollCats('left')}
           className="h-9 w-9 shrink-0 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center text-sm font-bold active:scale-95 transition shadow-sm"
-          title="Desplazar categorías a la izquierda"
         >
           ◀
         </button>
@@ -115,7 +113,6 @@ export function CatalogPanel(props: any) {
           type="button"
           onClick={() => scrollCats('right')}
           className="h-9 w-9 shrink-0 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center text-sm font-bold active:scale-95 transition shadow-sm"
-          title="Desplazar categorías a la derecha"
         >
           ▶
         </button>
@@ -129,7 +126,7 @@ export function CatalogPanel(props: any) {
         />
       </div>
 
-      {/* 2. Contenedor de la Cuadrícula de Platos con Scroll Vertical */}
+      {/* 2. Grid de platos */}
       <div
         ref={gridContainerRef}
         className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 p-1 content-start flex-1 overflow-y-auto min-h-0 scroll-smooth pr-14"
@@ -165,7 +162,7 @@ export function CatalogPanel(props: any) {
         )}
       </div>
 
-      {/* 3. Botones Flotantes Táctiles para Subir y Bajar la Carta */}
+      {/* 3. Botones Flotantes Subir / Bajar */}
       <div className="absolute right-3 bottom-3 flex flex-col gap-2 z-20">
         <button
           type="button"
