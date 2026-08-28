@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+echo "=== 1. Reescribiendo src/hooks/WebSocketProvider.tsx de forma limpia ==="
+cat << 'WS_EOF' > src/hooks/WebSocketProvider.tsx
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 export interface WebSocketContextType {
@@ -9,7 +14,7 @@ export interface WebSocketContextType {
   [key: string]: any;
 }
 
-export const fallbackWS: WebSocketContextType = {
+const DEFAULT_WS: WebSocketContextType = {
   isConnected: true,
   status: 'online',
   sendMessage: () => {},
@@ -17,7 +22,7 @@ export const fallbackWS: WebSocketContextType = {
   lastMessage: null,
 };
 
-export const WebSocketContext = createContext<WebSocketContextType>(fallbackWS);
+export const WebSocketContext = createContext<WebSocketContextType>(DEFAULT_WS);
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [isConnected] = useState(true);
@@ -25,7 +30,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [lastMessage] = useState<any>(null);
 
   return (
-    <WebSocketContext.Provider value={{ isConnected, status, sendMessage: () => {}, send: () => {}, lastMessage }}>
+    <WebSocketContext.Provider
+      value={{
+        isConnected,
+        status,
+        sendMessage: () => {},
+        send: () => {},
+        lastMessage,
+      }}
+    >
       {children}
     </WebSocketContext.Provider>
   );
@@ -33,7 +46,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
 export function useWebSocket(): WebSocketContextType {
   const ctx = useContext(WebSocketContext);
-  return ctx || fallbackWS;
+  return ctx || DEFAULT_WS;
 }
 
-export default WebSocketContext;
+export default WebSocketProvider;
+WS_EOF
+
+echo "=== 2. Compilando ==="
+npm run build
+
+echo "=== 3. Subiendo a Vercel ==="
+git add -A
+git commit -m "fix(hooks): corregir sintaxis en WebSocketProvider.tsx"
+git push origin main
+
+echo "✅ ¡Listo y desplegado!"

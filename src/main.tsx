@@ -1,3 +1,4 @@
+import { WebSocketProvider } from './context/WebSocketContext';
 // =====================================================================
 // MOZONA TPV — main.tsx (entry point)
 // =====================================================================
@@ -14,6 +15,6 @@ if (!root) {
 
 createRoot(root).render(
     <StrictMode>
-        <App />
+        <WebSocketProvider><App /></WebSocketProvider>
     </StrictMode>
 );

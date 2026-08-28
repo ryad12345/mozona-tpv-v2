@@ -1,17 +1,9 @@
 import { useContext } from 'react';
-import { WebSocketContext, WebSocketContextType } from '../context/WebSocketContext';
-
-const FALLBACK_WS: WebSocketContextType = {
-  isConnected: true,
-  status: 'online',
-  sendMessage: () => {},
-  send: () => {},
-  lastMessage: null,
-};
+import { WebSocketContext, fallbackWS, WebSocketContextType } from '../context/WebSocketContext';
 
 export function useWebSocket(): WebSocketContextType {
   const ctx = useContext(WebSocketContext);
-  return ctx || FALLBACK_WS;
+  return ctx || fallbackWS;
 }
 
 export default useWebSocket;
