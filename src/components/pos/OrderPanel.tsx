@@ -37,15 +37,15 @@ export function OrderPanel({
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200/80 shadow-sm min-h-0">
             {/* Cabecera */}
-            <header className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-slate-50 text-slate-700 flex items-center justify-center">
-                    <IconReceipt size={18} strokeWidth={1.8} />
+            <header className="px-3 py-2 border-b border-slate-100 flex items-center gap-2 shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-700 flex items-center justify-center">
+                    <IconReceipt size={15} strokeWidth={1.8} />
                 </div>
                 <div className="flex-1 min-w-0">
-                    <h2 className="text-[15px] font-bold text-slate-900 leading-tight">
+                    <h2 className="text-[13px] font-bold text-slate-900 leading-tight truncate">
                         Comanda {tableLabel ? `· Mesa ${tableLabel.match(/\d+/)?.[0] ?? tableLabel}` : ""}
                     </h2>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[10px] text-slate-500 truncate">
                         {itemCount === 0
                             ? "Sin líneas"
                             : `${itemCount} ${itemCount === 1 ? "plato" : "platos"}`}
@@ -56,8 +56,8 @@ export function OrderPanel({
                     <button
                         onClick={onClear}
                         className="
-                            px-2.5 h-8 rounded-lg
-                            text-[11.5px] font-semibold
+                            px-2 h-7 rounded-lg
+                            text-[10.5px] font-semibold
                             text-rose-600 hover:bg-rose-50
                             active:scale-95 transition
                         "
@@ -75,7 +75,7 @@ export function OrderPanel({
                             <IconReceipt size={28} strokeWidth={1.4} />
                         </div>
                         <p className="text-[13px] font-semibold text-slate-500">
-                            Añade productos desde la izquierda
+                            Añade productos desde el catálogo
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
                             Selecciona una mesa para empezar
@@ -97,26 +97,26 @@ export function OrderPanel({
             </div>
 
             {/* Footer con totales + acción de pre-cuenta */}
-            <footer className="border-t border-slate-100 px-4 py-3 shrink-0 space-y-2">
+            <footer className="border-t border-slate-100 px-3 py-2 shrink-0 space-y-1.5">
                 <div className="space-y-1">
                     {taxByRate.map(t => (
-                        <div key={t.rate} className="flex justify-between text-[11.5px] text-slate-600">
+                        <div key={t.rate} className="flex justify-between text-[10px] text-slate-600">
                             <span>Subtotal {t.label} ({t.rate}%)</span>
                             <span className="tabular-nums">{fmtEUR(t.base)}</span>
                         </div>
                     ))}
                     {taxByRate.map(t => (
-                        <div key={`tax-${t.rate}`} className="flex justify-between text-[11.5px] text-slate-600">
+                        <div key={`tax-${t.rate}`} className="flex justify-between text-[10px] text-slate-600">
                             <span>IVA {t.rate}%</span>
                             <span className="tabular-nums">{fmtEUR(t.tax)}</span>
                         </div>
                     ))}
                 </div>
                 <div className="flex items-end justify-between pt-1 border-t border-slate-100">
-                    <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         Total
                     </span>
-                    <span className="text-[28px] font-black text-slate-900 tabular-nums leading-none">
+                    <span className="text-[22px] font-black text-slate-900 tabular-nums leading-none">
                         {fmtEUR(total)}
                     </span>
                 </div>
@@ -124,9 +124,9 @@ export function OrderPanel({
                     onClick={onPrintPreBill}
                     disabled={items.length === 0}
                     className="
-                        w-full h-9 rounded-xl
+                        w-full h-8 rounded-lg
                         bg-amber-50 text-amber-800 border border-amber-200/80
-                        text-[12px] font-bold
+                        text-[10.5px] font-bold
                         disabled:opacity-40 disabled:cursor-not-allowed
                         hover:bg-amber-100 active:scale-95 transition
                     "

@@ -136,6 +136,7 @@ export function PosTerminalPro() {
     const [recentOrders, setRecentOrders] = useState<Array<{ id: string; tableNumber: string; waiter: string; receivedAt: string }>>([]);
     const [mobileTab, setMobileTab]   = useState<MobileTab>("catalog");
     const [showQR, setShowQR]         = useState(false);
+    const [catalogSearch, setCatalogSearch] = useState("");
 
     // Mostrar PIN al montar si no hay sesión
     useEffect(() => {
@@ -450,11 +451,12 @@ export function PosTerminalPro() {
                 )}
             </div>
 
-            {/* Contenido principal: grid 12 columnas (7/3/2) */}
-            <main className="flex-1 min-h-0 w-full grid grid-cols-12 overflow-hidden">
-                {/* Columna 1: Catálogo y Mesas (7 columnas = ~58%) */}
-                <section className="col-span-7 h-full min-h-0 flex flex-col overflow-hidden p-3 border-r border-slate-200 dark:border-slate-800">
-                        <CatalogPanel
+            {/* Contenido principal: fila superior, catálogo ancho y cobro lateral */}
+            <main className="hidden sm:flex flex-1 min-h-0 w-full overflow-hidden">
+                <div className="flex-1 min-w-0 h-full flex flex-col p-3 overflow-hidden border-r border-slate-200 dark:border-slate-800">
+                    <div className="h-56 shrink-0 grid grid-cols-12 gap-3 mb-3">
+                        <section className="col-span-7 h-full min-w-0 flex flex-col justify-between bg-white rounded-xl p-3 border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                            <CatalogPanel
                             categories={categories}
                             products={products}
                             tables={tablesWithStatus}
@@ -463,11 +465,12 @@ export function PosTerminalPro() {
                             selectedTableId={pos.state.selectedTableId}
                             onSelectTable={handleSelectTable}
                             onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
-                        />
-                </section>
-
-                {/* Columna 2: Comanda activa (3 columnas = 25%) */}
-                <section className="col-span-3 h-full min-h-0 flex flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
+                            variant="controls"
+                            search={catalogSearch}
+                            onSearchChange={setCatalogSearch}
+                            />
+                        </section>
+                        <section className="col-span-5 h-full min-w-0 bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -481,10 +484,24 @@ export function PosTerminalPro() {
                             onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
                             onPrintPreBill={handlePrintPreBill}
                         />
-                </section>
-
-                {/* Columna 3: Teclado y Cobro (2 columnas = ~17%) */}
-                <section className="col-span-2 h-full min-h-0 flex flex-col justify-between bg-slate-50 dark:bg-slate-900 p-2.5">
+                        </section>
+                    </div>
+                    <section className="flex-1 min-h-0 overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm">
+                        <CatalogPanel
+                            categories={categories}
+                            products={products}
+                            tables={tablesWithStatus}
+                            selectedCategoryId={pos.state.selectedCategoryId}
+                            onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
+                            selectedTableId={pos.state.selectedTableId}
+                            onSelectTable={handleSelectTable}
+                            onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
+                            variant="products"
+                            search={catalogSearch}
+                        />
+                    </section>
+                </div>
+                <aside className="w-64 xl:w-72 shrink-0 h-full bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}
@@ -496,10 +513,13 @@ export function PosTerminalPro() {
                             onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
                             onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
                         />
-                </section>
+                </aside>
+            </main>
 
-                {/* Mobile: un solo panel visible, controlado por tabs --- */}
-                <div className="col-span-12 flex-1 min-h-0 sm:hidden">
+            {/* Vista móvil: un solo panel visible, controlado por tabs */}
+            <main className="flex sm:hidden flex-1 min-h-0 w-full overflow-hidden">
+
+                <div className="flex-1 min-h-0">
                     <MobileTabPanel value={mobileTab}>
                         {mobileTab === "catalog" && (
                             <CatalogPanel

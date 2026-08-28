@@ -30,6 +30,9 @@ export interface CatalogPanelProps {
     selectedTableId:    string | null;
     onSelectTable:      (id: string | null) => void;
     onAddProduct:       (p: Product) => void;
+    variant?:            "full" | "controls" | "products";
+    search?:             string;
+    onSearchChange?:     (value: string) => void;
 }
 
 // ---------------------------------------------------------------------
@@ -41,8 +44,13 @@ export function CatalogPanel({
     selectedCategoryId, onSelectCategory,
     selectedTableId, onSelectTable,
     onAddProduct,
+    variant = "full",
+    search: controlledSearch,
+    onSearchChange,
 }: CatalogPanelProps) {
-    const [search, setSearch] = useState("");
+    const [localSearch, setLocalSearch] = useState("");
+    const search = controlledSearch ?? localSearch;
+    const setSearch = onSearchChange ?? setLocalSearch;
 
     const filteredProducts = useMemo(() => {
         const list = selectedCategoryId
@@ -53,8 +61,8 @@ export function CatalogPanel({
         return list.filter(p => p.name.toLowerCase().includes(q));
     }, [products, selectedCategoryId, search]);
 
-    return (
-        <div className="h-full min-h-0 flex flex-col overflow-hidden gap-2">
+    const controls = (
+        <>
             {/* Selector de mesa ------------------------------------- */}
             <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2 shrink-0">
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-slate-500 uppercase mb-2">
@@ -94,44 +102,62 @@ export function CatalogPanel({
                 </div>
             </section>
 
-            {/* Buscador + Grid de productos ------------------------ */}
-            <section className="flex-1 min-h-0 flex flex-col">
-                <div className="relative mb-2 shrink-0">
-                    <IconSearch
-                        size={16}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    />
-                    <input
-                        type="text"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="Buscar plato…"
-                        className="
-                            w-full h-9 pl-9 pr-3
-                            rounded-xl border border-slate-200
-                            text-sm
-                            focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                            outline-none transition
-                        "
-                    />
-                </div>
+            <div className="relative shrink-0">
+                <IconSearch
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Buscar plato…"
+                    className="
+                        w-full h-9 pl-9 pr-3
+                        rounded-xl border border-slate-200
+                        text-sm
+                        focus:border-blue-500 focus:ring-2 focus:ring-blue-100
+                        outline-none transition
+                    "
+                />
+            </div>
+        </>
+    );
 
-                <div className="grid grid-cols-3 gap-3 w-full p-2 content-start flex-1 overflow-y-auto min-h-0">
-                    {filteredProducts.length === 0 ? (
-                        <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
-                            No hay productos que coincidan
-                        </div>
-                    ) : (
-                        filteredProducts.map(p => (
-                            <ProductCard
-                                key={p.id}
-                                product={p}
-                                onAdd={() => onAddProduct(p)}
-                            />
-                        ))
-                    )}
-                </div>
-            </section>
+    const productsGrid = (
+        <section className="flex-1 min-h-0 flex flex-col">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3 w-full p-2 content-start flex-1 overflow-y-auto min-h-0">
+                {filteredProducts.length === 0 ? (
+                    <div className="col-span-full py-12 text-center text-[12px] text-slate-400">
+                        No hay productos que coincidan
+                    </div>
+                ) : (
+                    filteredProducts.map(p => (
+                        <ProductCard
+                            key={p.id}
+                            product={p}
+                            onAdd={() => onAddProduct(p)}
+                        />
+                    ))
+                )}
+            </div>
+        </section>
+    );
+
+    if (variant === "controls") {
+        return <div className="h-full min-h-0 flex flex-col justify-between gap-2 overflow-hidden">{controls}</div>;
+    }
+
+    if (variant === "products") {
+        return productsGrid;
+    }
+
+    return (
+        <div className="h-full min-h-0 flex flex-col overflow-hidden gap-2">
+            {controls}
+
+            {/* Buscador + Grid de productos ------------------------ */}
+            {productsGrid}
         </div>
     );
 }
