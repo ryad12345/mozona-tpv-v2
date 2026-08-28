@@ -1,0 +1,267 @@
+// =====================================================================
+// MOZONA TPV — LandingPage (/)
+// =====================================================================
+// Página comercial estilo Apple/iOS.  Marketing puro: hero, features,
+// pricing preview, FAQ, footer, CTA principal a /auth.
+// =====================================================================
+
+import { Link } from "react-router-dom";
+import {
+    IconStore, IconUser, IconReceipt, IconShield, IconSparkles,
+    IconCheck, IconArrowRight, IconPrint, IconWifi,
+} from "../components/icons";
+import { useAuth } from "../lib/auth";
+import { cn } from "../lib/cn";
+
+const FEATURES = [
+    { icon: <IconUser     size={20} strokeWidth={1.8} />, title: "Comanderos móviles",      desc: "Tus camareros toman nota desde el móvil con la misma carta, modifican líneas y marchan comanda al instante. Sin instalar nada." },
+    { icon: <IconStore    size={20} strokeWidth={1.8} />, title: "Gestión de mesas",        desc: "Mapa visual del salón con zonas, estados en tiempo real (libre, ocupada, pidiendo cuenta) y asignación rápida por drag." },
+    { icon: <IconReceipt  size={20} strokeWidth={1.8} />, title: "Tickets e inventario",    desc: "Tickets fiscales VeriFactu, control de stock por producto, arqueo de caja al cierre y exportación a CSV." },
+    { icon: <IconPrint    size={20} strokeWidth={1.8} />, title: "Impresoras térmicas",     desc: "Compatibilidad ESC/POS nativa: USB, red o WiFi.  Soporta cajón portamonedas, QR y logos personalizados." },
+    { icon: <IconShield   size={20} strokeWidth={1.8} />, title: "Cumplimiento VeriFactu",  desc: "Cadena SHA-256, QR AEAT y firma digital listos para Hacienda. Compatible con la normativa española 2024-2025." },
+    { icon: <IconWifi     size={20} strokeWidth={1.8} />, title: "Local-First PWA",         desc: "Funciona sin internet.  Cuando vuelves online, sincroniza comandas, facturas y catálogo automáticamente." },
+];
+
+const PLANS = [
+    { name: "Plus",  price: "30",  tag: "Recomendado",
+      perks: ["TPV ilimitado en la nube", "Comanderos móviles en tiempo real", "Mesas, tickets e inventario",
+              "VeriFactu + AES-256", "Soporte por email"] },
+    { name: "Pro",   price: "50",  tag: "Para crecer",
+      perks: ["Todo lo de Plus", "Soporte técnico prioritario", "Asistencia remota",
+              "Copias de seguridad continuas", "Formación inicial"] },
+];
+
+const FAQS = [
+    { q: "¿Necesito instalar algo?", a: "No.  Es 100% web.  Funciona en cualquier navegador moderno y como app en iOS/Android.  La caja central se conecta a tus impresoras USB vía un pequeño agente instalable en 1 comando." },
+    { q: "¿Y si se cae Internet?",  a: "La app sigue funcionando offline.  Cuando vuelves online, las comandas y facturas se sincronizan solas." },
+    { q: "¿Cuántos dispositivos puedo conectar?", a: "Ilimitados en cualquier plan.  Camareros, tablets de barra, cocina, TPV principal: todos conectados en tiempo real." },
+    { q: "¿Hacéis factura?",       a: "Sí, somos empresa española.  Factura mensual con IVA incluido.  Cancela cuando quieras." },
+];
+
+export function LandingPage() {
+    const auth = useAuth();
+
+    return (
+        <div className="min-h-dvh bg-white text-slate-900">
+            {/* =================================================== NAV */}
+            <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60">
+                <div className="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
+                    <Link to="/" className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white flex items-center justify-center font-black text-sm shadow-sm shadow-blue-600/30">
+                            M
+                        </div>
+                        <span className="text-[15px] font-black tracking-tight">MOZONA TPV</span>
+                    </Link>
+                    <nav className="hidden sm:flex items-center gap-5 text-[13px] font-semibold text-slate-600">
+                        <a href="#features"  className="hover:text-slate-900 transition">Características</a>
+                        <a href="#pricing"   className="hover:text-slate-900 transition">Planes</a>
+                        <a href="#faq"       className="hover:text-slate-900 transition">FAQ</a>
+                    </nav>
+                    <div className="flex items-center gap-2">
+                        {auth.user ? (
+                            <Link to="/app"
+                                  className="h-9 px-4 inline-flex items-center gap-1.5 rounded-xl
+                                             bg-slate-900 text-white text-[12.5px] font-bold
+                                             active:scale-95 transition">
+                                Ir a mi panel
+                                <IconArrowRight size={14} strokeWidth={2.4} />
+                            </Link>
+                        ) : (
+                            <>
+                                <Link to="/auth"
+                                      className="h-9 px-3 inline-flex items-center
+                                                 text-[12.5px] font-semibold text-slate-700
+                                                 hover:text-slate-900 transition">
+                                    Iniciar sesión
+                                </Link>
+                                <Link to="/auth?signup=1"
+                                      className="h-9 px-4 inline-flex items-center gap-1.5 rounded-xl
+                                                 bg-blue-600 text-white text-[12.5px] font-bold
+                                                 shadow-sm shadow-blue-600/30
+                                                 active:scale-95 transition">
+                                    Empezar prueba
+                                    <IconArrowRight size={14} strokeWidth={2.4} />
+                                </Link>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            {/* =============================================== HERO */}
+            <section className="relative overflow-hidden">
+                <div className="absolute inset-0 -z-10
+                                bg-gradient-to-b from-blue-50 via-white to-white
+                                [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+                <div className="max-w-6xl mx-auto px-5 pt-16 sm:pt-24 pb-16 sm:pb-20 text-center">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+                                     bg-blue-50 border border-blue-200/80 text-blue-700
+                                     text-[11.5px] font-bold tracking-wide">
+                        <IconSparkles size={12} strokeWidth={2.2} />
+                        VeriFactu AEAT 2025 · Local-First PWA
+                    </span>
+                    <h1 className="mt-5 text-[40px] sm:text-[60px] leading-[1.05] font-black tracking-tight text-slate-900">
+                        Tu TPV de hostelería,{" "}
+                        <span className="bg-gradient-to-br from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                            en la nube
+                        </span>
+                        <br className="hidden sm:block" />
+                        y en tu local.
+                    </h1>
+                    <p className="mt-5 text-[16px] sm:text-[18px] text-slate-600 max-w-2xl mx-auto leading-relaxed">
+                        Comanderos móviles, gestión de mesas, VeriFactu, impresoras térmicas y
+                        todo lo que tu local necesita — funciona online y offline, sin instalaciones.
+                    </p>
+                    <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
+                        <Link to="/auth?signup=1"
+                              className="h-12 px-6 inline-flex items-center gap-2 rounded-2xl
+                                         bg-slate-900 text-white text-[15px] font-black
+                                         shadow-lg shadow-slate-900/20
+                                         hover:scale-[1.02] active:scale-95 transition">
+                            Empezar 14 días gratis
+                            <IconArrowRight size={16} strokeWidth={2.4} />
+                        </Link>
+                        <a href="#features"
+                           className="h-12 px-5 inline-flex items-center
+                                      text-[14px] font-semibold text-slate-700
+                                      hover:text-slate-900 transition">
+                            Ver características
+                        </a>
+                    </div>
+                    <div className="mt-12 max-w-4xl mx-auto rounded-3xl border border-slate-200/80 shadow-2xl
+                                    bg-gradient-to-br from-slate-900 to-slate-800
+                                    aspect-[16/9] flex items-center justify-center
+                                    text-slate-500 text-[14px]">
+                        <span className="text-center">
+                            <span className="block text-[18px] font-bold text-slate-300">Captura del TPV</span>
+                            (aquí iría un mockup o video)
+                        </span>
+                    </div>
+                </div>
+            </section>
+
+            {/* =========================================== FEATURES */}
+            <section id="features" className="py-20 bg-slate-50">
+                <div className="max-w-6xl mx-auto px-5">
+                    <div className="text-center mb-12">
+                        <h2 className="text-[32px] sm:text-[40px] font-black tracking-tight">
+                            Todo lo que necesitas.
+                        </h2>
+                        <p className="mt-3 text-[15px] text-slate-600 max-w-xl mx-auto">
+                            Diseñado por y para hosteleros.  Sin curvas de aprendizaje.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {FEATURES.map((f, i) => (
+                            <div key={i}
+                                 className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm
+                                            hover:shadow-md hover:-translate-y-0.5 transition">
+                                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600
+                                                flex items-center justify-center mb-3">
+                                    {f.icon}
+                                </div>
+                                <h3 className="text-[15px] font-black text-slate-900">{f.title}</h3>
+                                <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">{f.desc}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* =========================================== PRICING */}
+            <section id="pricing" className="py-20">
+                <div className="max-w-5xl mx-auto px-5">
+                    <div className="text-center mb-12">
+                        <h2 className="text-[32px] sm:text-[40px] font-black tracking-tight">
+                            Planes transparentes.
+                        </h2>
+                        <p className="mt-3 text-[15px] text-slate-600 max-w-xl mx-auto">
+                            Sin permanencia.  Cancela cuando quieras.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {PLANS.map((p, i) => (
+                            <div key={i}
+                                 className={cn(
+                                     "p-6 rounded-3xl border bg-white",
+                                     p.name === "Pro"
+                                         ? "border-blue-300 shadow-xl shadow-blue-600/10"
+                                         : "border-slate-200/80 shadow-sm"
+                                 )}>
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-[18px] font-black">{p.name}</h3>
+                                    <span className="text-[10.5px] font-bold uppercase tracking-wider
+                                                     px-2 py-0.5 rounded-full
+                                                     bg-blue-50 text-blue-700">
+                                        {p.tag}
+                                    </span>
+                                </div>
+                                <div className="mt-3 flex items-baseline gap-1">
+                                    <span className="text-[44px] font-black tabular-nums leading-none">
+                                        {p.price}€
+                                    </span>
+                                    <span className="text-[13px] text-slate-500">/mes</span>
+                                </div>
+                                <ul className="mt-5 space-y-2">
+                                    {p.perks.map((perk, j) => (
+                                        <li key={j} className="flex items-start gap-2 text-[13px] text-slate-700">
+                                            <IconCheck size={16} strokeWidth={2.4}
+                                                       className="text-emerald-500 mt-0.5 shrink-0" />
+                                            {perk}
+                                        </li>
+                                    ))}
+                                </ul>
+                                <Link to="/auth?signup=1"
+                                      className="mt-6 w-full h-11 inline-flex items-center justify-center
+                                                 rounded-xl bg-slate-900 text-white text-[13.5px] font-black
+                                                 active:scale-95 transition">
+                                    Empezar con {p.name}
+                                </Link>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* ================================================ FAQ */}
+            <section id="faq" className="py-20 bg-slate-50">
+                <div className="max-w-3xl mx-auto px-5">
+                    <h2 className="text-[28px] font-black tracking-tight text-center mb-10">
+                        Preguntas frecuentes
+                    </h2>
+                    <div className="space-y-3">
+                        {FAQS.map((f, i) => (
+                            <details key={i}
+                                     className="group p-5 rounded-2xl bg-white border border-slate-200/80
+                                                shadow-sm">
+                                <summary className="cursor-pointer list-none flex items-center justify-between
+                                                     text-[14.5px] font-bold text-slate-900">
+                                    {f.q}
+                                    <span className="ml-3 text-slate-400 group-open:rotate-45 transition">+</span>
+                                </summary>
+                                <p className="mt-2 text-[13px] text-slate-600 leading-relaxed">{f.a}</p>
+                            </details>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* ============================================= FOOTER */}
+            <footer className="py-10 border-t border-slate-200/80">
+                <div className="max-w-6xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700" />
+                        <span className="text-[12.5px] font-bold text-slate-700">MOZONA TPV</span>
+                        <span className="text-[11px] text-slate-400">© 2025</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-[12px] text-slate-500">
+                        <Link to="/auth"  className="hover:text-slate-900">Acceder</Link>
+                        <Link to="/setup-caja" className="hover:text-slate-900">Setup caja</Link>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    );
+}
+
+// (cn importado de lib/cn)
