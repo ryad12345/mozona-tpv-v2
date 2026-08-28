@@ -1,201 +1,154 @@
-// =====================================================================
-// MOZONA TPV — PaymentPanel: columna derecha (numpad + acciones de cobro)
-// =====================================================================
-
-import { IconBackspace, IconCash, IconCard, IconQr } from "../icons";
-import { fmtEUR, parseAmount } from "../../lib/format";
-import { cn } from "../../lib/cn";
-import type { PaymentMethod } from "../../lib/types";
-import { useMemo, type ReactNode } from "react";
-
-// ---------------------------------------------------------------------
-// Tipos
-// ---------------------------------------------------------------------
+import React, { useState, useEffect, useRef } from 'react';
 
 export interface PaymentPanelProps {
-    /** Importe total del pedido (a pagar) */
-    total:            number;
-    /** Texto en pantalla del numpad (importe recibido) */
-    paymentAmount:    string;
-    /** Método seleccionado (null = sin selección) */
-    paymentMethod:    PaymentMethod | null;
-    /** Si hay un pedido en curso que se puede cobrar */
-    canCharge:        boolean;
-    /** Si está procesando el cobro */
-    isProcessing:     boolean;
-    onNumpadKey:      (key: string) => void;
-    onSetMethod:      (m: PaymentMethod | null) => void;
-    onCharge:         () => void;
-    onChargeVeriFactu:() => void;
+  total?: number;
+  paymentAmount?: string | number;
+  onPay?: (method: 'cash' | 'card', received?: number, change?: number) => void;
+  onEmitInvoice?: () => void;
+  lastPaymentResult?: { received: number; change: number } | null;
+  [key: string]: any;
 }
 
-// ---------------------------------------------------------------------
-// Componente
-// ---------------------------------------------------------------------
+export function PaymentPanel(props: PaymentPanelProps) {
+  const { total = 0, onPay, onEmitInvoice, lastPaymentResult } = props;
+  const [receivedAmount, setReceivedAmount] = useState<string>(
+    props.paymentAmount ? String(props.paymentAmount) : '0'
+  );
+  const [changeInfo, setChangeInfo] = useState<{ received: number; change: number } | null>(null);
+  const timerRef = useRef<any>(null);
 
-export function PaymentPanel({
-    total, paymentAmount, paymentMethod,
-    canCharge, isProcessing,
-    onNumpadKey, onSetMethod, onCharge, onChargeVeriFactu,
-}: PaymentPanelProps) {
+  useEffect(() => {
+    if (props.paymentAmount !== undefined) {
+      setReceivedAmount(String(props.paymentAmount));
+    }
+  }, [props.paymentAmount]);
 
-    const received = useMemo(
-        () => parseAmount(paymentAmount || "0"),
-        [paymentAmount]
-    );
-    const change = useMemo(
-        () => Math.max(0, received - total),
-        [received, total]
-    );
-    const showChange = paymentMethod === "CASH" && received > 0;
+  useEffect(() => {
+    if (lastPaymentResult) {
+      showChange(lastPaymentResult.received, lastPaymentResult.change);
+    }
+  }, [lastPaymentResult]);
 
-    return (
-        <div className="h-full flex flex-col justify-between p-2 min-h-0">
-            {/* Display digital compacto ------------------------------------- */}
-            <section className="bg-slate-900 text-white rounded-xl p-1.5 mb-1 shadow-lg shrink-0">
-                <div className="text-[9px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-0.5">
-                    Importe recibido
-                </div>
-                <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-black tabular-nums leading-none tracking-tight">
-                        {paymentAmount || "0"}
-                    </span>
-                    <span className="text-sm font-bold text-slate-400 tabular-nums">€</span>
-                </div>
-                {showChange && (
-                    <div className="mt-1 pt-1 border-t border-slate-700 flex items-baseline justify-between">
-                        <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
-                            A devolver
-                        </span>
-                        <span className="text-sm font-black text-emerald-400 tabular-nums">
-                            {fmtEUR(change)}
-                        </span>
-                    </div>
-                )}
-            </section>
+  const showChange = (received: number, change: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setChangeInfo({ received, change });
 
-            {/* Teclado numérico compacto ----------------------------------- */}
-            <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-1 shrink-0 my-1">
-                <div className="grid grid-cols-3 gap-0.5">
-                    <NumKey onClick={() => onNumpadKey("7")}>7</NumKey>
-                    <NumKey onClick={() => onNumpadKey("8")}>8</NumKey>
-                    <NumKey onClick={() => onNumpadKey("9")}>9</NumKey>
-                    <NumKey onClick={() => onNumpadKey("4")}>4</NumKey>
-                    <NumKey onClick={() => onNumpadKey("5")}>5</NumKey>
-                    <NumKey onClick={() => onNumpadKey("6")}>6</NumKey>
-                    <NumKey onClick={() => onNumpadKey("1")}>1</NumKey>
-                    <NumKey onClick={() => onNumpadKey("2")}>2</NumKey>
-                    <NumKey onClick={() => onNumpadKey("3")}>3</NumKey>
-                    <NumKey onClick={() => onNumpadKey("C")} tone="muted">C</NumKey>
-                    <NumKey onClick={() => onNumpadKey("0")}>0</NumKey>
-                    <NumKey onClick={() => onNumpadKey("⌫")} tone="muted">
-                        <IconBackspace size={14} strokeWidth={2} />
-                    </NumKey>
-                </div>
-            </section>
+    // Mantener quieto en pantalla durante 6 segundos exactos
+    timerRef.current = setTimeout(() => {
+      setChangeInfo(null);
+      setReceivedAmount('0');
+    }, 6000);
+  };
 
-            {/* Botones de pago compactos ------------------------------------ */}
-            <section className="flex-1 flex flex-col gap-0.5 shrink-0 min-h-0">
-                <PaymentButton
-                    onClick={() => { onSetMethod("CASH"); onCharge(); }}
-                    disabled={!canCharge || isProcessing}
-                    tone="emerald"
-                    icon={<IconCash size={14} strokeWidth={1.8} />}
-                    variant="standard"
-                >
-                    EFECTIVO
-                </PaymentButton>
-                <PaymentButton
-                    onClick={() => { onSetMethod("CARD"); onCharge(); }}
-                    disabled={!canCharge || isProcessing}
-                    tone="blue"
-                    icon={<IconCard size={14} strokeWidth={1.8} />}
-                    variant="standard truncate"
-                >
-                    TARJETA / DATÁFONO
-                </PaymentButton>
-                <PaymentButton
-                    onClick={() => { onSetMethod("CARD"); onChargeVeriFactu(); }}
-                    disabled={!canCharge || isProcessing}
-                    tone="violet"
-                    icon={<IconQr size={16} strokeWidth={1.8} />}
-                    variant="invoice"
-                >
-                    <div className="leading-tight text-left">
-                        <div className="font-semibold tracking-wide">
-                            FACTURA
-                        </div>
-                        <div className="text-[7px] font-semibold opacity-80 tracking-wider">
-                            VERIFACTU
-                        </div>
-                    </div>
-                </PaymentButton>
-            </section>
-        </div>
-    );
-}
+  const handleNumClick = (val: string) => {
+    if (changeInfo) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setChangeInfo(null);
+    }
 
-// ---------------------------------------------------------------------
-// Subcomponentes
-// ---------------------------------------------------------------------
+    if (val === 'C') {
+      setReceivedAmount('0');
+      if (props.onPaymentAmountChange) props.onPaymentAmountChange('0');
+    } else if (val === 'DEL') {
+      setReceivedAmount(prev => {
+        const next = prev.length > 1 ? prev.slice(0, -1) : '0';
+        if (props.onPaymentAmountChange) props.onPaymentAmountChange(next);
+        return next;
+      });
+    } else {
+      setReceivedAmount(prev => {
+        const next = prev === '0' ? val : prev + val;
+        if (props.onPaymentAmountChange) props.onPaymentAmountChange(next);
+        return next;
+      });
+    }
+  };
 
-function NumKey({
-    onClick, children, tone = "default",
-}: { onClick: () => void; children: ReactNode; tone?: "default" | "muted" }) {
-    return (
+  const handleCashPay = () => {
+    const recNum = parseFloat(receivedAmount) || total;
+    const finalTotal = Number(total) || 0;
+    const calculatedChange = Math.max(0, recNum - finalTotal);
+
+    showChange(recNum, calculatedChange);
+
+    if (onPay) {
+      onPay('cash', recNum, calculatedChange);
+    }
+  };
+
+  const handleCardPay = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setChangeInfo(null);
+    setReceivedAmount('0');
+    if (onPay) {
+      onPay('card', total, 0);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col justify-between p-2 min-h-0 select-none">
+      {/* Display Principal / Banner de Cambio (Fijo 6s) */}
+      <div className="bg-slate-900 text-white p-3 rounded-2xl flex flex-col justify-center shrink-0 shadow-inner transition-all">
+        {changeInfo ? (
+          <div className="flex flex-col gap-1 animate-fadeIn">
+            <div className="flex justify-between items-center text-xs text-slate-400 font-bold uppercase tracking-wider">
+              <span>Importe Recibido</span>
+              <span className="text-white text-sm">{changeInfo.received.toFixed(2)} €</span>
+            </div>
+            <div className="flex justify-between items-baseline border-t border-slate-700/80 pt-1 mt-0.5">
+              <span className="text-xs font-black text-emerald-400 tracking-wider">A DEVOLVER</span>
+              <span className="text-2xl font-black text-emerald-400">{changeInfo.change.toFixed(2)} €</span>
+            </div>
+            <span className="text-[10px] text-slate-500 text-right mt-0.5">Cierre automático en 6s...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Importe Recibido</span>
+            <span className="text-2xl font-black">{receivedAmount} €</span>
+          </div>
+        )}
+      </div>
+
+      {/* Teclado Numérico */}
+      <div className="grid grid-cols-3 gap-1 my-1.5 flex-1">
+        {['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', 'DEL'].map(btn => (
+          <button
+            key={btn}
+            type="button"
+            onClick={() => handleNumClick(btn)}
+            className="h-full min-h-[34px] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white font-black text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
+          >
+            {btn === 'DEL' ? '⌫' : btn}
+          </button>
+        ))}
+      </div>
+
+      {/* Botones de Cobro */}
+      <div className="flex flex-col gap-1.5 shrink-0">
         <button
-            onClick={onClick}
-            className={cn(
-                "w-full h-7 rounded-lg border border-slate-200",
-                "text-xs font-bold tabular-nums text-slate-800",
-                "flex items-center justify-center shadow-sm",
-                "transition-transform active:scale-95",
-                tone === "muted"
-                    ? "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    : "bg-slate-50 text-slate-900 hover:bg-slate-100"
-            )}
+          type="button"
+          onClick={handleCashPay}
+          className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition active:scale-95 flex items-center justify-center gap-1"
         >
-            {children}
+          💵 EFECTIVO
         </button>
-    );
-}
-
-type Tone = "emerald" | "blue" | "violet";
-
-const TONE_CLASSES: Record<Tone, string> = {
-    emerald: "bg-emerald-600 text-white shadow-emerald-600/30 hover:bg-emerald-700",
-    blue:    "bg-blue-600 text-white shadow-blue-600/30 hover:bg-blue-700",
-    violet:  "bg-violet-600 text-white shadow-violet-600/30 hover:bg-violet-700",
-};
-
-function PaymentButton({
-    onClick, disabled, tone, icon, variant, children,
-}: {
-    onClick:    () => void;
-    disabled:   boolean;
-    tone:       Tone;
-    icon:       ReactNode;
-    variant:    "standard" | "standard truncate" | "invoice";
-    children:   ReactNode;
-}) {
-    return (
         <button
-            onClick={onClick}
-            disabled={disabled}
-            className={cn(
-                "w-full min-w-0 tracking-wide whitespace-nowrap",
-                "flex items-center justify-center gap-1.5",
-                "shadow-lg transition active:scale-[0.98]",
-                "disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
-                TONE_CLASSES[tone],
-                variant === "invoice"
-                    ? "h-6 px-1 text-[8px] font-semibold rounded-lg"
-                    : "h-7 px-1 text-[11px] font-bold rounded-lg",
-                variant === "standard truncate" && "truncate"
-            )}
+          type="button"
+          onClick={handleCardPay}
+          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition active:scale-95 flex items-center justify-center gap-1"
         >
-            {icon}
-            {children}
+          💳 TARJETA / DATÁFONO
         </button>
-    );
+        <button
+          type="button"
+          onClick={() => onEmitInvoice?.()}
+          className="w-full h-7 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-200 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center justify-center"
+        >
+          EMITIR FACTURA (VERIFACTU + QR)
+        </button>
+      </div>
+    </div>
+  );
 }
+
+export default PaymentPanel;
