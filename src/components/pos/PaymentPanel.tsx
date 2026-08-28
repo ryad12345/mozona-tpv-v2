@@ -50,7 +50,7 @@ export function PaymentPanel({
     const showChange = paymentMethod === "CASH" && received > 0;
 
     return (
-        <div className="h-full flex flex-col gap-3 min-h-0">
+        <div className="h-full min-w-0 flex flex-col gap-3 min-h-0">
             {/* Display digital ------------------------------------- */}
             <section className="bg-slate-900 text-white rounded-2xl p-4 shadow-lg shrink-0">
                 <div className="text-[10px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-1">
@@ -144,7 +144,7 @@ function NumKey({
         <button
             onClick={onClick}
             className={cn(
-                "h-12 rounded-xl",
+                "w-full h-12 aspect-square rounded-xl",
                 "text-[20px] font-black tabular-nums",
                 "transition active:scale-95",
                 tone === "muted"
@@ -180,12 +180,12 @@ function PaymentButton({
             onClick={onClick}
             disabled={disabled}
             className={cn(
-                "w-full rounded-2xl font-bold tracking-wide",
+                "w-full min-w-0 rounded-2xl font-bold tracking-wide whitespace-nowrap",
                 "flex items-center justify-center gap-2.5",
                 "shadow-lg transition active:scale-[0.98]",
                 "disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
                 TONE_CLASSES[tone],
-                big ? "h-20 px-4 text-[15px]" : "h-14 text-[13.5px]"
+                big ? "h-20 px-3 text-[15px]" : "h-14 px-2 text-[13.5px]"
             )}
         >
             {icon}

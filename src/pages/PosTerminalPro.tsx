@@ -371,7 +371,7 @@ export function PosTerminalPro() {
     }
 
     return (
-        <div className="min-h-dvh bg-[#F0F2F5] flex flex-col">
+        <div className="min-h-dvh bg-[#F0F2F5] flex flex-col overflow-hidden">
             <PosTopBar
                 restaurant={restaurant ?? {
                     id: "rest-demo", slug: "demo", business_name: "MOZONA TPV",
@@ -451,46 +451,53 @@ export function PosTerminalPro() {
             </div>
 
             {/* Contenido principal: grid en sm+, tabs en <sm ----------- */}
-            <main className="flex-1 sm:flex-none sm:p-3 sm:grid sm:grid-cols-1 sm:lg:grid-cols-[1fr_1.2fr_0.8fr] sm:gap-3 sm:min-h-0
+            <main className="flex-1 min-h-0 sm:p-3 sm:grid sm:grid-cols-1 sm:gap-3
+                              lg:grid-cols-12 lg:gap-3 lg:min-h-0
                               min-h-0 flex flex-col">
                 {/* sm+ desktop: los 3 paneles a la vez */}
                 <div className="hidden sm:contents">
-                    <CatalogPanel
-                        categories={categories}
-                        products={products}
-                        tables={tablesWithStatus}
-                        selectedCategoryId={pos.state.selectedCategoryId}
-                        onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
-                        selectedTableId={pos.state.selectedTableId}
-                        onSelectTable={handleSelectTable}
-                        onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
-                    />
+                    <div className="min-w-0 min-h-0 lg:col-span-7">
+                        <CatalogPanel
+                            categories={categories}
+                            products={products}
+                            tables={tablesWithStatus}
+                            selectedCategoryId={pos.state.selectedCategoryId}
+                            onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
+                            selectedTableId={pos.state.selectedTableId}
+                            onSelectTable={handleSelectTable}
+                            onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
+                        />
+                    </div>
 
-                    <OrderPanel
-                        items={pos.state.orderItems}
-                        tableLabel={pos.state.selectedTableLabel}
-                        waiterName={auth.activeWaiter?.name ?? null}
-                        taxByRate={pos.taxByRate}
-                        total={pos.total}
-                        itemCount={pos.itemCount}
-                        onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
-                        onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
-                        onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
-                        onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
-                        onPrintPreBill={handlePrintPreBill}
-                    />
+                    <div className="min-w-0 min-h-0 lg:col-span-3">
+                        <OrderPanel
+                            items={pos.state.orderItems}
+                            tableLabel={pos.state.selectedTableLabel}
+                            waiterName={auth.activeWaiter?.name ?? null}
+                            taxByRate={pos.taxByRate}
+                            total={pos.total}
+                            itemCount={pos.itemCount}
+                            onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
+                            onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
+                            onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
+                            onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
+                            onPrintPreBill={handlePrintPreBill}
+                        />
+                    </div>
 
-                    <PaymentPanel
-                        total={pos.total}
-                        paymentAmount={pos.state.paymentAmount}
-                        paymentMethod={pos.state.paymentMethod}
-                        canCharge={pos.state.orderItems.length > 0 && pos.state.selectedTableId !== null}
-                        isProcessing={pos.state.isProcessing}
-                        onNumpadKey={handleNumpadKey}
-                        onSetMethod={handleSetMethod}
-                        onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
-                        onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
-                    />
+                    <div className="min-w-[240px] min-h-0 lg:col-span-2">
+                        <PaymentPanel
+                            total={pos.total}
+                            paymentAmount={pos.state.paymentAmount}
+                            paymentMethod={pos.state.paymentMethod}
+                            canCharge={pos.state.orderItems.length > 0 && pos.state.selectedTableId !== null}
+                            isProcessing={pos.state.isProcessing}
+                            onNumpadKey={handleNumpadKey}
+                            onSetMethod={handleSetMethod}
+                            onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
+                            onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
+                        />
+                    </div>
                 </div>
 
                 {/* Mobile: un solo panel visible, controlado por tabs --- */}

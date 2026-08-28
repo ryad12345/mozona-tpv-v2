@@ -51,7 +51,8 @@ export function PosTopBar({
             className="
                 sticky top-0 z-30
                 h-14 sm:h-16
-                flex items-center gap-2 sm:gap-3
+                flex items-center justify-between gap-2 sm:gap-3
+                overflow-hidden
                 px-3 sm:px-5
                 bg-white/85 backdrop-blur-xl
                 border-b border-slate-200/80
@@ -99,7 +100,7 @@ export function PosTopBar({
             </div>
 
             {/* Indicadores de estado (sm+) ============================== */}
-            <div className="hidden sm:flex items-center gap-2 flex-1 min-w-0">
+            <div className="hidden sm:flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
                 <StatusPill
                     icon={<IconWifi size={14} strokeWidth={2} />}
                     label={localIp ? `LAN ${localIp}` : (lanEndpoint ? `LAN ${lanEndpoint}` : "LAN —")}
@@ -110,7 +111,7 @@ export function PosTopBar({
                     title="QR para camareros"
                     className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full
                                bg-blue-50 text-blue-700 border border-blue-200/80
-                               text-[11.5px] font-semibold
+                               text-xs font-semibold whitespace-nowrap shrink-0
                                hover:bg-blue-100 active:scale-95 transition">
                     <IconQr size={12} strokeWidth={2.2} />
                     <span className="hidden md:inline">QR Camareros</span>
@@ -149,7 +150,7 @@ export function PosTopBar({
             </div>
 
             {/* Acciones rápidas ======================================== */}
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <IconButton
                     onClick={onOpenMenuScanner}
                     title="Digitalizar carta con IA"
@@ -187,8 +188,8 @@ export function PosTopBar({
                 pl-3 ml-1 border-l border-slate-200/80 h-10
                 shrink-0
             ">
-                <div className="text-right leading-tight">
-                    <div className="text-[13px] font-semibold text-slate-900">
+                <div className="text-right leading-tight max-w-[7rem]">
+                    <div className="text-[13px] font-semibold text-slate-900 truncate">
                         {cashier.name}
                     </div>
                     <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
@@ -232,8 +233,8 @@ function StatusPill({
         <div
             className={cn(
                 "inline-flex items-center gap-1.5",
-                "h-8 px-2.5 rounded-full",
-                "text-[11.5px] font-semibold",
+                "h-7 px-2 rounded-full",
+                "text-xs font-semibold whitespace-nowrap shrink-0",
                 "border",
                 toneStyles[tone]
             )}
