@@ -43,7 +43,7 @@ export function OrderPanel({
                 </div>
                 <div className="flex-1 min-w-0">
                     <h2 className="text-[15px] font-bold text-slate-900 leading-tight">
-                        Comanda {tableLabel ? `· Mesa ${tableLabel}` : ""}
+                        Comanda {tableLabel ? `· Mesa ${tableLabel.match(/\d+/)?.[0] ?? tableLabel}` : ""}
                     </h2>
                     <p className="text-[11px] text-slate-500">
                         {itemCount === 0
@@ -176,7 +176,7 @@ function OrderLine({
                 {/* Contenido */}
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                        <div className="text-[13px] font-semibold text-slate-900 leading-tight">
+                        <div className="text-[13px] font-semibold text-slate-900 leading-tight line-clamp-2 min-w-0">
                             {item.name}
                         </div>
                         <button

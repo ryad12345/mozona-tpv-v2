@@ -60,7 +60,7 @@ export function CatalogPanel({
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-slate-500 uppercase mb-2">
                     Sala
                 </h2>
-                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 shrink-0">
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 shrink-0">
                     {tables.map(t => (
                         <TableChip
                             key={t.id}
@@ -165,11 +165,12 @@ function TableChip({
     table, selected, onClick,
 }: { table: RestaurantTable; selected: boolean; onClick: () => void }) {
     const tone = STATUS_TONES[table.status];
+    const tableNumber = table.table_number.match(/\d+/)?.[0] ?? table.table_number;
     return (
         <button
             onClick={onClick}
             className={cn(
-                "h-9 px-2 rounded-lg",
+                "h-12 sm:h-14 px-2 rounded-xl",
                 "text-xs font-semibold tabular-nums",
                 "flex flex-col items-center justify-center",
                 "transition active:scale-95",
@@ -179,7 +180,7 @@ function TableChip({
                     : `${tone.idle} border-transparent`
             )}
         >
-            <span>{table.table_number}</span>
+            <span>Mesa {tableNumber}</span>
         </button>
     );
 }
@@ -264,7 +265,7 @@ function ProductCard({
             </div>
             {/* Texto */}
             <div className="p-2">
-                <div className="text-sm font-medium text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
+                <div className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
                     {product.name}
                 </div>
                 {product.description && (

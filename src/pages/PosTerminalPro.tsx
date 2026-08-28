@@ -467,7 +467,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="w-72 lg:w-80 xl:w-96 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
+                    <div className="w-64 lg:w-72 xl:w-80 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -483,7 +483,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="w-64 lg:w-72 xl:w-80 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
+                    <div className="w-60 lg:w-64 xl:w-72 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}
