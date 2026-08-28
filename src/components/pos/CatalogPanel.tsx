@@ -58,13 +58,14 @@ export function CatalogPanel({
             {/* Selector de mesa ------------------------------------- */}
             <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2 shrink-0">
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-slate-500 uppercase mb-2">
-                    Sala
+                    Mesas
                 </h2>
-                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 shrink-0">
-                    {tables.map(t => (
+                <div className="grid grid-cols-8 gap-1.5 shrink-0">
+                    {tables.map((t, idx) => (
                         <TableChip
                             key={t.id}
                             table={t}
+                            tableNumber={idx + 1}
                             selected={t.id === selectedTableId}
                             onClick={() => onSelectTable(t.id === selectedTableId ? null : t.id)}
                         />
@@ -160,25 +161,20 @@ function CategoryTab({
 }
 
 function TableChip({
-    table, selected, onClick,
-}: { table: RestaurantTable; selected: boolean; onClick: () => void }) {
+    table, tableNumber, selected, onClick,
+}: { table: RestaurantTable; tableNumber: number; selected: boolean; onClick: () => void }) {
     const tone = STATUS_TONES[table.status];
-    const tableNumber = table.table_number.match(/\d+/)?.[0] ?? table.table_number;
     return (
         <button
             onClick={onClick}
             className={cn(
-                "h-10 px-2 rounded-lg",
-                "text-sm font-bold tabular-nums",
-                "flex items-center justify-center",
-                "transition active:scale-95",
-                "border-2",
+                "h-10 text-sm font-bold rounded-lg flex items-center justify-center transition-colors",
                 selected
-                    ? `${tone.active} border-transparent ring-2 ring-blue-500`
-                    : `${tone.idle} border-transparent`
+                    ? `${tone.active} ring-2 ring-offset-1 ring-blue-500`
+                    : `${tone.idle}`
             )}
         >
-            <span>{tableNumber}</span>
+            <span className="tabular-nums">{tableNumber}</span>
         </button>
     );
 }

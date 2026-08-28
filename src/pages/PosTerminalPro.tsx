@@ -450,10 +450,10 @@ export function PosTerminalPro() {
                 )}
             </div>
 
-            {/* Contenido principal: grid en sm+, tabs en <sm ----------- */}
+            {/* Contenido principal: grid 12 columnas (7/3/2) */}
             <main className="flex-1 min-h-0 w-full grid grid-cols-12 overflow-hidden">
-                {/* sm+ desktop: los 3 paneles a la vez */}
-                <section className="hidden sm:flex col-span-6 h-full min-h-0 min-w-0 overflow-y-auto p-3 flex-col border-r border-slate-200 dark:border-slate-800">
+                {/* Columna 1: Catálogo y Mesas (7 columnas = ~58%) */}
+                <section className="col-span-7 h-full min-h-0 flex flex-col overflow-hidden p-3 border-r border-slate-200 dark:border-slate-800">
                         <CatalogPanel
                             categories={categories}
                             products={products}
@@ -466,7 +466,8 @@ export function PosTerminalPro() {
                         />
                 </section>
 
-                <section className="hidden sm:flex col-span-3 h-full min-h-0 min-w-0 overflow-hidden flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
+                {/* Columna 2: Comanda activa (3 columnas = 25%) */}
+                <section className="col-span-3 h-full min-h-0 flex flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -482,7 +483,8 @@ export function PosTerminalPro() {
                         />
                 </section>
 
-                <section className="hidden sm:flex col-span-3 h-full min-h-0 min-w-0 overflow-hidden flex-col bg-slate-50 dark:bg-slate-900 p-2">
+                {/* Columna 3: Teclado y Cobro (2 columnas = ~17%) */}
+                <section className="col-span-2 h-full min-h-0 flex flex-col justify-between bg-slate-50 dark:bg-slate-900 p-2.5">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}
