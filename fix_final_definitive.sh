@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_final_definitive.sh
 #!/bin/bash
 set -e
 
@@ -162,7 +161,3 @@ git push origin main
 echo "========================================================"
 echo "✅ ¡TODO RESUELTO, COMPILADO Y DESPLEGADO DEFINITIVAMENTE!"
 echo "========================================================"
-EOF
-
-chmod +x fix_final_definitive.sh
-./fix_final_definitive.sh

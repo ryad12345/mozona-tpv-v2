@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 export interface WebSocketContextType {
   isConnected: boolean;
@@ -9,36 +9,28 @@ export interface WebSocketContextType {
   [key: string]: any;
 }
 
-const DEFAULT_WS_VALUE: WebSocketContextType = {
+const DEFAULT_WS: WebSocketContextType = {
   isConnected: true,
   status: 'online',
-  sendMessage: (msg: any) => console.log('[WS Msg]:', msg),
-  send: (msg: any) => console.log('[WS Send]:', msg),
+  sendMessage: () => {},
+  send: () => {},
   lastMessage: null,
 };
 
-export const WebSocketContext = createContext<WebSocketContextType>(DEFAULT_WS_VALUE);
+export const WebSocketContext = createContext<WebSocketContextType>(DEFAULT_WS);
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [isConnected] = useState(true);
   const [status] = useState('online');
   const [lastMessage] = useState<any>(null);
 
-  const sendMessage = (msg: any) => {
-    try {
-      console.log('[WS Dispatch]:', msg);
-    } catch (e) {}
-  };
-
-  const send = (msg: any) => sendMessage(msg);
-
   return (
     <WebSocketContext.Provider
       value={{
         isConnected,
         status,
-        sendMessage,
-        send,
+        sendMessage: () => {},
+        send: () => {},
         lastMessage,
       }}
     >
@@ -47,13 +39,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook ultra-defensivo: NUNCA lanza throw new Error
 export function useWebSocket(): WebSocketContextType {
-  const context = useContext(WebSocketContext);
-  if (!context) {
-    return DEFAULT_WS_VALUE;
-  }
-  return context;
+  const ctx = useContext(WebSocketContext);
+  return ctx || DEFAULT_WS;
 }
 
 export default WebSocketContext;
