@@ -115,8 +115,7 @@ export function CatalogPanel({
                     />
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-1 -mr-1">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 content-start">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 w-full p-1 content-start flex-1 overflow-y-auto">
                         {filteredProducts.length === 0 ? (
                             <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
                                 No hay productos que coincidan
@@ -130,7 +129,6 @@ export function CatalogPanel({
                                 />
                             ))
                         )}
-                    </div>
                 </div>
             </section>
         </div>
@@ -205,7 +203,7 @@ function ProductCard({
             disabled={!product.is_available}
             className={cn(
                 "group w-full min-w-0 text-left overflow-hidden",
-                "rounded-2xl border border-slate-200/80",
+                "rounded-xl border border-slate-200/80 p-2.5",
                 "bg-white",
                 "transition active:scale-[0.98]",
                 "hover:border-blue-300 hover:shadow-sm",
@@ -213,7 +211,7 @@ function ProductCard({
             )}
         >
             {/* Imagen */}
-            <div className="relative h-24 sm:h-28 w-full overflow-hidden bg-slate-50">
+            <div className="relative h-24 sm:h-28 mb-2 w-full overflow-hidden rounded-lg bg-slate-50">
                 {hasImg ? (
                     <img
                         src={product.image_url!}
@@ -264,7 +262,7 @@ function ProductCard({
                 </div>
             </div>
             {/* Texto */}
-            <div className="p-2">
+            <div>
                 <div className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
                     {product.name}
                 </div>

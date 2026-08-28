@@ -50,7 +50,7 @@ export function PaymentPanel({
     const showChange = paymentMethod === "CASH" && received > 0;
 
     return (
-        <div className="h-full min-w-0 flex flex-col justify-between min-h-0">
+        <div className="flex flex-col justify-between h-full w-full min-w-0 min-h-0">
             {/* Display digital ------------------------------------- */}
             <section className="bg-slate-900 text-white rounded-xl p-3 shadow-lg shrink-0">
                 <div className="text-[10px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-1">
@@ -143,9 +143,10 @@ function NumKey({
         <button
             onClick={onClick}
             className={cn(
-                "w-full h-12 rounded-lg",
-                "text-lg font-bold tabular-nums",
-                "transition active:scale-95",
+                "w-full h-11 rounded-lg border border-slate-200",
+                "text-base font-bold tabular-nums text-slate-800",
+                "flex items-center justify-center shadow-sm",
+                "transition-transform active:scale-95",
                 tone === "muted"
                     ? "bg-slate-100 text-slate-500 hover:bg-slate-200"
                     : "bg-slate-50 text-slate-900 hover:bg-slate-100"

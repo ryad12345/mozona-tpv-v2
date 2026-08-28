@@ -371,7 +371,7 @@ export function PosTerminalPro() {
     }
 
     return (
-        <div className="h-screen w-full bg-[#F0F2F5] flex flex-col overflow-hidden">
+        <div className="h-screen w-screen overflow-hidden flex flex-col bg-slate-100 dark:bg-slate-900">
             <PosTopBar
                 restaurant={restaurant ?? {
                     id: "rest-demo", slug: "demo", business_name: "MOZONA TPV",
@@ -451,10 +451,9 @@ export function PosTerminalPro() {
             </div>
 
             {/* Contenido principal: grid en sm+, tabs en <sm ----------- */}
-            <main className="flex-1 min-h-0 overflow-hidden sm:p-3 flex flex-col">
+            <main className="flex-1 min-h-0 w-full grid grid-cols-12 overflow-hidden">
                 {/* sm+ desktop: los 3 paneles a la vez */}
-                <div className="hidden sm:flex h-full min-h-0 w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
-                    <div className="flex-1 min-w-[500px] h-full flex flex-col overflow-hidden p-3">
+                <section className="hidden sm:flex col-span-6 h-full min-h-0 min-w-0 overflow-y-auto p-3 flex-col border-r border-slate-200 dark:border-slate-800">
                         <CatalogPanel
                             categories={categories}
                             products={products}
@@ -465,9 +464,9 @@ export function PosTerminalPro() {
                             onSelectTable={handleSelectTable}
                             onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
                         />
-                    </div>
+                </section>
 
-                    <div className="w-72 xl:w-80 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
+                <section className="hidden sm:flex col-span-3 h-full min-h-0 min-w-0 overflow-hidden flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -481,9 +480,9 @@ export function PosTerminalPro() {
                             onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
                             onPrintPreBill={handlePrintPreBill}
                         />
-                    </div>
+                </section>
 
-                    <div className="w-60 xl:w-64 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
+                <section className="hidden sm:flex col-span-3 h-full min-h-0 min-w-0 overflow-hidden flex-col bg-slate-50 dark:bg-slate-900 p-2">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}
@@ -495,11 +494,10 @@ export function PosTerminalPro() {
                             onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
                             onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
                         />
-                    </div>
-                </div>
+                </section>
 
                 {/* Mobile: un solo panel visible, controlado por tabs --- */}
-                <div className="flex-1 min-h-0 sm:hidden">
+                <div className="col-span-12 flex-1 min-h-0 sm:hidden">
                     <MobileTabPanel value={mobileTab}>
                         {mobileTab === "catalog" && (
                             <CatalogPanel
