@@ -61,6 +61,72 @@ export function CatalogPanel({
         return list.filter(p => p.name.toLowerCase().includes(q));
     }, [products, selectedCategoryId, search]);
 
+    const productsGrid = (
+        <section className="flex-1 min-h-0 flex flex-col">
+            <div className="grid grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 w-full p-1 content-start flex-1 overflow-y-auto min-h-0">
+                {filteredProducts.length === 0 ? (
+                    <div className="col-span-full py-12 text-center text-[12px] text-slate-400">
+                        No hay productos que coincidan
+                    </div>
+                ) : (
+                    filteredProducts.map(p => (
+                        <ProductCard
+                            key={p.id}
+                            product={p}
+                            onAdd={() => onAddProduct(p)}
+                        />
+                    ))
+                )}
+            </div>
+        </section>
+    );
+
+    const categoryAndSearch = (
+        <>
+            {/* Categorías ------------------------------------------- */}
+            <div className="bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 shrink-0">
+                <div className="shrink-0 py-2 px-2 overflow-x-auto no-scrollbar flex flex-nowrap gap-1.5">
+                    <CategoryTab
+                        active={selectedCategoryId === null}
+                        onClick={() => onSelectCategory(null)}
+                    >
+                        Todo
+                    </CategoryTab>
+                    {categories.map(c => (
+                        <CategoryTab
+                            key={c.id}
+                            active={selectedCategoryId === c.id}
+                            onClick={() => onSelectCategory(c.id)}
+                        >
+                            {c.name}
+                        </CategoryTab>
+                    ))}
+                </div>
+            </div>
+
+            {/* Buscador ------------------------------------------------ */}
+            <div className="relative shrink-0">
+                <IconSearch
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Buscar plato…"
+                    className="
+                        w-full h-9 pl-9 pr-3
+                        rounded-lg border border-slate-200
+                        text-sm
+                        focus:border-blue-500 focus:ring-2 focus:ring-blue-100
+                        outline-none transition
+                    "
+                />
+            </div>
+        </>
+    );
+
     const controls = (
         <>
             {/* Selector de mesa ------------------------------------- */}
@@ -81,67 +147,8 @@ export function CatalogPanel({
                 </div>
             </section>
 
-            {/* Categorías ------------------------------------------- */}
-            <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm shrink-0">
-                <div className="shrink-0 py-2 px-2 overflow-x-auto no-scrollbar flex flex-nowrap gap-1.5">
-                    <CategoryTab
-                        active={selectedCategoryId === null}
-                        onClick={() => onSelectCategory(null)}
-                    >
-                        Todo
-                    </CategoryTab>
-                    {categories.map(c => (
-                        <CategoryTab
-                            key={c.id}
-                            active={selectedCategoryId === c.id}
-                            onClick={() => onSelectCategory(c.id)}
-                        >
-                            {c.name}
-                        </CategoryTab>
-                    ))}
-                </div>
-            </section>
-
-            <div className="relative shrink-0">
-                <IconSearch
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                    type="text"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Buscar plato…"
-                    className="
-                        w-full h-9 pl-9 pr-3
-                        rounded-xl border border-slate-200
-                        text-sm
-                        focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                        outline-none transition
-                    "
-                />
-            </div>
+            {categoryAndSearch}
         </>
-    );
-
-    const productsGrid = (
-        <section className="flex-1 min-h-0 flex flex-col">
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3 w-full p-2 content-start flex-1 overflow-y-auto min-h-0">
-                {filteredProducts.length === 0 ? (
-                    <div className="col-span-full py-12 text-center text-[12px] text-slate-400">
-                        No hay productos que coincidan
-                    </div>
-                ) : (
-                    filteredProducts.map(p => (
-                        <ProductCard
-                            key={p.id}
-                            product={p}
-                            onAdd={() => onAddProduct(p)}
-                        />
-                    ))
-                )}
-            </div>
-        </section>
     );
 
     if (variant === "controls") {
@@ -152,11 +159,12 @@ export function CatalogPanel({
         return productsGrid;
     }
 
+    // variant === "full": mostrar categorías/buscador + grid
     return (
         <div className="h-full min-h-0 flex flex-col overflow-hidden gap-2">
-            {controls}
+            {categoryAndSearch}
 
-            {/* Buscador + Grid de productos ------------------------ */}
+            {/* Grid de productos */}
             {productsGrid}
         </div>
     );

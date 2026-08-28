@@ -451,69 +451,92 @@ export function PosTerminalPro() {
                 )}
             </div>
 
-            {/* Contenido principal: fila superior, catálogo ancho y cobro lateral */}
-            <main className="hidden sm:flex flex-1 min-h-0 w-full overflow-hidden">
-                <div className="flex-1 min-w-0 h-full flex flex-col p-3 overflow-hidden border-r border-slate-200 dark:border-slate-800">
-                    <div className="h-56 shrink-0 grid grid-cols-12 gap-3 mb-3">
-                        <section className="col-span-7 h-full min-w-0 flex flex-col justify-between bg-white rounded-xl p-3 border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                            <CatalogPanel
-                            categories={categories}
-                            products={products}
-                            tables={tablesWithStatus}
-                            selectedCategoryId={pos.state.selectedCategoryId}
-                            onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
-                            selectedTableId={pos.state.selectedTableId}
-                            onSelectTable={handleSelectTable}
-                            onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
-                            variant="controls"
-                            search={catalogSearch}
-                            onSearchChange={setCatalogSearch}
-                            />
-                        </section>
-                        <section className="col-span-5 h-full min-w-0 bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden">
-                        <OrderPanel
-                            items={pos.state.orderItems}
-                            tableLabel={pos.state.selectedTableLabel}
-                            waiterName={auth.activeWaiter?.name ?? null}
-                            taxByRate={pos.taxByRate}
-                            total={pos.total}
-                            itemCount={pos.itemCount}
-                            onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
-                            onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
-                            onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
-                            onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
-                            onPrintPreBill={handlePrintPreBill}
-                        />
-                        </section>
-                    </div>
-                    <section className="flex-1 min-h-0 overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm">
-                        <CatalogPanel
-                            categories={categories}
-                            products={products}
-                            tables={tablesWithStatus}
-                            selectedCategoryId={pos.state.selectedCategoryId}
-                            onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
-                            selectedTableId={pos.state.selectedTableId}
-                            onSelectTable={handleSelectTable}
-                            onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
-                            variant="products"
-                            search={catalogSearch}
-                        />
-                    </section>
-                </div>
-                <aside className="w-64 xl:w-72 shrink-0 h-full bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
-                        <PaymentPanel
-                            total={pos.total}
-                            paymentAmount={pos.state.paymentAmount}
-                            paymentMethod={pos.state.paymentMethod}
-                            canCharge={pos.state.orderItems.length > 0 && pos.state.selectedTableId !== null}
-                            isProcessing={pos.state.isProcessing}
-                            onNumpadKey={handleNumpadKey}
-                            onSetMethod={handleSetMethod}
-                            onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
-                            onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
-                        />
-                </aside>
+            {/* Contenido principal: 2 filas (Mesas+Comanda arriba, Menú+Cobro abajo) */}
+            <main className="hidden sm:flex flex-1 min-h-0 w-full overflow-hidden flex-col gap-2.5 p-2.5">
+              
+              {/* FILA SUPERIOR: Mesas (70%) y Comanda (30%) */}
+              <div className="h-44 shrink-0 flex gap-2.5 w-full">
+                {/* 70% Mesas */}
+                <section className="w-[70%] h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col justify-between overflow-hidden">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mesas</span>
+                  <div className="grid grid-cols-8 gap-1.5 my-auto">
+                    {tablesWithStatus.map((t, idx) => (
+                      <button
+                        key={t.id}
+                        onClick={() => handleSelectTable(t.id === pos.state.selectedTableId ? null : t.id)}
+                        className={cn(
+                          "h-10 text-sm font-bold rounded-lg flex items-center justify-center transition-colors",
+                          pos.state.selectedTableId === t.id
+                            ? "bg-blue-500 text-white ring-2 ring-offset-1 ring-blue-600"
+                            : t.status === "FREE"
+                            ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                            : t.status === "OCCUPIED"
+                            ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                            : t.status === "BILL_REQUESTED"
+                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                            : t.status === "RESERVED"
+                            ? "bg-violet-100 text-violet-800 hover:bg-violet-200"
+                            : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                        )}
+                      >
+                        <span className="tabular-nums">{idx + 1}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* 30% Comanda */}
+                <section className="w-[30%] h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col">
+                  <OrderPanel
+                    items={pos.state.orderItems}
+                    tableLabel={pos.state.selectedTableLabel}
+                    waiterName={auth.activeWaiter?.name ?? null}
+                    taxByRate={pos.taxByRate}
+                    total={pos.total}
+                    itemCount={pos.itemCount}
+                    onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
+                    onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
+                    onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
+                    onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
+                    onPrintPreBill={handlePrintPreBill}
+                  />
+                </section>
+              </div>
+
+              {/* FILA INFERIOR: Catálogo (izquierda) + Cobro (derecha) */}
+              <div className="flex-1 min-h-0 flex gap-2.5 w-full">
+                {/* Catálogo / Menú con categorías pegadas arriba */}
+                <section className="flex-1 min-w-0 h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col overflow-hidden">
+                  <CatalogPanel
+                    categories={categories}
+                    products={products}
+                    tables={tablesWithStatus}
+                    selectedCategoryId={pos.state.selectedCategoryId}
+                    onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
+                    selectedTableId={pos.state.selectedTableId}
+                    onSelectTable={handleSelectTable}
+                    onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
+                    variant="full"
+                    search={catalogSearch}
+                    onSearchChange={setCatalogSearch}
+                  />
+                </section>
+
+                {/* Panel de Cobro y Teclado */}
+                <section className="w-72 xl:w-80 shrink-0 h-full bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5 shadow-sm flex flex-col justify-between overflow-hidden">
+                  <PaymentPanel
+                    total={pos.total}
+                    paymentAmount={pos.state.paymentAmount}
+                    paymentMethod={pos.state.paymentMethod}
+                    canCharge={pos.state.orderItems.length > 0 && pos.state.selectedTableId !== null}
+                    isProcessing={pos.state.isProcessing}
+                    onNumpadKey={handleNumpadKey}
+                    onSetMethod={handleSetMethod}
+                    onCharge={() => performCharge(pos.state.paymentMethod ?? "CASH", false)}
+                    onChargeVeriFactu={() => performCharge(pos.state.paymentMethod ?? "CARD", true)}
+                  />
+                </section>
+              </div>
             </main>
 
             {/* Vista móvil: un solo panel visible, controlado por tabs */}
