@@ -1,0 +1,28 @@
+
+/* Corrección de nitidez térmica para tickets */
+@media print {
+  body, html, #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-ticket {
+    display: block !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-ticket * {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+}

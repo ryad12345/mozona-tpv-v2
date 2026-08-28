@@ -4,41 +4,22 @@ export interface PaymentPanelProps {
   total?: number;
   paymentAmount?: string | number;
   onPay?: (method: 'cash' | 'card', received?: number, change?: number) => void;
+  onClearTable?: () => void;
   onEmitInvoice?: () => void;
-  lastPaymentResult?: { received: number; change: number } | null;
   [key: string]: any;
 }
 
 export function PaymentPanel(props: PaymentPanelProps) {
-  const { total = 0, onPay, onEmitInvoice, lastPaymentResult } = props;
-  const [receivedAmount, setReceivedAmount] = useState<string>(
-    props.paymentAmount ? String(props.paymentAmount) : '0'
-  );
+  const { total = 0, onPay, onClearTable, onEmitInvoice } = props;
+  const [receivedAmount, setReceivedAmount] = useState<string>('0');
   const [changeInfo, setChangeInfo] = useState<{ received: number; change: number } | null>(null);
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (props.paymentAmount !== undefined) {
+    if (props.paymentAmount !== undefined && !changeInfo) {
       setReceivedAmount(String(props.paymentAmount));
     }
-  }, [props.paymentAmount]);
-
-  useEffect(() => {
-    if (lastPaymentResult) {
-      showChange(lastPaymentResult.received, lastPaymentResult.change);
-    }
-  }, [lastPaymentResult]);
-
-  const showChange = (received: number, change: number) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setChangeInfo({ received, change });
-
-    // Mantener quieto en pantalla durante 6 segundos exactos
-    timerRef.current = setTimeout(() => {
-      setChangeInfo(null);
-      setReceivedAmount('0');
-    }, 6000);
-  };
+  }, [props.paymentAmount, changeInfo]);
 
   const handleNumClick = (val: string) => {
     if (changeInfo) {
@@ -48,58 +29,52 @@ export function PaymentPanel(props: PaymentPanelProps) {
 
     if (val === 'C') {
       setReceivedAmount('0');
-      if (props.onPaymentAmountChange) props.onPaymentAmountChange('0');
     } else if (val === 'DEL') {
-      setReceivedAmount(prev => {
-        const next = prev.length > 1 ? prev.slice(0, -1) : '0';
-        if (props.onPaymentAmountChange) props.onPaymentAmountChange(next);
-        return next;
-      });
+      setReceivedAmount(prev => (prev.length > 1 ? prev.slice(0, -1) : '0'));
     } else {
-      setReceivedAmount(prev => {
-        const next = prev === '0' ? val : prev + val;
-        if (props.onPaymentAmountChange) props.onPaymentAmountChange(next);
-        return next;
-      });
+      setReceivedAmount(prev => (prev === '0' ? val : prev + val));
     }
   };
 
-  const handleCashPay = () => {
-    const recNum = parseFloat(receivedAmount) || total;
+  const handleCobrar = () => {
     const finalTotal = Number(total) || 0;
+    const recNum = parseFloat(receivedAmount) > 0 ? parseFloat(receivedAmount) : finalTotal;
     const calculatedChange = Math.max(0, recNum - finalTotal);
 
-    showChange(recNum, calculatedChange);
+    setChangeInfo({ received: recNum, change: calculatedChange });
 
     if (onPay) {
       onPay('cash', recNum, calculatedChange);
     }
-  };
 
-  const handleCardPay = () => {
+    // Mantener quieto en pantalla durante 6 segundos y vaciar mesa
     if (timerRef.current) clearTimeout(timerRef.current);
-    setChangeInfo(null);
-    setReceivedAmount('0');
-    if (onPay) {
-      onPay('card', total, 0);
-    }
+    timerRef.current = setTimeout(() => {
+      setChangeInfo(null);
+      setReceivedAmount('0');
+      if (typeof onClearTable === 'function') {
+        onClearTable();
+      } else if (typeof props.onEmptyCart === 'function') {
+        props.onEmptyCart();
+      }
+    }, 6000);
   };
 
   return (
     <div className="h-full flex flex-col justify-between p-2 min-h-0 select-none">
-      {/* Display Principal / Banner de Cambio (Fijo 6s) */}
-      <div className="bg-slate-900 text-white p-3 rounded-2xl flex flex-col justify-center shrink-0 shadow-inner transition-all">
+      {/* Display Principal */}
+      <div className="bg-slate-900 text-white p-3 rounded-2xl flex flex-col justify-center shrink-0 shadow-inner">
         {changeInfo ? (
-          <div className="flex flex-col gap-1 animate-fadeIn">
-            <div className="flex justify-between items-center text-xs text-slate-400 font-bold uppercase tracking-wider">
-              <span>Importe Recibido</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between items-center text-xs text-slate-400 font-bold uppercase">
+              <span>Recibido</span>
               <span className="text-white text-sm">{changeInfo.received.toFixed(2)} €</span>
             </div>
             <div className="flex justify-between items-baseline border-t border-slate-700/80 pt-1 mt-0.5">
               <span className="text-xs font-black text-emerald-400 tracking-wider">A DEVOLVER</span>
               <span className="text-2xl font-black text-emerald-400">{changeInfo.change.toFixed(2)} €</span>
             </div>
-            <span className="text-[10px] text-slate-500 text-right mt-0.5">Cierre automático en 6s...</span>
+            <span className="text-[10px] text-slate-400 text-right mt-0.5">Vaciando mesa en 6s...</span>
           </div>
         ) : (
           <div className="flex flex-col items-end">
@@ -110,42 +85,37 @@ export function PaymentPanel(props: PaymentPanelProps) {
       </div>
 
       {/* Teclado Numérico */}
-      <div className="grid grid-cols-3 gap-1 my-1.5 flex-1">
+      <div className="grid grid-cols-3 gap-1 my-2 flex-1">
         {['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', 'DEL'].map(btn => (
           <button
             key={btn}
             type="button"
             onClick={() => handleNumClick(btn)}
-            className="h-full min-h-[34px] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white font-black text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
+            className="h-full min-h-[36px] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white font-black text-base shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
           >
             {btn === 'DEL' ? '⌫' : btn}
           </button>
         ))}
       </div>
 
-      {/* Botones de Cobro */}
+      {/* Botón único COBRAR */}
       <div className="flex flex-col gap-1.5 shrink-0">
         <button
           type="button"
-          onClick={handleCashPay}
-          className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition active:scale-95 flex items-center justify-center gap-1"
+          onClick={handleCobrar}
+          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2"
         >
-          💵 EFECTIVO
+          💳 💵 COBRAR
         </button>
-        <button
-          type="button"
-          onClick={handleCardPay}
-          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition active:scale-95 flex items-center justify-center gap-1"
-        >
-          💳 TARJETA / DATÁFONO
-        </button>
-        <button
-          type="button"
-          onClick={() => onEmitInvoice?.()}
-          className="w-full h-7 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-200 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center justify-center"
-        >
-          EMITIR FACTURA (VERIFACTU + QR)
-        </button>
+        {onEmitInvoice && (
+          <button
+            type="button"
+            onClick={onEmitInvoice}
+            className="w-full h-6 text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition text-center"
+          >
+            Emitir Factura VeriFactu
+          </button>
+        )}
       </div>
     </div>
   );

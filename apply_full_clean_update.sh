@@ -1,4 +1,3 @@
-cat << 'EOF' > apply_full_clean_update.sh
 #!/bin/bash
 set -e
 
@@ -138,7 +137,3 @@ git push origin main
 echo "========================================================"
 echo "✅ ¡DESPLIEGUE FINAL COMPLETADO!"
 echo "========================================================"
-EOF
-
-chmod +x apply_full_clean_update.sh
-./apply_full_clean_update.sh
