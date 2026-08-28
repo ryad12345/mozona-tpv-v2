@@ -76,7 +76,14 @@ function reducer(state: PosState, action: PosAction): PosState {
             return { ...state, selectedCategoryId: action.categoryId };
 
         case "SELECT_TABLE":
-            return { ...state, selectedTableId: action.tableId, selectedTableLabel: action.tableLabel };
+            return {
+                ...state,
+                selectedTableId: action.tableId,
+                selectedTableLabel: action.tableLabel,
+                ...(state.selectedTableId !== action.tableId
+                    ? { orderItems: [], highlightItemId: null }
+                    : {}),
+            };
 
         case "ADD_PRODUCT": {
             const existing = state.orderItems.find(i => i.product_id === action.product.id);

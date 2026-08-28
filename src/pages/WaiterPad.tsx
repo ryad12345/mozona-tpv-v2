@@ -54,7 +54,7 @@ export function WaiterPad() {
     const [tableId, setTableId]       = useState<string | null>(null);
     const [categoryId, setCategoryId] = useState<string | null>(null);
     const [search, setSearch]         = useState("");
-    const [cart, setCart]             = useState<CartLine[]>([]);
+    const [carts, setCarts]           = useState<Record<string, CartLine[]>>({});
     const [editingNotes, setEditingNotes] = useState<string | null>(null);
     const [lastSentAt, setLastSentAt] = useState<number | null>(null);
     const [tableStatuses, setTableStatuses] = useState<Record<string, TableStatus>>({});
@@ -95,14 +95,27 @@ export function WaiterPad() {
         () => tables.find(t => t.id === tableId) ?? null,
         [tables, tableId]
     );
+    const cart = tableId ? carts[tableId] ?? [] : [];
     const tableStatus = (t: RestaurantTable): TableStatus =>
         tableStatuses[t.id] ?? t.status;
+
+    const updateCart = useCallback((update: (lines: CartLine[]) => CartLine[]) => {
+        if (!tableId) return;
+        setCarts(prev => ({
+            ...prev,
+            [tableId]: update(prev[tableId] ?? []),
+        }));
+    }, [tableId]);
+
+    useEffect(() => {
+        setEditingNotes(null);
+    }, [tableId]);
 
     // -----------------------------------------------------------------
     // Carrito
     // -----------------------------------------------------------------
     const addToCart = useCallback((p: Product) => {
-        setCart(prev => {
+        updateCart(prev => {
             const ex = prev.find(i => i.productId === p.id);
             if (ex) {
                 return prev.map(i => i.productId === p.id
@@ -119,30 +132,30 @@ export function WaiterPad() {
                 notes:     "",
             }];
         });
-    }, []);
+    }, [updateCart]);
 
     const inc = useCallback((productId: string) => {
-        setCart(prev => prev.map(i => i.productId === productId
+        updateCart(prev => prev.map(i => i.productId === productId
             ? { ...i, quantity: i.quantity + 1 } : i
         ));
-    }, []);
+    }, [updateCart]);
 
     const dec = useCallback((productId: string) => {
-        setCart(prev => prev
+        updateCart(prev => prev
             .map(i => i.productId === productId ? { ...i, quantity: i.quantity - 1 } : i)
             .filter(i => i.quantity > 0)
         );
-    }, []);
+    }, [updateCart]);
 
     const remove = useCallback((productId: string) => {
-        setCart(prev => prev.filter(i => i.productId !== productId));
-    }, []);
+        updateCart(prev => prev.filter(i => i.productId !== productId));
+    }, [updateCart]);
 
     const setNotes = useCallback((productId: string, notes: string) => {
-        setCart(prev => prev.map(i => i.productId === productId
+        updateCart(prev => prev.map(i => i.productId === productId
             ? { ...i, notes } : i
         ));
-    }, []);
+    }, [updateCart]);
 
     // -----------------------------------------------------------------
     // Cálculos de totales
@@ -187,7 +200,7 @@ export function WaiterPad() {
         });
         if (ok) {
             setLastSentAt(Date.now());
-            setCart([]);
+            setCarts(prev => ({ ...prev, [selectedTable.id]: [] }));
             setEditingNotes(null);
         }
     }, [cart, selectedTable, totals, ws, auth.activeWaiter]);
@@ -401,7 +414,9 @@ export function WaiterPad() {
                         title={`Comanda · ${itemCount} ${itemCount === 1 ? "plato" : "platos"}`}
                         rightSlot={(
                             <button
-                                onClick={() => setCart([])}
+                                onClick={() => {
+                                    if (tableId) setCarts(prev => ({ ...prev, [tableId]: [] }));
+                                }}
                                 className="
                                     text-[10.5px] font-bold text-rose-600
                                     hover:bg-rose-50 rounded-full px-2 py-0.5
