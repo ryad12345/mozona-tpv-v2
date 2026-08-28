@@ -50,14 +50,14 @@ export function PaymentPanel({
     const showChange = paymentMethod === "CASH" && received > 0;
 
     return (
-        <div className="flex flex-col justify-between h-full w-full min-w-0 min-h-0">
+        <div className="h-full flex flex-col justify-between p-2 min-h-0">
             {/* Display digital compacto ------------------------------------- */}
-            <section className="bg-slate-900 text-white rounded-xl p-2 mb-1 shadow-lg shrink-0">
+            <section className="bg-slate-900 text-white rounded-xl p-1.5 mb-1 shadow-lg shrink-0">
                 <div className="text-[9px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-0.5">
                     Importe recibido
                 </div>
                 <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black tabular-nums leading-none tracking-tight">
+                    <span className="text-xl font-black tabular-nums leading-none tracking-tight">
                         {paymentAmount || "0"}
                     </span>
                     <span className="text-sm font-bold text-slate-400 tabular-nums">€</span>
@@ -146,7 +146,7 @@ function NumKey({
         <button
             onClick={onClick}
             className={cn(
-                "w-full h-9 rounded-lg border border-slate-200",
+                "w-full h-8 rounded-lg border border-slate-200",
                 "text-sm font-bold tabular-nums text-slate-800",
                 "flex items-center justify-center shadow-sm",
                 "transition-transform active:scale-95",
@@ -189,8 +189,8 @@ function PaymentButton({
                 "disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
                 TONE_CLASSES[tone],
                 variant === "invoice"
-                    ? "h-7 px-1.5 text-[10px] font-semibold rounded-lg"
-                    : "h-8 sm:h-9 px-2 text-xs font-bold rounded-lg",
+                    ? "h-7 px-1 text-[10px] font-semibold rounded-lg"
+                    : "h-8 px-1.5 text-xs font-bold rounded-lg",
                 variant === "standard truncate" && "truncate"
             )}
         >
