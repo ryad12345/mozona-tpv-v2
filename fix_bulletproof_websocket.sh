@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_bulletproof_websocket.sh
 #!/bin/bash
 set -e
 
@@ -185,7 +184,3 @@ git push origin main
 echo "========================================================"
 echo "✅ ¡CORREGIDO Y DESPLEGADO CON ÉXITO!"
 echo "========================================================"
-EOF
-
-chmod +x fix_bulletproof_websocket.sh
-./fix_bulletproof_websocket.sh
