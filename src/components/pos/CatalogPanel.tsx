@@ -2,9 +2,9 @@
 // MOZONA TPV — CatalogPanel: columna izquierda (categorías + productos + mesas)
 // =====================================================================
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useRef, type ReactNode } from "react";
 import type { Category, Product, RestaurantTable, TableStatus } from "../../lib/types";
-import { IconPlus, IconSearch } from "../icons";
+import { IconPlus } from "../icons";
 import { fmtEUR } from "../../lib/format";
 import { cn } from "../../lib/cn";
 
@@ -51,6 +51,14 @@ export function CatalogPanel({
     const [localSearch, setLocalSearch] = useState("");
     const search = controlledSearch ?? localSearch;
     const setSearch = onSearchChange ?? setLocalSearch;
+    const categoriesRef = useRef<HTMLDivElement>(null);
+
+    const scrollCategories = (direction: 'left' | 'right') => {
+        if (categoriesRef.current) {
+            const amount = direction === 'left' ? -200 : 200;
+            categoriesRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+        }
+    };
 
     const filteredProducts = useMemo(() => {
         const list = selectedCategoryId
@@ -83,9 +91,17 @@ export function CatalogPanel({
 
     const categoryAndSearch = (
         <>
-            {/* Categorías ------------------------------------------- */}
-            <div className="bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 shrink-0">
-                <div className="shrink-0 py-2 px-2 overflow-x-auto no-scrollbar flex flex-nowrap gap-1.5">
+            {/* Categorías con scroll táctil ------------------------------------------- */}
+            <div className="shrink-0 flex items-center gap-1.5 mb-2">
+                <button 
+                    type="button" 
+                    onClick={() => scrollCategories('left')}
+                    className="h-8 w-8 shrink-0 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center text-sm font-bold active:scale-95 transition"
+                >
+                    ◀
+                </button>
+                
+                <div ref={categoriesRef} className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 px-2">
                     <CategoryTab
                         active={selectedCategoryId === null}
                         onClick={() => onSelectCategory(null)}
@@ -102,26 +118,21 @@ export function CatalogPanel({
                         </CategoryTab>
                     ))}
                 </div>
-            </div>
 
-            {/* Buscador ------------------------------------------------ */}
-            <div className="relative shrink-0">
-                <IconSearch
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
+                <button 
+                    type="button" 
+                    onClick={() => scrollCategories('right')}
+                    className="h-8 w-8 shrink-0 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center text-sm font-bold active:scale-95 transition"
+                >
+                    ▶
+                </button>
+
+                <input 
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar plato…"
-                    className="
-                        w-full h-9 pl-9 pr-3
-                        rounded-lg border border-slate-200
-                        text-sm
-                        focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                        outline-none transition
-                    "
+                    className="w-40 h-8 text-xs px-2.5 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
                 />
             </div>
         </>

@@ -451,13 +451,13 @@ export function PosTerminalPro() {
                 )}
             </div>
 
-            {/* Contenido principal: 2 filas (Mesas+Comanda arriba, Menú+Cobro abajo) */}
-            <main className="hidden sm:flex flex-1 min-h-0 w-full overflow-hidden flex-col gap-2.5 p-2.5">
+            {/* Contenido principal: layout 70/30 (izquierda/derecha) */}
+            <main className="hidden sm:flex flex-1 min-h-0 w-full p-2.5 gap-2.5 overflow-hidden">
               
-              {/* FILA SUPERIOR: Mesas (70%) y Comanda (30%) */}
-              <div className="h-44 shrink-0 flex gap-2.5 w-full">
-                {/* 70% Mesas */}
-                <section className="w-[70%] h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col justify-between overflow-hidden">
+              {/* COLUMNA IZQUIERDA (70% de ancho total) */}
+              <div className="w-[70%] h-full flex flex-col gap-2.5 overflow-hidden">
+                {/* Superior Izquierda: Mesas (altura fija compacta) */}
+                <section className="h-44 shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col justify-between">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mesas</span>
                   <div className="grid grid-cols-8 gap-1.5 my-auto">
                     {tablesWithStatus.map((t, idx) => (
@@ -485,28 +485,8 @@ export function PosTerminalPro() {
                   </div>
                 </section>
 
-                {/* 30% Comanda */}
-                <section className="w-[30%] h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col">
-                  <OrderPanel
-                    items={pos.state.orderItems}
-                    tableLabel={pos.state.selectedTableLabel}
-                    waiterName={auth.activeWaiter?.name ?? null}
-                    taxByRate={pos.taxByRate}
-                    total={pos.total}
-                    itemCount={pos.itemCount}
-                    onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
-                    onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
-                    onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
-                    onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
-                    onPrintPreBill={handlePrintPreBill}
-                  />
-                </section>
-              </div>
-
-              {/* FILA INFERIOR: Catálogo (izquierda) + Cobro (derecha) */}
-              <div className="flex-1 min-h-0 flex gap-2.5 w-full">
-                {/* Catálogo / Menú con categorías pegadas arriba */}
-                <section className="flex-1 min-w-0 h-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col overflow-hidden">
+                {/* Inferior Izquierda: Menú y Categorías (resto del alto) */}
+                <section className="flex-1 min-h-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col overflow-hidden">
                   <CatalogPanel
                     categories={categories}
                     products={products}
@@ -521,9 +501,29 @@ export function PosTerminalPro() {
                     onSearchChange={setCatalogSearch}
                   />
                 </section>
+              </div>
 
-                {/* Panel de Cobro y Teclado */}
-                <section className="w-72 xl:w-80 shrink-0 h-full bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5 shadow-sm flex flex-col justify-between overflow-hidden">
+              {/* COLUMNA DERECHA (30% de ancho total, dividida 50% / 50% de alto) */}
+              <div className="w-[30%] h-full flex flex-col gap-2.5 overflow-hidden">
+                {/* Superior Derecha: Comanda (50% de alto) */}
+                <section className="h-1/2 min-h-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col">
+                  <OrderPanel
+                    items={pos.state.orderItems}
+                    tableLabel={pos.state.selectedTableLabel}
+                    waiterName={auth.activeWaiter?.name ?? null}
+                    taxByRate={pos.taxByRate}
+                    total={pos.total}
+                    itemCount={pos.itemCount}
+                    onIncrement={id => pos.dispatch({ type: "INCREMENT_ITEM", itemId: id })}
+                    onDecrement={id => pos.dispatch({ type: "DECREMENT_ITEM", itemId: id })}
+                    onRemove={id => pos.dispatch({ type: "REMOVE_ITEM", itemId: id })}
+                    onClear={() => pos.dispatch({ type: "CLEAR_ORDER" })}
+                    onPrintPreBill={handlePrintPreBill}
+                  />
+                </section>
+
+                {/* Inferior Derecha: Cobro y Teclado (50% de alto) */}
+                <section className="h-1/2 min-h-0 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2.5 shadow-sm flex flex-col justify-between overflow-hidden">
                   <PaymentPanel
                     total={pos.total}
                     paymentAmount={pos.state.paymentAmount}

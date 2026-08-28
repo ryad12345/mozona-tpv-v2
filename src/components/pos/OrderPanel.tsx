@@ -36,8 +36,8 @@ export function OrderPanel({
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200/80 shadow-sm min-h-0">
-            {/* Cabecera */}
-            <header className="px-3 py-2 border-b border-slate-100 flex items-center gap-2 shrink-0">
+            {/* Cabecera compacta */}
+            <header className="px-2.5 py-2.5 border-b border-slate-100 flex items-center gap-2 shrink-0">
                 <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-700 flex items-center justify-center">
                     <IconReceipt size={15} strokeWidth={1.8} />
                 </div>
@@ -67,7 +67,7 @@ export function OrderPanel({
                 )}
             </header>
 
-            {/* Lista de líneas */}
+            {/* Lista de líneas con scroll fluido */}
             <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0">
                 {items.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center">
@@ -96,27 +96,27 @@ export function OrderPanel({
                 )}
             </div>
 
-            {/* Footer con totales + acción de pre-cuenta */}
-            <footer className="border-t border-slate-100 px-3 py-2 shrink-0 space-y-1.5">
-                <div className="space-y-1">
+            {/* Footer compacto con totales + acción de pre-cuenta */}
+            <footer className="border-t border-slate-100 px-2.5 py-2.5 shrink-0 space-y-1">
+                <div className="space-y-0.5">
                     {taxByRate.map(t => (
-                        <div key={t.rate} className="flex justify-between text-[10px] text-slate-600">
+                        <div key={t.rate} className="flex justify-between text-[9px] text-slate-600">
                             <span>Subtotal {t.label} ({t.rate}%)</span>
                             <span className="tabular-nums">{fmtEUR(t.base)}</span>
                         </div>
                     ))}
                     {taxByRate.map(t => (
-                        <div key={`tax-${t.rate}`} className="flex justify-between text-[10px] text-slate-600">
+                        <div key={`tax-${t.rate}`} className="flex justify-between text-[9px] text-slate-600">
                             <span>IVA {t.rate}%</span>
                             <span className="tabular-nums">{fmtEUR(t.tax)}</span>
                         </div>
                     ))}
                 </div>
-                <div className="flex items-end justify-between pt-1 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                <div className="flex items-end justify-between pt-0.5 border-t border-slate-100">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
                         Total
                     </span>
-                    <span className="text-[22px] font-black text-slate-900 tabular-nums leading-none">
+                    <span className="text-[18px] font-black text-slate-900 tabular-nums leading-none">
                         {fmtEUR(total)}
                     </span>
                 </div>
@@ -124,14 +124,14 @@ export function OrderPanel({
                     onClick={onPrintPreBill}
                     disabled={items.length === 0}
                     className="
-                        w-full h-8 rounded-lg
+                        w-full h-7 rounded-lg
                         bg-amber-50 text-amber-800 border border-amber-200/80
-                        text-[10.5px] font-bold
+                        text-[9px] font-bold
                         disabled:opacity-40 disabled:cursor-not-allowed
                         hover:bg-amber-100 active:scale-95 transition
                     "
                 >
-                    🧾 Imprimir Pre-cuenta
+                    🧾 Pre-cuenta
                 </button>
             </footer>
         </div>
