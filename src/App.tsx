@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { PosTerminalPro } from './pages/PosTerminalPro';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuthPage } from './pages/AuthPage';
+import { WebSocketProvider } from './context/WebSocketContext';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -47,15 +48,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 export function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Navigate to="/app" replace />} />
-          <Route path="/app" element={<PosTerminalPro />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/auth" element={<AuthPage />} />
-          <Route path="*" element={<Navigate to="/app" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <WebSocketProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/app" replace />} />
+            <Route path="/app" element={<PosTerminalPro />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="*" element={<Navigate to="/app" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </WebSocketProvider>
     </ErrorBoundary>
   );
 }
