@@ -371,7 +371,7 @@ export function PosTerminalPro() {
     }
 
     return (
-        <div className="min-h-dvh bg-[#F0F2F5] flex flex-col overflow-hidden">
+        <div className="h-screen w-full bg-[#F0F2F5] flex flex-col overflow-hidden">
             <PosTopBar
                 restaurant={restaurant ?? {
                     id: "rest-demo", slug: "demo", business_name: "MOZONA TPV",
@@ -451,12 +451,10 @@ export function PosTerminalPro() {
             </div>
 
             {/* Contenido principal: grid en sm+, tabs en <sm ----------- */}
-            <main className="flex-1 min-h-0 sm:p-3 sm:grid sm:grid-cols-1 sm:gap-3
-                              lg:grid-cols-12 lg:gap-3 lg:min-h-0
-                              min-h-0 flex flex-col">
+            <main className="flex-1 min-h-0 overflow-hidden sm:p-3 flex flex-col">
                 {/* sm+ desktop: los 3 paneles a la vez */}
-                <div className="hidden sm:contents">
-                    <div className="min-w-0 min-h-0 lg:col-span-7">
+                <div className="hidden sm:flex h-full min-h-0 w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden p-3">
                         <CatalogPanel
                             categories={categories}
                             products={products}
@@ -469,7 +467,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="min-w-0 min-h-0 lg:col-span-3">
+                    <div className="w-72 lg:w-80 xl:w-96 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -485,7 +483,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="min-w-[240px] min-h-0 lg:col-span-2">
+                    <div className="w-64 lg:w-72 xl:w-80 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}

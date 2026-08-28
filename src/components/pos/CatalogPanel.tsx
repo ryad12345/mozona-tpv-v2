@@ -54,13 +54,13 @@ export function CatalogPanel({
     }, [products, selectedCategoryId, search]);
 
     return (
-        <div className="h-full flex flex-col gap-3 min-h-0">
+        <div className="h-full min-h-0 flex flex-col overflow-hidden gap-2">
             {/* Selector de mesa ------------------------------------- */}
-            <section className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-3 shrink-0">
+            <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2 shrink-0">
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-slate-500 uppercase mb-2">
                     Sala
                 </h2>
-                <div className="grid grid-cols-6 gap-1.5">
+                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 shrink-0">
                     {tables.map(t => (
                         <TableChip
                             key={t.id}
@@ -73,8 +73,8 @@ export function CatalogPanel({
             </section>
 
             {/* Categorías ------------------------------------------- */}
-            <section className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-2 shrink-0">
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm shrink-0">
+                <div className="shrink-0 py-2 px-2 overflow-x-auto flex gap-1.5 no-scrollbar">
                     <CategoryTab
                         active={selectedCategoryId === null}
                         onClick={() => onSelectCategory(null)}
@@ -94,7 +94,7 @@ export function CatalogPanel({
             </section>
 
             {/* Buscador + Grid de productos ------------------------ */}
-            <section className="flex-1 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-3 min-h-0 flex flex-col">
+            <section className="flex-1 min-h-0 flex flex-col">
                 <div className="relative mb-2 shrink-0">
                     <IconSearch
                         size={16}
@@ -108,7 +108,7 @@ export function CatalogPanel({
                         className="
                             w-full h-9 pl-9 pr-3
                             rounded-xl border border-slate-200
-                            text-[13px]
+                            text-sm
                             focus:border-blue-500 focus:ring-2 focus:ring-blue-100
                             outline-none transition
                         "
@@ -116,7 +116,7 @@ export function CatalogPanel({
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-1 -mr-1">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 content-start">
                         {filteredProducts.length === 0 ? (
                             <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
                                 No hay productos que coincidan
@@ -169,8 +169,8 @@ function TableChip({
         <button
             onClick={onClick}
             className={cn(
-                "h-11 rounded-xl",
-                "text-[13px] font-black tabular-nums",
+                "h-9 px-2 rounded-lg",
+                "text-xs font-semibold tabular-nums",
                 "flex flex-col items-center justify-center",
                 "transition active:scale-95",
                 "border-2",
@@ -212,7 +212,7 @@ function ProductCard({
             )}
         >
             {/* Imagen */}
-            <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-50">
+            <div className="relative h-24 sm:h-28 w-full overflow-hidden bg-slate-50">
                 {hasImg ? (
                     <img
                         src={product.image_url!}
@@ -264,7 +264,7 @@ function ProductCard({
             </div>
             {/* Texto */}
             <div className="p-2">
-                <div className="text-[12.5px] font-semibold text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
+                <div className="text-sm font-medium text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
                     {product.name}
                 </div>
                 {product.description && (

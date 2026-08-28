@@ -50,9 +50,9 @@ export function PaymentPanel({
     const showChange = paymentMethod === "CASH" && received > 0;
 
     return (
-        <div className="h-full min-w-0 flex flex-col gap-3 min-h-0">
+        <div className="h-full min-w-0 flex flex-col justify-between min-h-0">
             {/* Display digital ------------------------------------- */}
-            <section className="bg-slate-900 text-white rounded-2xl p-4 shadow-lg shrink-0">
+            <section className="bg-slate-900 text-white rounded-xl p-3 shadow-lg shrink-0">
                 <div className="text-[10px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-1">
                     Importe recibido
                 </div>
@@ -75,7 +75,7 @@ export function PaymentPanel({
             </section>
 
             {/* Teclado numérico ----------------------------------- */}
-            <section className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-2 shrink-0">
+            <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-2 shrink-0 my-2">
                 <div className="grid grid-cols-3 gap-1.5">
                     <NumKey onClick={() => onNumpadKey("7")}>7</NumKey>
                     <NumKey onClick={() => onNumpadKey("8")}>8</NumKey>
@@ -117,7 +117,6 @@ export function PaymentPanel({
                     disabled={!canCharge || isProcessing}
                     tone="violet"
                     icon={<IconQr size={22} strokeWidth={1.8} />}
-                    big
                 >
                     <div className="leading-tight text-left">
                         <div className="text-[13px] font-black tracking-wide">
@@ -144,8 +143,8 @@ function NumKey({
         <button
             onClick={onClick}
             className={cn(
-                "w-full h-12 aspect-square rounded-xl",
-                "text-[20px] font-black tabular-nums",
+                "w-full h-12 rounded-lg",
+                "text-lg font-bold tabular-nums",
                 "transition active:scale-95",
                 tone === "muted"
                     ? "bg-slate-100 text-slate-500 hover:bg-slate-200"
@@ -166,13 +165,12 @@ const TONE_CLASSES: Record<Tone, string> = {
 };
 
 function PaymentButton({
-    onClick, disabled, tone, icon, big = false, children,
+    onClick, disabled, tone, icon, children,
 }: {
     onClick:    () => void;
     disabled:   boolean;
     tone:       Tone;
     icon:       ReactNode;
-    big?:       boolean;
     children:   ReactNode;
 }) {
     return (
@@ -185,7 +183,7 @@ function PaymentButton({
                 "shadow-lg transition active:scale-[0.98]",
                 "disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
                 TONE_CLASSES[tone],
-                big ? "h-20 px-3 text-[15px]" : "h-14 px-2 text-[13.5px]"
+                "h-12 px-2 text-[13px]"
             )}
         >
             {icon}

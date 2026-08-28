@@ -50,10 +50,10 @@ export function PosTopBar({
         <header
             className="
                 sticky top-0 z-30
-                h-14 sm:h-16
+                h-14 shrink-0
                 flex items-center justify-between gap-2 sm:gap-3
                 overflow-hidden
-                px-3 sm:px-5
+                px-4
                 bg-white/85 backdrop-blur-xl
                 border-b border-slate-200/80
                 shadow-[0_1px_0_rgba(15,23,42,0.04)]
@@ -100,7 +100,7 @@ export function PosTopBar({
             </div>
 
             {/* Indicadores de estado (sm+) ============================== */}
-            <div className="hidden sm:flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
+            <div className="hidden sm:flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
                 <StatusPill
                     icon={<IconWifi size={14} strokeWidth={2} />}
                     label={localIp ? `LAN ${localIp}` : (lanEndpoint ? `LAN ${lanEndpoint}` : "LAN —")}
@@ -109,7 +109,7 @@ export function PosTopBar({
                 <button
                     onClick={onShowQR}
                     title="QR para camareros"
-                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full
+                    className="inline-flex items-center gap-1.5 h-7 px-2.5 py-1 rounded-full
                                bg-blue-50 text-blue-700 border border-blue-200/80
                                text-xs font-semibold whitespace-nowrap shrink-0
                                hover:bg-blue-100 active:scale-95 transition">
@@ -233,7 +233,7 @@ function StatusPill({
         <div
             className={cn(
                 "inline-flex items-center gap-1.5",
-                "h-7 px-2 rounded-full",
+                "px-2.5 py-1 rounded-full",
                 "text-xs font-semibold whitespace-nowrap shrink-0",
                 "border",
                 toneStyles[tone]
