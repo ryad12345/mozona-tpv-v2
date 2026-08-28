@@ -95,12 +95,13 @@ export function PaymentPanel({
             </section>
 
             {/* Botones de pago ------------------------------------ */}
-            <section className="flex-1 flex flex-col gap-2 min-h-0">
+            <section className="flex-1 flex flex-col gap-1.5 shrink-0 min-h-0">
                 <PaymentButton
                     onClick={() => { onSetMethod("CASH"); onCharge(); }}
                     disabled={!canCharge || isProcessing}
                     tone="emerald"
                     icon={<IconCash size={20} strokeWidth={1.8} />}
+                    variant="standard"
                 >
                     EFECTIVO
                 </PaymentButton>
@@ -109,6 +110,7 @@ export function PaymentPanel({
                     disabled={!canCharge || isProcessing}
                     tone="blue"
                     icon={<IconCard size={20} strokeWidth={1.8} />}
+                    variant="standard truncate"
                 >
                     TARJETA / DATÁFONO
                 </PaymentButton>
@@ -117,12 +119,13 @@ export function PaymentPanel({
                     disabled={!canCharge || isProcessing}
                     tone="violet"
                     icon={<IconQr size={22} strokeWidth={1.8} />}
+                    variant="invoice"
                 >
                     <div className="leading-tight text-left">
-                        <div className="text-[13px] font-black tracking-wide">
+                        <div className="font-semibold tracking-wide">
                             EMITIR FACTURA
                         </div>
-                        <div className="text-[10px] font-semibold opacity-80 tracking-wider">
+                        <div className="text-[9px] font-semibold opacity-80 tracking-wider">
                             VERIFACTU + QR
                         </div>
                     </div>
@@ -166,12 +169,13 @@ const TONE_CLASSES: Record<Tone, string> = {
 };
 
 function PaymentButton({
-    onClick, disabled, tone, icon, children,
+    onClick, disabled, tone, icon, variant, children,
 }: {
     onClick:    () => void;
     disabled:   boolean;
     tone:       Tone;
     icon:       ReactNode;
+    variant:    "standard" | "standard truncate" | "invoice";
     children:   ReactNode;
 }) {
     return (
@@ -179,12 +183,15 @@ function PaymentButton({
             onClick={onClick}
             disabled={disabled}
             className={cn(
-                "w-full min-w-0 rounded-2xl font-bold tracking-wide whitespace-nowrap",
+                "w-full min-w-0 tracking-wide whitespace-nowrap",
                 "flex items-center justify-center gap-2.5",
                 "shadow-lg transition active:scale-[0.98]",
                 "disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
                 TONE_CLASSES[tone],
-                "h-12 px-2 text-[13px]"
+                variant === "invoice"
+                    ? "h-9 px-2 text-[11px] font-semibold rounded-lg"
+                    : "h-10 px-2 text-xs sm:text-sm font-bold rounded-lg",
+                variant === "standard truncate" && "truncate"
             )}
         >
             {icon}

@@ -116,7 +116,7 @@ export function CatalogPanel({
                     />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full content-start flex-1 overflow-y-auto min-h-0 p-2">
+                <div className="grid grid-cols-3 gap-3 w-full p-2 content-start flex-1 overflow-y-auto min-h-0">
                     {filteredProducts.length === 0 ? (
                         <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
                             No hay productos que coincidan
@@ -198,7 +198,7 @@ function ProductCard({
             onClick={onAdd}
             disabled={!product.is_available}
             className={cn(
-                "group w-full min-w-0 min-h-[160px] shrink-0 text-left overflow-hidden flex flex-col justify-between",
+                "group w-full m-0 min-w-0 min-h-[160px] shrink-0 text-left overflow-hidden flex flex-col justify-between",
                 "rounded-xl border border-slate-200/80 p-2",
                 "bg-white",
                 "transition active:scale-[0.98] hover:shadow-md",
