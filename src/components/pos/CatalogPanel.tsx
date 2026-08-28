@@ -1,19 +1,22 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { RESTAURANT_MENU, TARGET_USER_EMAIL } from '../settings/ItemsPanel';
 
 export function CatalogPanel(props: any) {
   const categoriesRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
-  const [productsList, setProductsList] = useState<any[]>([]);
+  const [productsList, setProductsList] = useState<any[]>(RESTAURANT_MENU);
   const [internalCategory, setInternalCategory] = useState<string>('all');
+
+  const STORAGE_KEY = `pos_custom_products_${TARGET_USER_EMAIL}`;
 
   useEffect(() => {
     const sync = () => {
       try {
-        const raw = localStorage.getItem('pos_custom_products');
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pos_custom_products');
         if (raw) {
           setProductsList(JSON.parse(raw));
-        } else if (props.products && props.products.length > 0) {
-          setProductsList(props.products);
+        } else {
+          setProductsList(RESTAURANT_MENU);
         }
       } catch (err) {
         console.error(err);
@@ -22,7 +25,7 @@ export function CatalogPanel(props: any) {
     sync();
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
-  }, [props.products]);
+  }, []);
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
 
@@ -64,15 +67,16 @@ export function CatalogPanel(props: any) {
     { id: 'Entrantes', name: 'Entrantes' },
     { id: 'Carne', name: 'Carne' },
     { id: 'Pescado', name: 'Pescado' },
-    { id: 'Pizza', name: 'Pizza' },
     { id: 'Pasta', name: 'Pasta' },
-    { id: 'Bebidas', name: 'Bebidas' },
-    { id: 'Postres', name: 'Postres' }
+    { id: 'Pizza', name: 'Pizza' },
+    { id: 'Extras', name: 'Extras' },
+    { id: 'Postres', name: 'Postres' },
+    { id: 'Bebidas', name: 'Bebidas' }
   ];
 
   return (
     <div className="relative w-full h-full flex flex-col p-2 overflow-hidden bg-white dark:bg-slate-800 rounded-xl">
-      {/* 1. Categorías con scroll táctil */}
+      {/* 1. Barra de Categorías Horizontal con Botones ◀ y ▶ */}
       <div className="shrink-0 flex items-center gap-1.5 mb-2 pb-1 border-b border-slate-100 dark:border-slate-700">
         <button
           type="button"
@@ -126,7 +130,7 @@ export function CatalogPanel(props: any) {
         />
       </div>
 
-      {/* 2. Grid de platos */}
+      {/* 2. Grid de platos con scroll vertical */}
       <div
         ref={gridContainerRef}
         className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 p-1 content-start flex-1 overflow-y-auto min-h-0 scroll-smooth pr-14"
@@ -139,7 +143,7 @@ export function CatalogPanel(props: any) {
           >
             <div className="relative w-full h-24 shrink-0 rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-700">
               <img
-                src={product.image_url || product.image}
+                src={product.image}
                 alt={product.name}
                 className="w-full h-full object-cover"
                 loading="lazy"
@@ -149,9 +153,14 @@ export function CatalogPanel(props: any) {
               </span>
             </div>
 
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-2 mt-1.5 leading-tight">
-              {product.name}
-            </h4>
+            <div className="mt-1.5 flex flex-col justify-between flex-1">
+              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-tight">
+                {product.name}
+              </h4>
+              {product.description && (
+                <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{product.description}</p>
+              )}
+            </div>
           </article>
         ))}
 
