@@ -71,7 +71,7 @@ export function WaiterPad() {
     // -----------------------------------------------------------------
     useEffect(() => {
         if (!ws.isConnected) return;
-        const off = ws.subscribe<"TABLE_STATUS_CHANGED">("TABLE_STATUS_CHANGED", (env) => {
+        const off = ws.subscribe("TABLE_STATUS_CHANGED", (env: any) => {
             const d = env.data;
             setTableStatuses(prev => ({ ...prev, [d.tableId]: d.newStatus }));
         });

@@ -157,14 +157,14 @@ export function PosTerminalPro() {
     useEffect(() => {
         if (!ws.isConnected) return;
 
-        const off1 = ws.subscribe<"ORDER_SENT">("ORDER_SENT", (env) => {
+        const off1 = ws.subscribe("ORDER_SENT", (env: any) => {
             const d = env.data;
             handleOrderReceived(d);
         });
-        const off2 = ws.subscribe<"TABLE_STATUS_CHANGED">("TABLE_STATUS_CHANGED", (env) => {
+        const off2 = ws.subscribe("TABLE_STATUS_CHANGED", (env: any) => {
             setTableStatuses(prev => ({ ...prev, [env.data.tableId]: env.data.newStatus }));
         });
-        const off3 = ws.subscribe<"INVOICE_PAID">("INVOICE_PAID", (env) => {
+        const off3 = ws.subscribe("INVOICE_PAID", (env: any) => {
             setTableStatuses(prev => ({ ...prev, [env.data.tableId]: "DIRTY" }));
             // Si el cajero tenía cargada esa mesa, limpiarla
             const t = tables.find(tb => tb.table_number === env.data.tableNumber);

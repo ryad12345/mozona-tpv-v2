@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_ts2347_generics.sh
 #!/bin/bash
 set -e
 
@@ -43,7 +42,3 @@ git push origin main
 echo "========================================================"
 echo "✅ ¡COMPILADO SIN ERRORES Y DESPLEGADO EN PRODUCCIÓN!"
 echo "========================================================"
-EOF
-
-chmod +x fix_ts2347_generics.sh
-./fix_ts2347_generics.sh
