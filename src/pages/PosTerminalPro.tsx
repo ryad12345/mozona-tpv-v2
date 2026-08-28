@@ -454,7 +454,7 @@ export function PosTerminalPro() {
             <main className="flex-1 min-h-0 overflow-hidden sm:p-3 flex flex-col">
                 {/* sm+ desktop: los 3 paneles a la vez */}
                 <div className="hidden sm:flex h-full min-h-0 w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
-                    <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden p-3">
+                    <div className="flex-1 min-w-[500px] h-full flex flex-col overflow-hidden p-3">
                         <CatalogPanel
                             categories={categories}
                             products={products}
@@ -467,7 +467,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="w-64 xl:w-72 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
+                    <div className="w-72 xl:w-80 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col">
                         <OrderPanel
                             items={pos.state.orderItems}
                             tableLabel={pos.state.selectedTableLabel}
@@ -483,7 +483,7 @@ export function PosTerminalPro() {
                         />
                     </div>
 
-                    <div className="w-56 xl:w-64 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
+                    <div className="w-60 xl:w-64 shrink-0 h-full border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-col justify-between">
                         <PaymentPanel
                             total={pos.total}
                             paymentAmount={pos.state.paymentAmount}

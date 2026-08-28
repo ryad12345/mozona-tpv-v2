@@ -74,7 +74,7 @@ export function CatalogPanel({
 
             {/* Categorías ------------------------------------------- */}
             <section className="bg-white rounded-xl border border-slate-200/80 shadow-sm shrink-0">
-                <div className="shrink-0 py-2 px-2 overflow-x-auto flex gap-1.5 no-scrollbar">
+                <div className="shrink-0 py-2 px-2 overflow-x-auto no-scrollbar flex flex-nowrap gap-1.5">
                     <CategoryTab
                         active={selectedCategoryId === null}
                         onClick={() => onSelectCategory(null)}
@@ -116,7 +116,7 @@ export function CatalogPanel({
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-1 -mr-1">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 content-start">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 content-start">
                         {filteredProducts.length === 0 ? (
                             <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
                                 No hay productos que coincidan
@@ -204,7 +204,7 @@ function ProductCard({
             onClick={onAdd}
             disabled={!product.is_available}
             className={cn(
-                "group text-left overflow-hidden",
+                "group w-full min-w-0 text-left overflow-hidden",
                 "rounded-2xl border border-slate-200/80",
                 "bg-white",
                 "transition active:scale-[0.98]",
