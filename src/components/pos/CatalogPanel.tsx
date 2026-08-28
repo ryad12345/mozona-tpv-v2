@@ -60,7 +60,7 @@ export function CatalogPanel({
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-slate-500 uppercase mb-2">
                     Sala
                 </h2>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 shrink-0">
+                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 shrink-0">
                     {tables.map(t => (
                         <TableChip
                             key={t.id}
@@ -170,9 +170,9 @@ function TableChip({
         <button
             onClick={onClick}
             className={cn(
-                "h-12 sm:h-14 px-2 rounded-xl",
-                "text-xs font-semibold tabular-nums",
-                "flex flex-col items-center justify-center",
+                "h-10 px-2 rounded-lg",
+                "text-sm font-bold tabular-nums",
+                "flex items-center justify-center",
                 "transition active:scale-95",
                 "border-2",
                 selected
@@ -180,7 +180,7 @@ function TableChip({
                     : `${tone.idle} border-transparent`
             )}
         >
-            <span>Mesa {tableNumber}</span>
+            <span>{tableNumber}</span>
         </button>
     );
 }
