@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_and_deploy.sh
 #!/bin/bash
 set -e
 
@@ -44,7 +43,3 @@ git commit -m "fix(settings): corregir tipos no usados e implementar configuraci
 git push origin main
 
 echo "✅ ¡Listo! Despliegue completado con éxito."
-EOF
-
-chmod +x fix_and_deploy.sh
-./fix_and_deploy.sh
