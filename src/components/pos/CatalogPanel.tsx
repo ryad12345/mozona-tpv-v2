@@ -115,20 +115,20 @@ export function CatalogPanel({
                     />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 w-full p-1 content-start flex-1 overflow-y-auto">
-                        {filteredProducts.length === 0 ? (
-                            <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
-                                No hay productos que coincidan
-                            </div>
-                        ) : (
-                            filteredProducts.map(p => (
-                                <ProductCard
-                                    key={p.id}
-                                    product={p}
-                                    onAdd={() => onAddProduct(p)}
-                                />
-                            ))
-                        )}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full content-start flex-1 overflow-y-auto min-h-0 p-2">
+                    {filteredProducts.length === 0 ? (
+                        <div className="col-span-2 py-12 text-center text-[12px] text-slate-400">
+                            No hay productos que coincidan
+                        </div>
+                    ) : (
+                        filteredProducts.map(p => (
+                            <ProductCard
+                                key={p.id}
+                                product={p}
+                                onAdd={() => onAddProduct(p)}
+                            />
+                        ))
+                    )}
                 </div>
             </section>
         </div>
@@ -202,16 +202,15 @@ function ProductCard({
             onClick={onAdd}
             disabled={!product.is_available}
             className={cn(
-                "group w-full min-w-0 text-left overflow-hidden",
-                "rounded-xl border border-slate-200/80 p-2.5",
+                "group w-full min-w-0 min-h-[160px] shrink-0 text-left overflow-hidden flex flex-col justify-between",
+                "rounded-xl border border-slate-200/80 p-2",
                 "bg-white",
-                "transition active:scale-[0.98]",
-                "hover:border-blue-300 hover:shadow-sm",
+                "transition active:scale-[0.98] hover:shadow-md",
                 !product.is_available && "opacity-40 cursor-not-allowed"
             )}
         >
             {/* Imagen */}
-            <div className="relative h-24 sm:h-28 mb-2 w-full overflow-hidden rounded-lg bg-slate-50">
+            <div className="relative w-full h-24 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-700">
                 {hasImg ? (
                     <img
                         src={product.image_url!}
@@ -262,7 +261,7 @@ function ProductCard({
                 </div>
             </div>
             {/* Texto */}
-            <div>
+            <div className="mt-1.5">
                 <div className="text-sm font-semibold text-slate-900 leading-tight line-clamp-2 min-h-[2.4em]">
                     {product.name}
                 </div>
