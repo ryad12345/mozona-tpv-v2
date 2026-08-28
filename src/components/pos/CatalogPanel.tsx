@@ -16,7 +16,7 @@ export function CatalogPanel(props: any) {
         if (raw) {
           setProductsList(JSON.parse(raw));
         } else {
-          setProductsList(RESTAURANT_MENU);
+          setProductsList(isTargetUser ? RESTAURANT_MENU : (props.products || []));
         }
       } catch (err) {
         console.error(err);
@@ -26,6 +26,16 @@ export function CatalogPanel(props: any) {
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
   }, []);
+
+  // Obtener el email del usuario logueado en la sesion/localStorage
+  const loggedUserRaw = localStorage.getItem("pos_auth_user") || localStorage.getItem("user") || "{}";
+  let currentUserEmail = "";
+  try {
+    const parsed = JSON.parse(loggedUserRaw);
+    currentUserEmail = parsed.email || parsed.user?.email || "";
+  } catch(e) {}
+
+  const isTargetUser = currentUserEmail.toLowerCase() === TARGET_USER_EMAIL.toLowerCase();
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
 
