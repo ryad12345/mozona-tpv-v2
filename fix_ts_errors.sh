@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_ts_errors.sh
 #!/bin/bash
 set -e
 
@@ -32,7 +31,3 @@ git commit -m "fix(types): tipar callbacks id/product en PosTerminalPro"
 git push origin main
 
 echo "✅ ¡Build completado sin errores y subido a producción!"
-EOF
-
-chmod +x fix_ts_errors.sh
-./fix_ts_errors.sh

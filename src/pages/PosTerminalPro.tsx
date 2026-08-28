@@ -492,10 +492,10 @@ export function PosTerminalPro() {
                     products={products}
                     tables={tablesWithStatus}
                     selectedCategoryId={pos.state.selectedCategoryId}
-                    onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
+                    onSelectCategory={(id: any) => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
                     selectedTableId={pos.state.selectedTableId}
                     onSelectTable={handleSelectTable}
-                    onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
+                    onAddProduct={(p: any) => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
                     variant="full"
                     search={catalogSearch}
                     onSearchChange={setCatalogSearch}
@@ -550,10 +550,10 @@ export function PosTerminalPro() {
                                 products={products}
                                 tables={tablesWithStatus}
                                 selectedCategoryId={pos.state.selectedCategoryId}
-                                onSelectCategory={id => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
+                                onSelectCategory={(id: any) => pos.dispatch({ type: "SELECT_CATEGORY", categoryId: id })}
                                 selectedTableId={pos.state.selectedTableId}
                                 onSelectTable={handleSelectTable}
-                                onAddProduct={p => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
+                                onAddProduct={(p: any) => pos.dispatch({ type: "ADD_PRODUCT", product: p })}
                             />
                         )}
                         {mobileTab === "order" && (
