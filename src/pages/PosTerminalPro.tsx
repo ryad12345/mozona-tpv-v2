@@ -60,7 +60,8 @@ function buildPreBillHtml(params: {
     const taxRows = Array.from(byRate.entries()).sort((a, b) => b[0] - a[0])
         .map(([r, g]) => {
             const base = g / (1 + r / 100);
-            const tax  = g - base;
+            const rawTax = g - base;
+  const tax = isNaN(Number(rawTax)) ? 0 : Number(rawTax);
             return `<tr><td>Base ${r}%</td><td style="text-align:right">${fmt(base)}</td></tr>`
                  + `<tr><td>I.V.A. ${r}%</td><td style="text-align:right">${fmt(tax)}</td></tr>`;
         }).join("");

@@ -1,4 +1,3 @@
-cat << 'EOF' > fix_nan_and_change_timer.sh
 #!/bin/bash
 set -e
 
@@ -102,7 +101,3 @@ git commit -m "fix(pos): corregir calculo de IVA/NaN y mantener cambio visible 8
 git push origin main
 
 echo "✅ ¡Listo! Corrección aplicada y desplegada en producción."
-EOF
-
-chmod +x fix_nan_and_change_timer.sh
-./fix_nan_and_change_timer.sh
