@@ -135,59 +135,82 @@
    ===================================================================== */
 
 @media print {
-    /* Quita márgenes del navegador y oscurece la tinta */
-    @page { margin: 4mm; }
+    /* Papel térmico 80mm — sin márgenes */
+    @page { margin: 4mm; size: 80mm auto; }
 
+    /* Reset: blanco y negro, alto contraste */
     html, body {
         background: #ffffff !important;
         color: #000000 !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
     }
 
-    /* Tipografía monoespaciada y alto contraste para papel térmico 80mm */
-    body, .ticket, .printable, .receipt, .invoice {
-        font-family: ui-monospace, "Courier New", "Menlo", monospace !important;
+    /* Tipografía monoespaciada, alto contraste, sin antialias */
+    body, .ticket, .printable, .receipt, .invoice, .ticket * {
+        font-family: ui-monospace, "Courier New", "Menlo", Consolas, monospace !important;
         color: #000000 !important;
         background: #ffffff !important;
         font-size: 12px !important;
-        line-height: 1.35 !important;
-        -webkit-font-smoothing: none;
+        font-weight: 700 !important;
+        line-height: 1.4 !important;
+        letter-spacing: 0 !important;
+        -webkit-font-smoothing: none !important;
+        -moz-osx-font-smoothing: grayscale !important;
+        text-rendering: geometricPrecision !important;
     }
 
-    /* Elimina cualquier fondo de color que manche el ticket */
+    /* Eliminar TODO fondo de color que pueda manchar el ticket */
     * {
-        background: transparent !important;
+        background: #ffffff !important;
+        color: #000000 !important;
         box-shadow: none !important;
         text-shadow: none !important;
         animation: none !important;
         transition: none !important;
         filter: none !important;
+        opacity: 1 !important;
     }
 
-    /* Sólo los textos se ven, con peso fuerte */
-    p, span, h1, h2, h3, h4, h5, h6, td, th, li, b, strong, em {
-        color: #000000 !important;
-    }
-
-    /* Bordes: sólo negros */
-    hr, .border, [class*="border-"] {
-        border-color: #000000 !important;
-    }
-
-    /* Esconde todo lo que no sea ticket */
-    .no-print, header, nav, aside, button, [role="button"] {
+    /* Esconder todo lo que no sea ticket */
+    .no-print, header, nav, aside, button, [role="button"],
+    .PosTopBar, .AppShell-header, .tab-bar, .modal,
+    .pos-catalog, .pos-order, .settings-tabs {
         display: none !important;
     }
 
-    /* Una sola columna, sin overflow */
-    body * { visibility: visible; }
-    .printable, .ticket {
-        visibility: visible;
+    /* El ticket en sí — ancho 80mm */
+    .ticket, .printable {
+        display: block !important;
         position: static !important;
+        visibility: visible !important;
         width: 72mm !important;
         max-width: 72mm !important;
         margin: 0 !important;
-        padding: 2mm !important;
+        padding: 0 !important;
+        color: #000000 !important;
+        background: #ffffff !important;
+    }
+
+    /* Bordes del ticket: línea negra sólida */
+    .ticket hr, .printable hr,
+    .ticket .border-b, .printable .border-b,
+    .ticket .border-t, .printable .border-t,
+    .ticket [class*="border"] {
+        border-color: #000000 !important;
+        border-style: solid !important;
+    }
+
+    /* Tablas del ticket: bordes negros */
+    .ticket table, .printable table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+        color: #000000 !important;
+    }
+    .ticket th, .ticket td, .printable th, .printable td {
+        border-color: #000000 !important;
+        color: #000000 !important;
+        padding: 1mm 0 !important;
     }
 }

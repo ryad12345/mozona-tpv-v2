@@ -98,24 +98,15 @@ export function PaymentPanel(props: PaymentPanelProps) {
         ))}
       </div>
 
-      {/* Botón único COBRAR */}
+      {/* Botón único COBRAR — más grande y prominente */}
       <div className="flex flex-col gap-1.5 shrink-0">
         <button
           type="button"
           onClick={handleCobrar}
-          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2"
+          className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xl rounded-2xl shadow-lg shadow-emerald-600/30 transition active:scale-95 flex items-center justify-center gap-2 tracking-wide"
         >
-          💳 💵 COBRAR
+          COBRAR
         </button>
-        {onEmitInvoice && (
-          <button
-            type="button"
-            onClick={onEmitInvoice}
-            className="w-full h-6 text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition text-center"
-          >
-            Emitir Factura VeriFactu
-          </button>
-        )}
       </div>
     </div>
   );
