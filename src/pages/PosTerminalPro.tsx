@@ -31,6 +31,8 @@ import { playOrderDing, playChargeSuccess, playError, unlockAudio } from "../lib
 import { cn } from "../lib/cn";
 import { useLocalPrinter } from "../hooks/useLocalPrinter";
 import { useLocalIP } from "../hooks/useLocalIP";
+import { subscribeToOrders, listOpenOrders } from "../lib/orders";
+import { isVipOrAdmin } from "../lib/vip";
 import type { OrderItem, Product, PaymentMethod, TableStatus, Waiter, Restaurant, RestaurantTable } from "../lib/types";
 import type { OrderSentData, InvoicePaidData } from "../../shared/ws-events";
 
@@ -175,6 +177,26 @@ export function PosTerminalPro() {
         return () => { off1(); off2(); off3(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ws.isConnected, tables]);
+
+    // -----------------------------------------------------------------
+    // Realtime: escuchar INSERTs en `orders` desde Supabase
+    // (para que las comandas de los camareros aparezcan en el TPV
+    //  incluso si el WebSocket local no funciona en cloud)
+    // -----------------------------------------------------------------
+    useEffect(() => {
+        if (!restaurant?.id) return;
+        const off = subscribeToOrders(restaurant.id, (order) => {
+            console.log("[PosTerminalPro] nueva comanda vía Supabase:", order.id);
+            // Marcar la mesa como ocupada
+            if (order.table_id) {
+                setTableStatuses(prev => ({ ...prev, [order.table_id!]: "OCCUPIED" }));
+            }
+            // Sonido
+            void unlockAudio();
+            playOrderDing();
+        });
+        return off;
+    }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
     // Cuando entra una comanda desde un WaiterPad

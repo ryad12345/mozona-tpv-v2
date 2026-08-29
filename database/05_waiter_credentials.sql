@@ -149,7 +149,9 @@ BEGIN
         RETURN json_build_object('ok', false, 'error', 'Camarero no encontrado');
     END IF;
 
-    IF v_owner_id <> auth.uid() THEN
+    IF v_owner_id <> auth.uid()
+       AND COALESCE((SELECT (raw_user_meta_data->>'is_superadmin')::boolean
+                     FROM auth.users WHERE id = auth.uid()), FALSE) <> TRUE THEN
         RETURN json_build_object('ok', false, 'error', 'No autorizado');
     END IF;
 

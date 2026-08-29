@@ -13,11 +13,14 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useWaiterAuth, type Waiter } from "../hooks/useWaiterAuth";
+import { useAuth } from "../lib/auth";
 import { usePosData } from "../hooks/usePosData";
 import { PinAuthModal } from "../components/auth/PinAuthModal";
 import { IconCheck, IconUser, IconX, IconPlus, IconMinus, IconSearch, IconLogout } from "../components/icons";
 import { fmtEUR, round2 } from "../lib/format";
 import { cn } from "../lib/cn";
+import { createOrder, subscribeToOrders } from "../lib/orders";
+import { isVipOrAdmin } from "../lib/vip";
 import type { TableStatus, Product, RestaurantTable } from "../lib/types";
 import type { OrderItemPayload } from "../../shared/ws-events";
 
@@ -46,9 +49,10 @@ const DEMO_WAITERS: Array<Waiter & { pin: string }> = [
 // ---------------------------------------------------------------------
 
 export function WaiterPad() {
-    const ws   = useWebSocket();
-    const auth = useWaiterAuth();
-    const { products, categories, tables, loading } = usePosData();
+    const ws     = useWebSocket();
+    const auth   = useWaiterAuth();
+    const saasAuth = useAuth();
+    const { products, categories, tables, loading, restaurant } = usePosData();
 
     const [showAuth, setShowAuth]     = useState(false);
     const [tableId, setTableId]       = useState<string | null>(null);
@@ -65,12 +69,14 @@ export function WaiterPad() {
     // (con username + password) y la propaga a useWaiterAuth.
     // -----------------------------------------------------------------
     useEffect(() => {
+        console.log("[WaiterPad] mount, productos:", products.length, "mesas:", tables.length);
         // 1) Sesión vía username+password en localStorage
         try {
             const cached = localStorage.getItem("mozona.waiter_session");
             if (cached && !auth.isAuthenticated) {
                 const parsed = JSON.parse(cached);
                 if (parsed.ok && parsed.name) {
+                    console.log("[WaiterPad] sesión camarero detectada:", parsed);
                     auth.login({
                         id:   parsed.user_id ?? parsed.tenant_id ?? "waiter",
                         name: parsed.name,
@@ -194,11 +200,12 @@ export function WaiterPad() {
     );
 
     // -----------------------------------------------------------------
-    // Envío de comanda
+    // Envío de comanda — ahora persiste en Supabase para que el TPV
+    // la vea en tiempo real (además del WebSocket local)
     // -----------------------------------------------------------------
-    const sendOrder = useCallback(() => {
+    const sendOrder = useCallback(async () => {
         if (!selectedTable || cart.length === 0 || !auth.activeWaiter) return;
-        const orderId = `o-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
         const items: OrderItemPayload[] = cart.map(c => ({
             productId: c.productId,
             name:      c.name,
@@ -206,8 +213,10 @@ export function WaiterPad() {
             unitPrice: c.unitPrice,
             notes:     c.notes || undefined,
         }));
-        const ok = ws.sendOrder({
-            orderId,
+
+        // 1) Notificar vía WebSocket (fallback no-op en cloud)
+        ws.sendOrder({
+            orderId: `o-${Date.now()}`,
             tableId:     selectedTable.id,
             tableNumber: selectedTable.table_number,
             items,
@@ -216,12 +225,71 @@ export function WaiterPad() {
             total:       totals.total,
             waiter:      auth.activeWaiter.name,
         });
-        if (ok) {
-            setLastSentAt(Date.now());
-            setCarts(prev => ({ ...prev, [selectedTable.id]: [] }));
-            setEditingNotes(null);
+
+        // 2) Persistir en Supabase (FUENTE DE VERDAD para el TPV)
+        //    Necesitamos el tenant_id: lo sacamos de la sesión del
+        //    camarero, del admin logueado, o del restaurante cargado.
+        let tenantId: string | null = restaurant?.id ?? null;
+        if (!tenantId) {
+            // 2a) Sesión camarero (login por username+password)
+            try {
+                const cached = localStorage.getItem("mozona.waiter_session");
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed.tenant_id && parsed.tenant_id !== "vip-bypass") {
+                        tenantId = parsed.tenant_id;
+                    }
+                }
+            } catch (e) { /* noop */ }
         }
-    }, [cart, selectedTable, totals, ws, auth.activeWaiter]);
+        if (!tenantId && saasAuth.user) {
+            // 2b) Admin logueado: usar el tenant real
+            try {
+                const { supabase } = await import("../lib/supabase");
+                const { data: t } = await supabase.from("tenants")
+                    .select("id").eq("owner_id", saasAuth.user.id).maybeSingle();
+                if (t?.id) tenantId = t.id;
+            } catch (e) { /* noop */ }
+        }
+        if (!tenantId) {
+            // 2c) VIP: usar el primer tenant activo de la BD
+            try {
+                const { supabase } = await import("../lib/supabase");
+                const { data: t } = await supabase.from("tenants")
+                    .select("id").eq("subscription_status", "active")
+                    .order("created_at", { ascending: true }).limit(1).maybeSingle();
+                if (t?.id) tenantId = t.id;
+            } catch (e) { /* noop */ }
+        }
+
+        if (tenantId) {
+            const result = await createOrder({
+                tenant_id:   tenantId,
+                table_id:    selectedTable.id,
+                table_label: String(selectedTable.table_number ?? ""),
+                waiter_name: auth.activeWaiter.name,
+                items: cart.map(c => ({
+                    product_id: c.productId,
+                    name:       c.name,
+                    price:      c.unitPrice,
+                    quantity:   c.quantity,
+                    notes:      c.notes || null,
+                })),
+            });
+            if (result) {
+                console.log("[WaiterPad] comanda persistida en Supabase:", result.order.id);
+            } else {
+                console.warn("[WaiterPad] no se pudo persistir comanda en Supabase");
+            }
+        } else {
+            console.warn("[WaiterPad] sin tenant_id, comanda sólo enviada por WebSocket");
+        }
+
+        // 3) Limpiar carrito
+        setLastSentAt(Date.now());
+        setCarts(prev => ({ ...prev, [selectedTable.id]: [] }));
+        setEditingNotes(null);
+    }, [cart, selectedTable, totals, ws, auth.activeWaiter, saasAuth.user, restaurant?.id]);
 
     // Auto-dismiss del toast de éxito
     useEffect(() => {
