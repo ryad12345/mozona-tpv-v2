@@ -10,6 +10,8 @@ import {
     IconStore, IconUser, IconReceipt, IconShield, IconSparkles,
     IconCheck, IconArrowRight, IconPrint, IconWifi,
 } from "../components/icons";
+// IconSparkles se mantiene en el import por si se reutiliza en el futuro.
+// (TS no se queja por imports no usados a menos que esté habilitado noUnusedLocals)
 import { Logo } from "../components/Logo";
 import { DemoVideo } from "../components/DemoVideo";
 import { useAuth } from "../lib/auth";
@@ -93,13 +95,7 @@ export function LandingPage() {
                                 bg-gradient-to-b from-blue-50 via-white to-white
                                 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
                 <div className="max-w-6xl mx-auto px-5 pt-16 sm:pt-24 pb-16 sm:pb-20 text-center">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
-                                     bg-blue-50 border border-blue-200/80 text-blue-700
-                                     text-[11.5px] font-bold tracking-wide">
-                        <IconSparkles size={12} strokeWidth={2.2} />
-                        VeriFactu AEAT 2025 · Local-First PWA
-                    </span>
-                    <h1 className="mt-5 text-[40px] sm:text-[60px] leading-[1.05] font-black tracking-tight text-slate-900">
+                    <h1 className="text-[40px] sm:text-[60px] leading-[1.05] font-black tracking-tight text-slate-900">
                         Tu TPV de hostelería,{" "}
                         <span className="bg-gradient-to-br from-blue-600 to-blue-800 bg-clip-text text-transparent">
                             en la nube
