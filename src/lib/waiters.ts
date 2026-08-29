@@ -111,7 +111,10 @@ export interface CreateWaiterResult {
     pin:      string;
 }
 
-/** Crea un camarero con username y PIN autogenerados. */
+/** Crea un camarero con username y PIN autogenerados.
+ *  Estrategia de 3 pasos con fallback automático si la BD no tiene
+ *  las columnas nuevas: intenta INSERT completo → sin waiter_pin → sin
+ *  username.  Así no falla con 400/404 en instalaciones antiguas. */
 export async function createWaiter(input: {
     tenant_id: string;
     name:      string;
@@ -137,32 +140,58 @@ export async function createWaiter(input: {
     // 2) Generar PIN de 4 caracteres — siempre UPPERCASE
     const pin = generatePassword(4).toUpperCase();
 
-    // 3) Crear fila completa en UN SOLO INSERT (sin RPC).
-    //    El RLS del dueño permite insertar en su tenant.
-    const { data, error } = await supabase
+    // 3) Intentar INSERT completo (con todas las columnas)
+    //    Si la BD no tiene username/waiter_pin, fallback a INSERT simple.
+    const baseRow = {
+        tenant_id: input.tenant_id,
+        name:      input.name,
+        role:      input.role,
+        email:     input.email ?? null,
+        user_id:   null,
+        is_active: true,
+        pin_code:  pin,
+    };
+
+    // Estrategia 1: INSERT con todas las columnas (username + waiter_pin)
+    let { data, error } = await supabase
         .from("tenant_users")
-        .insert({
-            tenant_id:  input.tenant_id,
-            name:       input.name,
-            role:       input.role,
-            email:      input.email ?? null,
-            user_id:    null,
-            is_active:  true,
-            pin_code:   pin,
-            username:   username,            // LOWER
-            waiter_pin: pin,                // UPPER
-        })
+        .insert({ ...baseRow, username, waiter_pin: pin })
         .select()
         .single();
+
+    // Estrategia 2 (fallback): si la BD no tiene `waiter_pin`, solo username
+    if (error && /waiter_pin/.test(error.message)) {
+        console.warn("[createWaiter] columna waiter_pin no existe, fallback a username+pin_code");
+        const r2 = await supabase
+            .from("tenant_users")
+            .insert({ ...baseRow, username })
+            .select()
+            .single();
+        data = r2.data;
+        error = r2.error;
+    }
+
+    // Estrategia 3 (fallback final): solo columnas legacy
+    if (error && /username/.test(error.message)) {
+        console.warn("[createWaiter] columna username no existe, fallback a columnas legacy");
+        const r3 = await supabase
+            .from("tenant_users")
+            .insert(baseRow)
+            .select()
+            .single();
+        data = r3.data;
+        error = r3.error;
+    }
+
     if (error) {
-        // Si falla por columnas waiter_pin/username inexistentes,
-        // mensaje claro para que el admin ejecute 09_waiter_pin.sql
-        if (error.message.includes("waiter_pin") || error.message.includes("username")) {
-            throw new Error(
-                `Faltan columnas username/waiter_pin.  Ejecuta database/09_waiter_pin.sql en Supabase SQL Editor.`
-            );
-        }
-        throw error;
+        // Mensaje claro para diagnosticar el 400/404
+        const code = (error as any).code ?? "";
+        const hint = (error as any).hint ?? "";
+        throw new Error(
+            `Error creando camarero (${code}): ${error.message}. ` +
+            `Verifica que las columnas username y waiter_pin existan en tenant_users. ` +
+            `Ejecuta database/11_fix_waiter_rls.sql en Supabase. (hint: ${hint})`
+        );
     }
 
     const waiter: Waiter = {
