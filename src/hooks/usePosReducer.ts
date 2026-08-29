@@ -188,14 +188,17 @@ export function usePosReducer(): UsePosResult {
         let tax = 0;
         const byRate = new Map<number, { base: number; tax: number }>();
         for (const it of state.orderItems) {
-            const lineSub = it.unit_price * it.quantity;
-            const lineTax = lineSub * (it.tax_rate / 100);
+            const unit = Number(it.unit_price ?? 0);
+            const qty  = Number(it.quantity   ?? 0);
+            const rate = Number(it.tax_rate  ?? 10);
+            const lineSub = unit * qty;
+            const lineTax = lineSub * (rate / 100);
             sub += lineSub;
             tax += lineTax;
-            const cur = byRate.get(it.tax_rate) ?? { base: 0, tax: 0 };
+            const cur = byRate.get(rate) ?? { base: 0, tax: 0 };
             cur.base += lineSub;
             cur.tax += lineTax;
-            byRate.set(it.tax_rate, cur);
+            byRate.set(rate, cur);
         }
         const arr = Array.from(byRate.entries()).sort((a, b) => b[0] - a[0]).map(([rate, value]) => ({
             rate, base: round2(value.base), tax: round2(value.tax),

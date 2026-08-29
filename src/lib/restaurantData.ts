@@ -86,6 +86,9 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
     }
     return (data ?? []).map((p: any) => ({
         ...p,
+        // Supabase NUMERIC/REAL columns se serializan como string -> normalizar a number
+        price: Number(p.price ?? 0),
+        tax_rate: Number(p.tax_rate ?? 10),
         is_available: p.is_active ?? true,
         restaurant_id: p.tenant_id,
         category_id: p.category_id ?? null,
