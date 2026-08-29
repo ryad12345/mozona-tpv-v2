@@ -9,10 +9,22 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
   "orientation": "any",
-  "theme_color": "#2563EB",
-  "background_color": "#F0F2F5",
+  "theme_color": "#0F2942",
+  "background_color": "#FFFFFF",
   "categories": ["business", "productivity", "finance"],
   "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
@@ -30,12 +42,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
     }
   ],
   "shortcuts": [

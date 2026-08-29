@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 280" fill="none">
+  <!-- ============================================================
+       MOZONA TPV — Logo oficial
+       - Monitor con una M grande y check verde (bandeja servida)
+       - Texto MOZONA en azul corporativo
+       - TPV con nube verde
+       ============================================================ -->
+
+  <defs>
+    <linearGradient id="monitorGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F2942"/>
+      <stop offset="100%" stop-color="#0A1E30"/>
+    </linearGradient>
+    <linearGradient id="screenGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="checkGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ============ ICONO PRINCIPAL ============ -->
+  <g transform="translate(40, 20)">
+
+    <!-- Bandeja / plato con check (parte superior derecha) -->
+    <g transform="translate(180, 10)">
+      <!-- Cúpula del cloche (bandeja) -->
+      <path d="M 10 50 Q 10 5 50 5 Q 90 5 90 50 L 90 55 L 10 55 Z"
+            fill="url(#checkGrad)" stroke="#047857" stroke-width="2"/>
+      <!-- Línea de la bandeja -->
+      <line x1="0" y1="58" x2="100" y2="58" stroke="#047857" stroke-width="3" stroke-linecap="round"/>
+      <!-- Check sobre el cloche -->
+      <path d="M 35 28 L 47 38 L 67 18"
+            fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Monitor / tablet (cuerpo) -->
+    <rect x="0" y="30" width="170" height="125" rx="14"
+          fill="url(#monitorGrad)" stroke="#0A1E30" stroke-width="3"/>
+
+    <!-- Pantalla -->
+    <rect x="14" y="44" width="142" height="98" rx="6"
+          fill="url(#screenGrad)"/>
+
+    <!-- Teclado (parte inferior del monitor) -->
+    <rect x="20" y="148" width="130" height="14" rx="3"
+          fill="#0A1E30" stroke="#0A1E30" stroke-width="2"/>
+    <!-- Trackpad -->
+    <rect x="118" y="151" width="22" height="8" rx="1.5" fill="#10B981"/>
+    <!-- Teclas (3 filas de cuadraditos) -->
+    <g fill="#1F4060">
+      <rect x="26" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="34" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="42" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="50" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="58" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="66" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="74" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="82" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="90" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="98" y="150.5" width="6" height="2" rx="0.5"/>
+      <rect x="26" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="34" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="42" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="50" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="58" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="66" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="74" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="82" y="154.5" width="6" height="2" rx="0.5"/>
+      <rect x="90" y="154.5" width="6" height="2" rx="0.5"/>
+    </g>
+
+    <!-- Letra M grande en la pantalla -->
+    <text x="85" y="125"
+          font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+          font-weight="900"
+          font-size="78"
+          text-anchor="middle"
+          fill="#0F2942"
+          letter-spacing="-4">M</text>
+
+    <!-- Triángulo check verde pequeño dentro de la M (parte superior) -->
+    <path d="M 78 75 L 86 84 L 96 70"
+          fill="none" stroke="#10B981" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- ============ TEXTO MOZONA ============ -->
+  <text x="200" y="220"
+        font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+        font-weight="900"
+        font-size="56"
+        text-anchor="middle"
+        fill="#0F2942"
+        letter-spacing="-1.5">MOZONA</text>
+
+  <!-- Línea separadora -->
+  <line x1="100" y1="235" x2="180" y2="235"
+        stroke="#10B981" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- ============ TPV + NUBE ============ -->
+  <g transform="translate(200, 240)">
+    <text x="20" y="22"
+          font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+          font-weight="600"
+          font-size="32"
+          text-anchor="middle"
+          fill="#10B981"
+          letter-spacing="-0.5">TPV</text>
+
+    <!-- Nube (cloud) -->
+    <g transform="translate(80, 6)" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 6 14 Q 6 8 12 8 Q 14 2 22 2 Q 30 2 32 8 Q 38 8 38 14 Q 38 20 32 20 L 12 20 Q 6 20 6 14 Z"
+            fill="#FFFFFF" stroke="#10B981"/>
+    </g>
+  </g>
+</svg>

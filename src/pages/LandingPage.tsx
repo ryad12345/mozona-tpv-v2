@@ -10,6 +10,8 @@ import {
     IconStore, IconUser, IconReceipt, IconShield, IconSparkles,
     IconCheck, IconArrowRight, IconPrint, IconWifi,
 } from "../components/icons";
+import { Logo } from "../components/Logo";
+import { DemoVideo } from "../components/DemoVideo";
 import { useAuth } from "../lib/auth";
 import { cn } from "../lib/cn";
 
@@ -47,10 +49,7 @@ export function LandingPage() {
             <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60">
                 <div className="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
                     <Link to="/" className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white flex items-center justify-center font-black text-sm shadow-sm shadow-blue-600/30">
-                            M
-                        </div>
-                        <span className="text-[15px] font-black tracking-tight">MOZONA TPV</span>
+                        <Logo variant="mark" size="sm" />
                     </Link>
                     <nav className="hidden sm:flex items-center gap-5 text-[13px] font-semibold text-slate-600">
                         <a href="#features"  className="hover:text-slate-900 transition">Características</a>
@@ -128,14 +127,12 @@ export function LandingPage() {
                             Ver características
                         </a>
                     </div>
-                    <div className="mt-12 max-w-4xl mx-auto rounded-3xl border border-slate-200/80 shadow-2xl
-                                    bg-gradient-to-br from-slate-900 to-slate-800
-                                    aspect-[16/9] flex items-center justify-center
-                                    text-slate-500 text-[14px]">
-                        <span className="text-center">
-                            <span className="block text-[18px] font-bold text-slate-300">Captura del TPV</span>
-                            (aquí iría un mockup o video)
-                        </span>
+                    <div className="mt-12 max-w-4xl mx-auto">
+                        <DemoVideo
+                            src="/demo.mp4"
+                            badge="TPV en acción"
+                            className="aspect-[16/9]"
+                        />
                     </div>
                 </div>
             </section>
@@ -250,8 +247,7 @@ export function LandingPage() {
             <footer className="py-10 border-t border-slate-200/80">
                 <div className="max-w-6xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700" />
-                        <span className="text-[12.5px] font-bold text-slate-700">MOZONA TPV</span>
+                        <Logo variant="mark" size="xs" />
                         <span className="text-[11px] text-slate-400">© 2025</span>
                     </div>
                     <div className="flex items-center gap-4 text-[12px] text-slate-500">

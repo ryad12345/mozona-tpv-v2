@@ -20,6 +20,7 @@ import {
     IconStore, IconArrowRight, IconArrowLeft, IconCheck,
     IconSparkles, IconLogout, IconUser,
 } from "../components/icons";
+import { Logo } from "../components/Logo";
 import { BusinessStep, type BusinessData }   from "../components/onboarding/BusinessStep";
 import { TablesStep, type TablesData }       from "../components/onboarding/TablesStep";
 import { MenuStep, type MenuData }           from "../components/onboarding/MenuStep";
@@ -236,10 +237,8 @@ export function OnboardingWizard() {
             {/* Header */}
             <header className="sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-slate-200/80">
                 <div className="max-w-5xl mx-auto px-4 sm:px-5 h-14 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700
-                                    text-white flex items-center justify-center font-black text-sm
-                                    shadow-sm shadow-blue-600/30">
-                        M
+                    <div className="w-8 h-8">
+                        <Logo variant="square" size="xs" className="w-8 h-8" />
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="text-[14px] font-black tracking-tight">Asistente de configuración</div>

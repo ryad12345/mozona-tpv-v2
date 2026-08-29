@@ -16,6 +16,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, isSuperAdmin, supabase, PUBLIC_URL } from "../lib/supabase";
 import { IconCheck, IconSparkles, IconShield, IconArrowRight, IconLock } from "../components/icons";
+import { Logo } from "../components/Logo";
 
 const PLANS = [
     {
@@ -174,11 +175,7 @@ export function PricingPage() {
                 {/* Header */}
                 <div className="text-center mb-10">
                     <Link to="/" className="inline-flex items-center gap-2 mb-6">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700
-                                        text-white flex items-center justify-center font-black text-sm">
-                            M
-                        </div>
-                        <span className="text-[14px] font-black tracking-tight">MOZONA TPV</span>
+                        <Logo variant="mark" size="sm" />
                     </Link>
                     <h1 className="text-[34px] sm:text-[42px] font-black tracking-tight">
                         Elige tu plan

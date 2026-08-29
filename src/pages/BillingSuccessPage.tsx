@@ -11,6 +11,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { IconCheck, IconArrowRight, IconLogout, IconSparkles } from "../components/icons";
+import { Logo } from "../components/Logo";
 
 export function BillingSuccessPage() {
     const auth = useAuth();
@@ -52,11 +53,7 @@ export function BillingSuccessPage() {
         <div className="min-h-dvh bg-gradient-to-b from-emerald-50 to-white flex items-center justify-center p-5">
             <div className="max-w-md w-full">
                 <Link to="/" className="inline-flex items-center gap-2 mb-6">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700
-                                    text-white flex items-center justify-center font-black text-sm">
-                        M
-                    </div>
-                    <span className="text-[14px] font-black tracking-tight">MOZONA TPV</span>
+                    <Logo variant="mark" size="sm" />
                 </Link>
 
                 <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-7 text-center">

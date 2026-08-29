@@ -12,6 +12,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { useRateLimit } from "../hooks/useRateLimit";
 import { useAuth } from "../lib/auth";
 import { IconArrowRight, IconLock, IconShield, IconUser } from "../components/icons";
+import { Logo } from "../components/Logo";
 
 interface WaiterLoginResult {
     ok:        boolean;
@@ -282,11 +283,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             <div className="w-full max-w-sm">
                 <div className="text-center mb-5">
                     <Link to="/" className="inline-flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700
-                                        text-white flex items-center justify-center font-black text-sm">
-                            M
-                        </div>
-                        <span className="text-[13px] font-black tracking-tight">MOZONA TPV</span>
+                        <Logo variant="mark" size="sm" />
                     </Link>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl p-6">

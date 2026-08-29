@@ -27,6 +27,7 @@ import {
     type CheckoutSessionInfo,
 } from "../lib/billing";
 import { IconCheck, IconShield, IconArrowRight, IconLock, IconSparkles } from "../components/icons";
+import { Logo } from "../components/Logo";
 
 type Phase = "verifying" | "ready" | "error" | "signing";
 type EntryKind = "stripe" | "invite";
@@ -398,11 +399,7 @@ export function RegisterPage() {
                 {/* Logo */}
                 <div className="text-center mb-6">
                     <Link to="/" className="inline-flex items-center gap-2">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700
-                                        text-white flex items-center justify-center font-black">
-                            M
-                        </div>
-                        <span className="text-[15px] font-black tracking-tight">MOZONA TPV</span>
+                        <Logo variant="mark" size="md" />
                     </Link>
                 </div>
 

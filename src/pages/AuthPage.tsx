@@ -15,6 +15,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, isSuperAdmin, supabase } from "../lib/supabase";
 import { IconShield, IconLock, IconArrowRight, IconSparkles } from "../components/icons";
+import { Logo } from "../components/Logo";
 import { useRateLimit } from "../hooks/useRateLimit";
 
 export function AuthPage() {
@@ -225,12 +226,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
             <div className="w-full max-w-md">
                 <div className="text-center mb-6">
                     <Link to="/" className="inline-flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700
-                                        text-white flex items-center justify-center font-black
-                                        shadow-sm shadow-blue-600/30">
-                            M
-                        </div>
-                        <span className="text-[18px] font-black tracking-tight">MOZONA TPV</span>
+                        <Logo variant="mark" size="md" />
                     </Link>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl
