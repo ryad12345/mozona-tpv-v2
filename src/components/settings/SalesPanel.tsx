@@ -21,15 +21,25 @@ export function SalesPanel() {
         setLoading(true);
         setError(null);
         try {
+            console.log("[SalesPanel] cargando ventas del mes, tenantId=", tenantId);
             const data = await listMonthSales(tenantId);
+            console.log("[SalesPanel] cargadas", data.length, "ventas");
             setRecords(data);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error("[SalesPanel] error cargando ventas:", msg);
+            setError(msg);
         }
         setLoading(false);
     };
 
-    useEffect(() => { void load(); }, [tenantId]);
+    // Auto-refresco cada 30s mientras el panel está visible
+    useEffect(() => {
+        void load();
+        const interval = setInterval(() => { void load(); }, 30_000);
+        return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tenantId]);
 
     const metrics = computeMetrics(records.filter(r => r.status !== "cancelled"));
 
@@ -71,7 +81,25 @@ export function SalesPanel() {
 
             {error && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[12.5px]">
-                    {error}
+                    <p className="font-bold mb-1">⚠️ Error cargando ventas</p>
+                    <p>{error}</p>
+                    {/orders.*not.*exist|schema cache|PGRST/i.test(error) && (
+                        <p className="mt-2 text-[11px]">
+                            💡 Ejecuta <code className="bg-rose-100 px-1 rounded">database/12_open_orders.sql</code> en Supabase SQL Editor
+                            para crear la tabla <code className="bg-rose-100 px-1 rounded">public.orders</code>.
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {records.length === 0 && !loading && !error && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[12.5px]">
+                    <p className="font-bold mb-1">📭 No hay ventas registradas este mes</p>
+                    <p>
+                        Las ventas aparecerán aquí en cuanto cobres la primera mesa.
+                        Si acabas de cobrar y no aparece, abre la consola del navegador
+                        (F12) y revisa los mensajes de <code className="bg-amber-100 px-1 rounded">[PosTerminalPro] INSERT orders</code>.
+                    </p>
                 </div>
             )}
 

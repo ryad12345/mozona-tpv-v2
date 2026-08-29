@@ -522,34 +522,52 @@ export function PosTerminalPro() {
             ws.broadcastInvoicePaid(invoice);
 
             // 3) Persistir en `orders` (ticket cerrado) + limpiar draft
+            let persistError: string | null = null;
+            let persistOk = false;
             try {
                 const realTenantId = await resolveRealTenantId(restaurant?.id);
-                if (realTenantId && supabase) {
+                if (!realTenantId) {
+                    persistError = "No se pudo resolver tenant_id (BD vacía o sesión inválida)";
+                } else if (!supabase) {
+                    persistError = "Supabase no está configurado";
+                } else {
                     const items = pos.state.orderItems;
                     const sub = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
                     const tax = items.reduce((a, it) => {
                         const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
                         return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
                     }, 0);
-                    await supabase.from("orders").insert({
-                        tenant_id:      realTenantId,
-                        table_id:       table.id,
-                        table_number:   table.table_number,
-                        waiter_name:    auth.activeWaiter?.name ?? null,
-                        items:          items as any,
-                        subtotal:       round2(sub - tax),
-                        tax_total:      round2(tax),
-                        total:          round2(sub),
-                        payment_method: method,
-                        payment_status: "paid",
-                        status:         "closed",
-                        series:         series,
-                    });
-                    await clearDraft(realTenantId, table.id);
-                    console.log("[PosTerminalPro] ticket persistido en orders");
+                    console.log("[PosTerminalPro] INSERT orders con tenant_id=", realTenantId);
+                    const { data: orderRow, error: orderErr } = await supabase
+                        .from("orders")
+                        .insert({
+                            tenant_id:      realTenantId,
+                            table_id:       table.id,
+                            table_number:   table.table_number,
+                            waiter_name:    auth.activeWaiter?.name ?? null,
+                            items:          items as any,
+                            subtotal:       round2(sub - tax),
+                            tax_total:      round2(tax),
+                            total:          round2(sub),
+                            payment_method: method,
+                            payment_status: "paid",
+                            status:         "closed",
+                            series:         series,
+                        })
+                        .select()
+                        .single();
+                    if (orderErr) {
+                        console.error("[PosTerminalPro] INSERT orders error:", orderErr);
+                        persistError = `BD: ${orderErr.message} (code ${orderErr.code})`;
+                    } else {
+                        console.log("[PosTerminalPro] ticket persistido en orders:", orderRow?.id);
+                        await clearDraft(realTenantId, table.id);
+                        persistOk = true;
+                    }
                 }
             } catch (e) {
-                console.warn("[PosTerminalPro] persistir orders error:", e);
+                console.error("[PosTerminalPro] persistir orders exception:", e);
+                persistError = e instanceof Error ? e.message : String(e);
             }
 
             // 4) UI: marcar mesa como sucia, limpiar pedido, sonido
@@ -559,10 +577,24 @@ export function PosTerminalPro() {
             pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
 
             const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
-            setToast({
-                kind: "ok",
-                msg: `${verb} · Mesa ${table.table_number} · ${invoice.series}-${String(invoice.number).padStart(8,"0")}`,
-            });
+            const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;
+            if (persistOk) {
+                setToast({
+                    kind: "ok",
+                    msg: `${verb} · Mesa ${table.table_number} · ${seriesStr} · Guardado en BD`,
+                });
+            } else if (persistError) {
+                setToast({
+                    kind: "err",
+                    msg: `${verb} PERO NO se guardó en ventas: ${persistError}.  ` +
+                         `Ve a Settings → Ventas y comprueba que la tabla 'orders' existe (database/12_open_orders.sql).`,
+                });
+            } else {
+                setToast({
+                    kind: "ok",
+                    msg: `${verb} · Mesa ${table.table_number} · ${seriesStr} (sin persistir: VIP sin tenant)`,
+                });
+            }
         } catch (e) {
             playError();
             setToast({ kind: "err", msg: e instanceof Error ? e.message : "Error al cobrar" });
