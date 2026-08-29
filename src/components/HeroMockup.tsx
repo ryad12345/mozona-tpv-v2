@@ -65,19 +65,6 @@ export function HeroMockup({
                     Coloca el archivo en <code className="px-1 bg-slate-200/80 rounded text-slate-700">public/demo-hero.jpg</code>
                 </p>
             </div>
-
-            {/* Badge "TPV en vivo" */}
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5
-                            bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full
-                            border border-slate-200/60 shadow-sm pointer-events-none">
-                <div className="relative">
-                    <div className="w-2 h-2 rounded-full bg-rose-500" />
-                    <div className="absolute inset-0 w-2 h-2 rounded-full bg-rose-500 animate-ping opacity-75" />
-                </div>
-                <span className="text-[10.5px] font-black text-slate-800 tracking-wider uppercase">
-                    TPV en vivo
-                </span>
-            </div>
         </div>
     );
 }
