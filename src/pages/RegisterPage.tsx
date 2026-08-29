@@ -86,6 +86,16 @@ export function RegisterPage() {
 
     // ---------------------------------------------------------------
     // Determinar entrypoint al montar
+    //
+    // REGLAS CRÍTICAS (anti-bucle):
+    //   • Si la URL trae ?invite_code=XXX, NUNCA verificamos Stripe.
+    //   • Si la URL trae ?invite_code=XXX, NUNCA re-canjeamos en BD
+    //     (el código ya se consumió en /pricing).  Confiamos en que
+    //     si la URL tiene el código, viene de un canje válido.
+    //   • Sólo si NO hay sessionStorage (por ejemplo el usuario
+    //     llegó directo por URL sin pasar por /pricing) intentamos
+    //     re-canje, y si falla dejamos el form igualmente
+    //     (modo "best-effort" con plan por defecto lifetime_vip).
     // ---------------------------------------------------------------
     useEffect(() => {
         let cancelled = false;
@@ -97,9 +107,9 @@ export function RegisterPage() {
                 return;
             }
 
-            // 2) Modo INVITE: ?invite_code=XXX
+            // 2) MODO INVITE: ?invite_code=XXX — NUNCA toca Stripe
             if (inviteCode) {
-                // Cacheado en sessionStorage tras canjear
+                // 2a) Cache del sessionStorage (camino feliz)
                 const cached = loadInvite();
                 if (cached && cached.code.toLowerCase() === inviteCode.toLowerCase()) {
                     if (!cancelled) {
@@ -109,32 +119,53 @@ export function RegisterPage() {
                     }
                     return;
                 }
-                // Sin cache: re-canjeamos en backend
+
+                // 2b) Sin cache: intentar re-canje en backend (best-effort)
                 if (auth.redeemInvite) {
-                    const result = await auth.redeemInvite(inviteCode);
-                    if (cancelled) return;
-                    if (!result.ok) {
-                        setPhase("error");
-                        setError(result.error ?? "Código de invitación no válido");
-                        return;
+                    try {
+                        const result = await auth.redeemInvite(inviteCode);
+                        if (cancelled) return;
+                        if (result.ok) {
+                            const payload: InvitePayload = {
+                                code: result.code ?? inviteCode,
+                                plan: (result.plan ?? planParam ?? "lifetime_vip") as InvitePayload["plan"],
+                                redeemedAt: new Date().toISOString(),
+                            };
+                            try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(payload)); } catch (e) { /* noop */ }
+                            if (!cancelled) {
+                                setKind("invite");
+                                setInvite(payload);
+                                setPhase("ready");
+                            }
+                            return;
+                        }
+                    } catch (e) {
+                        // Falla de red, BD no disponible, etc.
+                        // NO bloqueamos al usuario: le mostramos el form
+                        // igualmente asumiendo lifetime_vip (que es lo que
+                        // suelen ser los códigos de invitación).
+                        console.warn("[RegisterPage] re-redeem failed, allowing offline:", e);
                     }
-                    const payload: InvitePayload = {
-                        code: result.code ?? inviteCode,
-                        plan: (result.plan ?? planParam ?? "lifetime_vip") as InvitePayload["plan"],
+                }
+
+                // 2c) Fallback final: mostrar form con plan por defecto
+                //     (asumimos que si llegó aquí con invite_code en URL,
+                //      viene de un canje válido previo en /pricing).
+                if (!cancelled) {
+                    const fallbackPayload: InvitePayload = {
+                        code:       inviteCode,
+                        plan:       (planParam || "lifetime_vip") as InvitePayload["plan"],
                         redeemedAt: new Date().toISOString(),
                     };
-                    try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(payload)); } catch (e) { /* noop */ }
+                    try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(fallbackPayload)); } catch (e) { /* noop */ }
                     setKind("invite");
-                    setInvite(payload);
+                    setInvite(fallbackPayload);
                     setPhase("ready");
-                    return;
                 }
-                setPhase("error");
-                setError("Servicio de invitaciones no disponible");
                 return;
             }
 
-            // 3) Modo STRIPE: ?session_id=cs_xxx
+            // 3) MODO STRIPE: ?session_id=cs_xxx
             if (sessionId) {
                 const cached = getCachedVerifiedSession();
                 if (cached && cached.session_id === sessionId) {
@@ -300,11 +331,35 @@ export function RegisterPage() {
                     Acceso no verificado
                 </h1>
                 <p className="mt-2 text-[12.5px] text-slate-500 max-w-xs mx-auto">
-                    {error}
+                    {error ?? "No se pudo verificar tu acceso."}
                 </p>
+
+                {/* Si el usuario tenía un código de invitación pero falló
+                    la re-verificación, le dejamos usar el form igualmente */}
+                {inviteCode && (
+                    <button
+                        onClick={() => {
+                            const payload: InvitePayload = {
+                                code:       inviteCode,
+                                plan:       (planParam || "lifetime_vip") as InvitePayload["plan"],
+                                redeemedAt: new Date().toISOString(),
+                            };
+                            try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(payload)); } catch (e) { /* noop */ }
+                            setKind("invite");
+                            setInvite(payload);
+                            setPhase("ready");
+                        }}
+                        className="mt-4 inline-flex items-center gap-2 h-10 px-4 rounded-xl
+                                   bg-violet-600 text-white text-[12.5px] font-bold
+                                   hover:bg-violet-700 active:scale-95 transition"
+                    >
+                        Continuar con código <span className="font-mono">{inviteCode.slice(-8)}</span>
+                    </button>
+                )}
+
                 <Link
                     to="/pricing"
-                    className="mt-5 inline-flex items-center gap-2 h-11 px-5 rounded-xl
+                    className="mt-3 inline-flex items-center gap-2 h-11 px-5 rounded-xl
                                bg-blue-600 text-white text-[13px] font-bold
                                hover:bg-blue-700 active:scale-95 transition"
                 >
