@@ -85,7 +85,9 @@ function buildPreBillHtml(params: {
     const itemRow = (l: { name: string; qty: number; price: number; notes?: string }): string => {
         const line = l.qty > 1 ? `${l.qty}x ${l.name}` : `1x ${l.name}`;
         const pr   = fmt(l.qty * l.price);
-        return lineRow(line, pr) + (l.notes ? noteRow(l.notes.replace(/</g, "&lt;")) : "");
+        // Item con flex de 2 columnas: nombre izquierda, precio derecha
+        return `<div class="item-row"><span class="item-name">${line.replace(/</g, "&lt;")}</span><span class="item-price">${pr}</span></div>`
+             + (l.notes ? noteRow(l.notes.replace(/</g, "&lt;")) : "");
     };
 
     return `<!doctype html>
@@ -144,6 +146,10 @@ function buildPreBillHtml(params: {
   .row  { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
   .row .lbl { flex: 1 1 auto; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
   .row .val { flex: 0 0 auto; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Items: el nombre puede ocupar varias líneas pero el precio se mantiene a la derecha */
+  .item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
+  .item-row .item-name { flex: 1 1 auto; min-width: 0; word-wrap: break-word; overflow-wrap: break-word; }
+  .item-row .item-price { flex: 0 0 auto; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
   .total{ font-weight: 900; font-size: 14px; }
   .meta { font-size: 11px; font-weight: 700; }
   .b    { font-weight: 900; }
@@ -167,6 +173,7 @@ function buildPreBillHtml(params: {
 </head>
 <body>
 <div id="ticket-print-area">
+  ${(restaurant as any)?.ticket_header_msg ? `<div class="ctr meta b">${String((restaurant as any).ticket_header_msg).replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>` : ""}
   <h1>${(restaurant?.business_name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
   <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
   <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
@@ -177,9 +184,18 @@ function buildPreBillHtml(params: {
         ${table && table.table_number != null
           ? `<div class="kv"><span class="k">Mesa:</span><span class="v b">${String(table.table_number).replace(/</g, "&lt;")}</span></div>`
           : ""}
-        ${waiter && waiter.name
-          ? `<div class="kv"><span class="k">Camarero:</span><span class="v b">${String(waiter.name).replace(/</g, "&lt;")}</span></div>`
-          : ""}
+        ${(() => {
+            // Si el waiter es "Cajero Demo" / "Modo Demo" (PIN maestro
+            // sin camareros), usamos el nombre del tenant como fallback.
+            const wn = waiter?.name ?? "";
+            const isDemo = /demo/i.test(wn) && !wn.includes("Casablanca") && !wn.includes("MOZONA");
+            const displayName = isDemo
+                ? (restaurant?.business_name ?? "MOZONA TPV")
+                : wn;
+            return displayName
+                ? `<div class="kv"><span class="k">Camarero:</span><span class="v b">${String(displayName).replace(/</g, "&lt;")}</span></div>`
+                : "";
+        })()}
       </div>`
     : ""}
   <div class="sep">${"─".repeat(32)}</div>
@@ -190,6 +206,7 @@ function buildPreBillHtml(params: {
   ${lineRow("TOTAL", fmt(gross), true)}
   <div class="sep">${"─".repeat(32)}</div>
   <div class="ctr" style="margin-top:4px;font-weight:900;">— PRE-CUENTA —</div>
+  ${(restaurant as any)?.ticket_footer_msg ? `<div class="ctr meta" style="margin-top:4px;">${String((restaurant as any).ticket_footer_msg).replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>` : ""}
   <div class="sep">${"─".repeat(32)}</div>
 </div>
 <script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>

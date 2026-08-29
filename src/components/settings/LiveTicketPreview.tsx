@@ -10,12 +10,26 @@
 // =====================================================================
 
 import { useMemo } from "react";
-import type { RestaurantForm } from "../../pages/SettingsPage";
 import { fmtEUR, round2 } from "../../lib/format";
 
 // ---------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------
+
+export interface RestaurantForm {
+    name?:               string;
+    nif?:                string;
+    address?:            string;
+    phone?:              string;
+    header_msg?:         string;
+    footer_msg?:         string;
+    showTax?:            boolean;
+    fontSize?:           "small" | "normal" | "large";
+    print_logo_on_ticket?: boolean;
+    logo_url?:           string;
+    default_series?:     string;
+    [key: string]: any;
+}
 
 export interface LiveTicketPreviewProps {
     form:       RestaurantForm;
