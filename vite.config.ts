@@ -1,11 +1,25 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import legacy from "@vitejs/plugin-legacy";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
         react(),
+        // ★ Legacy support para tablets antiguas (Chrome 40-55, Android 4.4-7)
+        // Genera bundle nomodule con todos los polyfills
+        legacy({
+            targets: [
+                "chrome >= 49",
+                "android >= 4.4",
+                "ios >= 10",
+                "defaults",
+            ],
+            additionalLegacyPolyfills: ["regenerator-runtime/runtime"],
+            renderLegacyChunks: true,
+            polyfills: true,
+        }),
         VitePWA({
             // Registro automático y transparente: el SW nuevo se activa
             // sin pedir confirmación; mostramos un toast de "nueva versión"
@@ -138,8 +152,8 @@ export default defineConfig({
     },
     envPrefix: ["VITE_", "TAURI_"],
     build: {
-        // ES2017 = compatible con Chrome 49+, Android 5+, iOS 10+
-        target: "es2017",
+        // El plugin-legacy controla el target para módulos legacy
+        target: "es2015",
         minify: "esbuild",
         sourcemap: false,
     },
