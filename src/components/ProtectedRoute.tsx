@@ -5,12 +5,13 @@
 //   • <ProtectedRoute>          — exige sesión activa
 //   • <AdminRoute>              — exige email == SuperAdmin
 //   • <SubscriptionGuard>       — exige tenant con suscripción activa
-//                                 (salta si es SuperAdmin o si el modo
-//                                 demo está activo)
+//                                 (salta si es VIP, SuperAdmin, o si el
+//                                 modo demo está activo)
 // =====================================================================
 
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { isVipOrAdmin } from "../lib/vip";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------
@@ -61,6 +62,20 @@ export function AdminRoute({ children }: { children: ReactNode }) {
 }
 
 // ---------------------------------------------------------------------
+// VipGuard: solo permite el paso a emails VIP (ni siquiera SuperAdmin)
+// ---------------------------------------------------------------------
+
+export function VipGuard({ children }: { children: ReactNode }) {
+    const auth = useAuth();
+    if (!auth.isReady) return <LoadingScreen />;
+    if (!auth.user) return <Navigate to="/auth" replace />;
+    if (!isVipOrAdmin(auth.user.email)) {
+        return <Navigate to="/app" replace />;
+    }
+    return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------
 // SubscriptionGuard
 // ---------------------------------------------------------------------
 
@@ -70,8 +85,14 @@ export function SubscriptionGuard({ children }: { children: ReactNode }) {
     if (!auth.isReady) return <LoadingScreen />;
     if (auth.status === "disabled") return <>{children}</>;
     if (!auth.user) return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
-    // SuperAdmin → bypass total
-    if (auth.isSuperAdmin) return <>{children}</>;
+
+    // ★ VIP / SuperAdmin → bypass TOTAL
+    //    Estos emails NUNCA son redirigidos a /pricing bajo ninguna
+    //    circunstancia, tengan o no tengan tenant en la BD.
+    if (isVipOrAdmin(auth.user.email) || auth.isSuperAdmin) {
+        return <>{children}</>;
+    }
+
     // Sin tenant → pricing
     if (!auth.tenant) return <Navigate to="/pricing" state={{ from: location.pathname }} replace />;
     // Suscripción inactiva

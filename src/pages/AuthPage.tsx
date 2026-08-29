@@ -32,9 +32,19 @@ export function AuthPage() {
     // Si ya está autenticado, redirigir
     useEffect(() => {
         if (auth.isReady && auth.user) {
-            const dest = auth.isSuperAdmin ? "/admin/invites" :
-                         auth.tenant ? "/app" : "/pricing";
-            nav(dest, { replace: true });
+            // ★ VIP / SuperAdmin → /app directo, NUNCA a /pricing
+            if (auth.isSuperAdmin) {
+                nav("/admin/invites", { replace: true });
+                return;
+            }
+            if (auth.tenant) {
+                nav("/app", { replace: true });
+                return;
+            }
+            // Sin tenant pero logueado: si es VIP, ir a /app
+            // (AuthContext ya le inyecta un tenant sintético, pero por
+            //  si acaso lo cubrimos aquí también)
+            nav("/app", { replace: true });
         }
     }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, nav]);
 

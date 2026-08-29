@@ -7,6 +7,7 @@ import {
     type ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { isVipOrAdmin } from "../lib/vip";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -376,10 +377,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const value = useMemo<AuthContextValue>(() => ({
         user, session, loading,
         isReady: !loading,
-        isSuperAdmin: false,
+        isSuperAdmin: isVipOrAdmin(user?.email),
         status: loading ? "loading" : (user ? "authenticated" : "unauthenticated"),
-        tenant: null,
-        tenantRole: null,
+        tenant: isVipOrAdmin(user?.email)
+            // VIP: tenant sintético para que cualquier guard que
+            // mire `auth.tenant` no lo mande a /pricing
+            ? {
+                id: "vip-bypass",
+                name: "VIP Bypass",
+                owner_id: user?.id ?? "vip",
+                plan: "lifetime_vip" as const,
+                subscription_status: "active" as const,
+                onboarding_completed: true,
+                created_at: new Date().toISOString(),
+            }
+            : null,
+        tenantRole: isVipOrAdmin(user?.email) ? "owner" : null,
         profile: user,
         refresh, createTenant, redeemInvite, signInWithGoogle,
         signIn, signInWithPassword, signOut, logout, signUp,

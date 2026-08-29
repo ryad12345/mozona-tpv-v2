@@ -62,13 +62,12 @@ export function PricingPage() {
     const [redeeming, setRedeeming] = useState(false);
     const [redeemMsg, setRedeemMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-    // Bypass SuperAdmin
+    // Bypass SuperAdmin + VIP
     useEffect(() => {
         if (!auth.isReady) return;
         if (auth.isSuperAdmin) { nav("/admin/invites", { replace: true }); return; }
-        if (auth.tenant && (auth.tenant.subscription_status === "active" || auth.tenant.subscription_status === "trialing")) {
-            nav("/app", { replace: true });
-        }
+        // ★ VIP con tenant activo (o sintético) → /app directo
+        if (auth.tenant) { nav("/app", { replace: true }); return; }
     }, [auth.isReady, auth.isSuperAdmin, auth.tenant, nav]);
 
     const subscribe = async (planId: "plus_30" | "pro_50") => {

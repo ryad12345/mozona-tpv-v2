@@ -89,9 +89,35 @@ export function usePosData(): PosDataState {
             // 1) Si hay sesión Supabase o de camarero, cargar del tenant real
             if (isSupabaseConfigured && (auth.user || waiterTenantId)) {
                 try {
-                    const data = waiterTenantId
-                        ? await loadRestaurantData(waiterTenantId)
-                        : await loadRestaurantData();
+                    let data;
+                    if (waiterTenantId) {
+                        data = await loadRestaurantData(waiterTenantId);
+                    } else if (auth.isSuperAdmin) {
+                        // ★ VIP / SuperAdmin: usar el primer tenant activo
+                        //    que encontremos, o el del owner = current user
+                        data = await loadRestaurantData();
+                        if (!data.restaurant) {
+                            // Sin tenant del user → buscar el primer tenant
+                            // activo (caso típico del SuperAdmin)
+                            try {
+                                const sb = (await import("../lib/supabase")).supabase;
+                                const { data: firstTenant } = await sb
+                                    .from("tenants")
+                                    .select("*")
+                                    .eq("subscription_status", "active")
+                                    .order("created_at", { ascending: true })
+                                    .limit(1)
+                                    .maybeSingle();
+                                if (firstTenant) {
+                                    data = await loadRestaurantData(firstTenant.id);
+                                }
+                            } catch (e) {
+                                console.warn("[usePosData] VIP fallback tenant lookup:", e);
+                            }
+                        }
+                    } else {
+                        data = await loadRestaurantData();
+                    }
                     if (data.error) {
                         console.warn("[usePosData] loadRestaurantData:", data.error);
                     }
