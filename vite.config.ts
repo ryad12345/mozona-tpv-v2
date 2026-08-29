@@ -11,6 +11,14 @@ export default defineConfig({
             // sin pedir confirmación; mostramos un toast de "nueva versión"
             // desde UpdatePrompt.
             registerType: "autoUpdate",
+            // Forzar al SW nuevo a tomar control inmediatamente,
+            // sin esperar a que se cierren todas las pestañas
+            injectRegister: "auto",
+            strategies: "generateSW",
+
+            // Injectamos un script que fuerza skipWaiting al instalar
+            // y limpia el cache deprecado
+            filename: "sw.js",
 
             // Ficheros estáticos a pre-cachear (junto a los chunks de JS)
             includeAssets: [
@@ -24,6 +32,7 @@ export default defineConfig({
                 name: "MOZONA TPV",
                 short_name: "MozonaTPV",
                 description: "Sistema TPV Local-First para hostelería con VeriFactu",
+                version: "1.1.0-sales-fix",
                 lang: "es-ES",
                 dir: "ltr",
                 scope: "/",

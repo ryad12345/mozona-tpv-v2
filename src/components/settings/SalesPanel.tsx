@@ -60,6 +60,16 @@ export function SalesPanel() {
 
     return (
         <div className="space-y-4">
+            {/* Banner de versión (para detectar caché vieja) */}
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1">
+                <span>
+                    build: <code className="text-slate-600">{import.meta.env.VITE_BUILD_HASH ?? "dev"}</code>
+                </span>
+                <span>
+                    mz-sales v1.1 (commit 476bbe8 = RPC + SECURITY DEFINER)
+                </span>
+            </div>
+
             <div className="flex items-center justify-between">
                 <div>
                     <h3 className="text-base font-bold text-slate-900">
