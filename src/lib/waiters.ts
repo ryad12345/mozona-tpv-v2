@@ -12,6 +12,54 @@ import {
     type CachedWaiter,
 } from "./offlineStorage";
 
+// ---------------------------------------------------------------------
+// Resolver el tenant_id real
+// ---------------------------------------------------------------------
+
+/** Detecta si un string es un UUID válido (formato 8-4-4-4-12). */
+export function isValidUuid(s: string | null | undefined): boolean {
+    if (!s) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+/** Detecta si es un tenant sintético (VIP bypass). */
+export function isSyntheticTenantId(s: string | null | undefined): boolean {
+    if (!s) return false;
+    return s === "vip-bypass" || s.startsWith("vip-") || s === "demo";
+}
+
+/**
+ * Resuelve el tenant_id real consultando la BD.
+ * Si el id ya es un UUID válido → lo retorna.
+ * Si es "vip-bypass" o null → busca el primer tenant activo de la BD.
+ * Si no encuentra nada → retorna null (el caller debe manejar el error).
+ */
+export async function resolveRealTenantId(
+    candidate: string | null | undefined,
+): Promise<string | null> {
+    if (isValidUuid(candidate) && !isSyntheticTenantId(candidate)) {
+        return candidate!;
+    }
+    // Fallback: buscar el primer tenant activo de la BD
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase
+            .from("tenants")
+            .select("id")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+        if (error) {
+            console.warn("[resolveRealTenantId] error:", error.message);
+            return null;
+        }
+        return data?.id ?? null;
+    } catch (e) {
+        console.warn("[resolveRealTenantId] exception:", e);
+        return null;
+    }
+}
+
 export type WaiterRole = "owner" | "manager" | "waiter" | "kitchen";
 
 export interface Waiter {
@@ -65,10 +113,13 @@ export function generateUsername(name: string, suffix?: string): string {
 
 /** Lista camareros del tenant. */
 export async function listWaiters(tenantId: string): Promise<Waiter[]> {
+    // Resolver UUID real (bypass 'vip-bypass' y similares)
+    const realTenantId = await resolveRealTenantId(tenantId);
+    if (!realTenantId) return [];
     const { data, error } = await supabase
         .from("tenant_users")
         .select("id, tenant_id, user_id, name, email, username, waiter_pin, pin_code, role, is_active, created_at")
-        .eq("tenant_id", tenantId)
+        .eq("tenant_id", realTenantId)
         .order("name");
     if (error) throw error;
     return (data ?? []).map(w => ({
@@ -121,6 +172,15 @@ export async function createWaiter(input: {
     role:      WaiterRole;
     email?:    string | null;
 }): Promise<CreateWaiterResult> {
+    // 0) RESOLVER tenant_id real (evita error 22P02 con 'vip-bypass')
+    const realTenantId = await resolveRealTenantId(input.tenant_id);
+    if (!realTenantId) {
+        throw new Error(
+            "No se pudo resolver el tenant_id real.  Asegúrate de que existe al menos un tenant en la BD " +
+            "(ejecuta database/02_saas_migration.sql + 07_vip_unlock.sql)."
+        );
+    }
+
     // 1) Generar username único (5 intentos) — siempre LOWERCASE
     const baseName = generateUsername(input.name);
     let username = baseName.toLowerCase();
@@ -129,7 +189,7 @@ export async function createWaiter(input: {
         const { data: existing } = await supabase
             .from("tenant_users")
             .select("id")
-            .eq("tenant_id", input.tenant_id)
+            .eq("tenant_id", realTenantId)
             .ilike("username", username)
             .maybeSingle();
         if (!existing) break;
@@ -143,7 +203,7 @@ export async function createWaiter(input: {
     // 3) Intentar INSERT completo (con todas las columnas)
     //    Si la BD no tiene username/waiter_pin, fallback a INSERT simple.
     const baseRow = {
-        tenant_id: input.tenant_id,
+        tenant_id: realTenantId,    // <-- UUID real, nunca "vip-bypass"
         name:      input.name,
         role:      input.role,
         email:     input.email ?? null,

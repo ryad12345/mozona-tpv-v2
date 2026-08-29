@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import {
     syncWaiters, listCachedWaiters, findByPinCached,
     createWaiter, updateWaiter, deleteWaiterById, resetWaiterPassword,
+    resolveRealTenantId,
     type CreateWaiterResult,
     type Waiter, type WaiterRole,
 } from "../lib/waiters";
@@ -40,7 +41,14 @@ export function useWaiters(): UseWaitersReturn {
         setLoading(true);
         setError(null);
         try {
-            const cached = await listCachedWaiters(tenantId);
+            // Resolver UUID real (bypass 'vip-bypass')
+            const realId = await resolveRealTenantId(tenantId);
+            if (!realId) {
+                setWaiters([]);
+                setLoading(false);
+                return;
+            }
+            const cached = await listCachedWaiters(realId);
             if (cached.length > 0) {
                 setWaiters(cached.map(c => ({
                     id: c.id, tenant_id: c.tenant_id, user_id: c.user_id,
@@ -49,7 +57,7 @@ export function useWaiters(): UseWaitersReturn {
                     created_at: new Date(c.cached_at).toISOString(),
                 })));
             }
-            const remote = await syncWaiters(tenantId);
+            const remote = await syncWaiters(realId);
             setWaiters(remote);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -67,7 +75,13 @@ export function useWaiters(): UseWaitersReturn {
     const create = useCallback(async (input: { name: string; role: WaiterRole }) => {
         if (!tenantId) return null;
         try {
-            const result = await createWaiter({ ...input, tenant_id: tenantId });
+            // Resolver UUID real antes de crear (bypass 'vip-bypass')
+            const realId = await resolveRealTenantId(tenantId);
+            if (!realId) {
+                setError("No se pudo resolver el tenant_id real");
+                return null;
+            }
+            const result = await createWaiter({ ...input, tenant_id: realId });
             setWaiters(prev => [...prev, result.waiter]);
             return result;
         } catch (e) {
@@ -113,7 +127,9 @@ export function useWaiters(): UseWaitersReturn {
 
     const validatePin = useCallback(async (pin: string) => {
         if (!tenantId) return null;
-        return findByPinCached(tenantId, pin);
+        const realId = await resolveRealTenantId(tenantId);
+        if (!realId) return null;
+        return findByPinCached(realId, pin);
     }, [tenantId]);
 
     return {
