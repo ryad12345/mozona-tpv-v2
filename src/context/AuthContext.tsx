@@ -1,16 +1,12 @@
 // =====================================================================
-// MOZONA TPV — AuthContext (con persistencia en localStorage)
-// =====================================================================
-// AuthProvider y useAuth() exponen user, session, loading, signIn,
-// signInWithPassword, signOut, logout.  Persistencia en localStorage
-// bajo la clave "pos_current_user" para que el login en /auth nunca
-// devuelva "no provider" y el usuario permanezca logged en tras refresh.
+// MOZONA TPV — AuthContext (Supabase real, sin mocks ni autologin)
 // =====================================================================
 
 import {
     createContext, useContext, useCallback, useEffect, useMemo, useState,
     type ReactNode,
 } from "react";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -37,7 +33,6 @@ export interface AuthContextValue {
     session:     AuthSession | null;
     loading:     boolean;
 
-    /** Compatibilidad con la API anterior (Supabase) — opcionales */
     isReady?:    boolean;
     isSuperAdmin?: boolean;
     status?:     "loading" | "authenticated" | "unauthenticated" | "disabled";
@@ -49,21 +44,15 @@ export interface AuthContextValue {
     redeemInvite?: (...args: any[]) => Promise<any>;
     signInWithGoogle?: (...args: any[]) => Promise<any>;
 
-    /** Inicia sesión con email + password (modo demo usa localStorage) */
-    signIn:      (email: string, password: string) => Promise<{ user: AuthUser | null; error: string | null }>;
-    /** Alias de signIn (compatibilidad con supabase) */
-    signInWithPassword: (email: string, password: string) => Promise<{ user: AuthUser | null; error: string | null }>;
-    /** Cierra sesión */
-    signOut:     () => Promise<void>;
-    /** Alias de signOut */
-    logout:      () => Promise<void>;
-
-    /** Crea un usuario nuevo (demo: lo guarda en localStorage) */
-    signUp:      (email: string, password: string, name?: string) => Promise<{ user: AuthUser | null; error: string | null }>;
+    signIn:           (email: string, password: string) => Promise<{ user: AuthUser | null; error: string | null }>;
+    signInWithPassword:(email: string, password: string) => Promise<{ user: AuthUser | null; error: string | null }>;
+    signOut:          () => Promise<void>;
+    logout:           () => Promise<void>;
+    signUp:           (email: string, password: string, name?: string) => Promise<{ user: AuthUser | null; error: string | null }>;
 }
 
 // ---------------------------------------------------------------------
-// Persistencia
+// Persistencia local
 // ---------------------------------------------------------------------
 
 const STORAGE_KEY = "pos_current_user";
@@ -74,7 +63,12 @@ function loadFromStorage(): { user: AuthUser; session: AuthSession } | null {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
-        if (!parsed?.user?.email) return null;
+        if (!parsed?.user?.email || !parsed?.session?.access_token) return null;
+        // Verifica que el token no haya expirado
+        if (parsed.session.expires_at && parsed.session.expires_at < Date.now()) {
+            localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
         return parsed;
     } catch {
         return null;
@@ -91,48 +85,45 @@ function saveToStorage(user: AuthUser | null, session: AuthSession | null): void
 }
 
 // ---------------------------------------------------------------------
-// Utilidades
+// Helpers
 // ---------------------------------------------------------------------
 
-function makeId(): string {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-        return crypto.randomUUID();
-    }
-    return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function supabaseUserToAuthUser(sbUser: any, tenantId?: string | null): AuthUser {
+    const meta = sbUser?.user_metadata ?? {};
+    const derivedName = (meta.full_name as string) || (meta.name as string)
+        || sbUser?.email?.split("@")[0] || "Usuario";
+    return {
+        id:        sbUser.id,
+        email:     (sbUser.email ?? "").toLowerCase(),
+        name:      derivedName,
+        role:      "owner",
+        restaurant_id: tenantId ?? undefined,
+        created_at: sbUser.created_at,
+    };
 }
 
-function makeSession(user: AuthUser): AuthSession {
+function supabaseSessionToAuthSession(sbSession: any, user: AuthUser): AuthSession {
     return {
-        access_token:  `demo-${makeId()}`,
-        refresh_token: `demo-r-${makeId()}`,
-        expires_at:    Date.now() + 30 * 24 * 60 * 60 * 1000,
+        access_token:  sbSession.access_token,
+        refresh_token: sbSession.refresh_token,
+        expires_at:    sbSession.expires_at
+            ? sbSession.expires_at * 1000
+            : Date.now() + 60 * 60 * 1000,
         user,
     };
 }
 
-function makeUser(email: string, name?: string): AuthUser {
-    const cleanEmail = email.trim().toLowerCase();
-    const derivedName = name?.trim() || cleanEmail.split("@")[0] || "Usuario";
-    return {
-        id:        makeId(),
-        email:     cleanEmail,
-        name:      derivedName,
-        role:      "owner",
-        created_at: new Date().toISOString(),
-    };
-}
-
 // ---------------------------------------------------------------------
-// Default (modo demo, NUNCA null/undefined)
+// Default
 // ---------------------------------------------------------------------
 
 const FALLBACK: AuthContextValue = {
     user: null, session: null, loading: false,
-    signIn: async () => ({ user: null, error: "no provider" }),
-    signInWithPassword: async () => ({ user: null, error: "no provider" }),
-    signOut: async () => {},
-    logout: async () => {},
-    signUp: async () => ({ user: null, error: "no provider" }),
+    signIn:           async () => ({ user: null, error: "no provider" }),
+    signInWithPassword:async () => ({ user: null, error: "no provider" }),
+    signOut:          async () => {},
+    logout:           async () => {},
+    signUp:           async () => ({ user: null, error: "no provider" }),
 };
 
 // ---------------------------------------------------------------------
@@ -154,34 +145,147 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [session, setSession] = useState<AuthSession | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
-    // Carga inicial desde localStorage
+    // Carga inicial: cache local + verificación con Supabase
     useEffect(() => {
-        const cached = loadFromStorage();
-        if (cached) {
-            setUser(cached.user);
-            setSession(cached.session);
+        let mounted = true;
+
+        const init = async () => {
+            // 1) Hidratar desde localStorage (rápido)
+            const cached = loadFromStorage();
+            if (cached && mounted) {
+                setUser(cached.user);
+                setSession(cached.session);
+            }
+
+            // 2) Verificar con Supabase si está configurado
+            if (isSupabaseConfigured) {
+                try {
+                    const { data, error } = await supabase.auth.getSession();
+                    if (!mounted) return;
+                    if (error) {
+                        console.warn("[AuthContext] getSession error:", error.message);
+                    } else if (data.session?.user) {
+                        const u = supabaseUserToAuthUser(data.session.user);
+                        const s = supabaseSessionToAuthSession(data.session, u);
+                        setUser(u);
+                        setSession(s);
+                        saveToStorage(u, s);
+                    } else if (cached) {
+                        // Supabase dice que no hay sesión pero teníamos cache
+                        setUser(null);
+                        setSession(null);
+                        saveToStorage(null, null);
+                    }
+                } catch (e) {
+                    console.warn("[AuthContext] init error:", e);
+                }
+            }
+            if (mounted) setLoading(false);
+        };
+
+        init();
+
+        // 3) Suscribirse a cambios de auth (login/logout en otras pestañas)
+        if (isSupabaseConfigured) {
+            const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+                if (!mounted) return;
+                if (newSession?.user) {
+                    const u = supabaseUserToAuthUser(newSession.user);
+                    const s = supabaseSessionToAuthSession(newSession, u);
+                    setUser(u);
+                    setSession(s);
+                    saveToStorage(u, s);
+                } else {
+                    setUser(null);
+                    setSession(null);
+                    saveToStorage(null, null);
+                }
+            });
+            return () => {
+                mounted = false;
+                sub.subscription.unsubscribe();
+            };
         }
-        setLoading(false);
+
+        return () => { mounted = false; };
     }, []);
 
+    // -----------------------------------------------------------------
+    // SignIn REAL con Supabase
+    // -----------------------------------------------------------------
     const signIn = useCallback(async (email: string, password: string) => {
         if (!email || !password) {
             return { user: null, error: "Email y contraseña son obligatorios" };
         }
-        if (password.length < 4) {
-            return { user: null, error: "La contraseña debe tener al menos 4 caracteres" };
+        if (!isSupabaseConfigured) {
+            return { user: null, error: "Supabase no está configurado" };
         }
-        const u = makeUser(email);
-        const s = makeSession(u);
-        setUser(u);
-        setSession(s);
-        saveToStorage(u, s);
-        return { user: u, error: null };
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: email.trim().toLowerCase(),
+                password,
+            });
+            if (error) {
+                return { user: null, error: error.message };
+            }
+            if (!data?.user || !data?.session) {
+                return { user: null, error: "No se pudo iniciar sesión" };
+            }
+            const u = supabaseUserToAuthUser(data.user);
+            const s = supabaseSessionToAuthSession(data.session, u);
+            setUser(u);
+            setSession(s);
+            saveToStorage(u, s);
+            return { user: u, error: null };
+        } catch (e) {
+            return { user: null, error: e instanceof Error ? e.message : String(e) };
+        }
     }, []);
 
     const signInWithPassword = signIn;
 
+    // -----------------------------------------------------------------
+    // SignUp
+    // -----------------------------------------------------------------
+    const signUp = useCallback(async (email: string, password: string, name?: string) => {
+        if (!email || !password) {
+            return { user: null, error: "Email y contraseña son obligatorios" };
+        }
+        if (!isSupabaseConfigured) {
+            return { user: null, error: "Supabase no está configurado" };
+        }
+        try {
+            const { data, error } = await supabase.auth.signUp({
+                email: email.trim().toLowerCase(),
+                password,
+                options: { data: { full_name: name ?? "" } },
+            });
+            if (error) return { user: null, error: error.message };
+            // Si Supabase tiene confirmación por email, session puede ser null
+            if (!data?.user) return { user: null, error: "No se pudo crear la cuenta" };
+            if (data.session) {
+                const u = supabaseUserToAuthUser(data.user);
+                const s = supabaseSessionToAuthSession(data.session, u);
+                setUser(u);
+                setSession(s);
+                saveToStorage(u, s);
+                return { user: u, error: null };
+            }
+            return { user: null, error: "Revisa tu email para confirmar la cuenta" };
+        } catch (e) {
+            return { user: null, error: e instanceof Error ? e.message : String(e) };
+        }
+    }, []);
+
+    // -----------------------------------------------------------------
+    // SignOut
+    // -----------------------------------------------------------------
     const signOut = useCallback(async () => {
+        if (isSupabaseConfigured) {
+            try { await supabase.auth.signOut(); } catch (e) {
+                console.warn("[AuthContext] signOut error:", e);
+            }
+        }
         setUser(null);
         setSession(null);
         saveToStorage(null, null);
@@ -189,35 +293,55 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const logout = signOut;
 
-    const signUp = useCallback(async (email: string, password: string, name?: string) => {
-        if (!email || !password) {
-            return { user: null, error: "Email y contraseña son obligatorios" };
+    // -----------------------------------------------------------------
+    // Refresh: re-leer sesión
+    // -----------------------------------------------------------------
+    const refresh = useCallback(async () => {
+        if (!isSupabaseConfigured) return;
+        try {
+            const { data } = await supabase.auth.getSession();
+            if (data.session?.user) {
+                const u = supabaseUserToAuthUser(data.session.user);
+                const s = supabaseSessionToAuthSession(data.session, u);
+                setUser(u);
+                setSession(s);
+                saveToStorage(u, s);
+            }
+        } catch (e) {
+            console.warn("[AuthContext] refresh error:", e);
         }
-        if (password.length < 6) {
-            return { user: null, error: "La contraseña debe tener al menos 6 caracteres" };
+    }, []);
+
+    // -----------------------------------------------------------------
+    // Stubs de compatibilidad
+    // -----------------------------------------------------------------
+    const createTenant = useCallback(async (..._args: any[]) => ({ error: "Use Stripe checkout" }), []);
+    const redeemInvite = useCallback(async (..._args: any[]) => ({ error: "Not implemented" }), []);
+    const signInWithGoogle = useCallback(async () => {
+        if (!isSupabaseConfigured) return { error: "Supabase no configurado" };
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: "google",
+                options: { redirectTo: `${window.location.origin}/auth/callback` },
+            });
+            return { error: error?.message ?? null };
+        } catch (e) {
+            return { error: e instanceof Error ? e.message : String(e) };
         }
-        const u = makeUser(email, name);
-        const s = makeSession(u);
-        setUser(u);
-        setSession(s);
-        saveToStorage(u, s);
-        return { user: u, error: null };
     }, []);
 
     const value = useMemo<AuthContextValue>(() => ({
         user, session, loading,
         isReady: !loading,
         isSuperAdmin: false,
-        status: user ? "authenticated" : "unauthenticated",
+        status: loading ? "loading" : (user ? "authenticated" : "unauthenticated"),
         tenant: null,
         tenantRole: null,
         profile: user,
-        refresh: async () => {},
-        createTenant: async () => ({ error: "demo mode" }),
-        redeemInvite: async () => ({ error: "demo mode" }),
-        signInWithGoogle: async () => ({ error: "demo mode" }),
+        refresh, createTenant, redeemInvite, signInWithGoogle,
         signIn, signInWithPassword, signOut, logout, signUp,
-    }), [user, session, loading, signIn, signOut, signUp]);
+    }), [user, session, loading, signIn, signUp, signOut, refresh,
+         createTenant, redeemInvite, signInWithGoogle]);
 
     return (
         <AuthContext.Provider value={value}>
@@ -235,7 +359,6 @@ export function useAuth(): AuthContextValue {
     return ctx ?? FALLBACK;
 }
 
-/** Variante opcional. */
 export function useAuthOptional(): AuthContextValue | null {
     return useContext(AuthContext);
 }

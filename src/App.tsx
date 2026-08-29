@@ -8,7 +8,7 @@ import { PosTerminalPro } from "./pages/PosTerminalPro";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AuthPage } from "./pages/AuthPage";
 import { WebSocketProvider } from "./context/WebSocketContext";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 
 // ---------------------------------------------------------------------
 // ErrorBoundary
@@ -63,6 +63,28 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 // ---------------------------------------------------------------------
+// ProtectedRoute: redirige a /auth si no hay user
+// ---------------------------------------------------------------------
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+    const auth = useAuth();
+    if (auth.loading) {
+        return (
+            <div className="min-h-dvh w-full flex items-center justify-center bg-slate-50">
+                <div className="text-center">
+                    <div className="w-10 h-10 mx-auto mb-3 border-[3px] border-slate-200 border-t-blue-600 rounded-full animate-spin" />
+                    <div className="text-[12px] text-slate-500">Cargando…</div>
+                </div>
+            </div>
+        );
+    }
+    if (!auth.user) {
+        return <Navigate to="/auth" replace />;
+    }
+    return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------
 
@@ -73,11 +95,11 @@ export function App() {
                 <WebSocketProvider>
                     <BrowserRouter>
                         <Routes>
-                            <Route path="/"        element={<Navigate to="/app" replace />} />
-                            <Route path="/app"      element={<PosTerminalPro />} />
-                            <Route path="/settings" element={<SettingsPage />} />
+                            <Route path="/"        element={<Navigate to="/auth" replace />} />
                             <Route path="/auth"     element={<AuthPage />} />
-                            <Route path="*"        element={<Navigate to="/app" replace />} />
+                            <Route path="/app"      element={<ProtectedRoute><PosTerminalPro /></ProtectedRoute>} />
+                            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                            <Route path="*"        element={<Navigate to="/auth" replace />} />
                         </Routes>
                     </BrowserRouter>
                 </WebSocketProvider>
