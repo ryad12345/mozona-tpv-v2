@@ -116,7 +116,9 @@ export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
         restaurant_id: t.tenant_id,
         zone_id: null,
         zone: t.zone,
-        table_number: t.name,
+        // Extraer SOLO el número del nombre (ej. "B-1" → "1", "S-3" → "3")
+        // Si ya es numérico, se queda igual.
+        table_number: String(t.name ?? "").match(/\d+/)?.[0] ?? String(t.name ?? ""),
         status: t.status === "occupied" ? "OCCUPIED"
               : t.status === "billed"   ? "BILL_REQUESTED"
               : t.status === "reserved" ? "RESERVED"
