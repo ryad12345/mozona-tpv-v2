@@ -68,6 +68,22 @@ export function RegisterPage() {
     const planParam  = (params.get("plan")        ?? "").trim() as
                        "" | "plus_30" | "pro_50" | "lifetime_vip";
 
+    // Log diagnóstico (visible en DevTools → Console)
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            console.log("[RegisterPage] mount", {
+                url: window.location.href,
+                sessionId,
+                inviteCode,
+                planParam,
+                authReady: auth.isReady,
+                authUser:  auth.user?.id ?? null,
+                authTenant: auth.tenant?.id ?? null,
+                sessionStorageInvite: sessionStorage.getItem(INVITE_KEY),
+            });
+        }
+    }, []);
+
     const [phase,    setPhase]    = useState<Phase>("verifying");
     const [error,    setError]    = useState<string | null>(null);
     const [kind,     setKind]     = useState<EntryKind>("stripe");
@@ -108,9 +124,11 @@ export function RegisterPage() {
 
         // 2) MODO INVITE: ?invite_code=XXX — NUNCA toca Stripe
         if (inviteCode) {
+            console.log("[RegisterPage] MODO INVITE detectado:", inviteCode);
             // 2a) Cache del sessionStorage (camino feliz)
             const cached = loadInvite();
             if (cached && cached.code.toLowerCase() === inviteCode.toLowerCase()) {
+                console.log("[RegisterPage] invite cacheado en sessionStorage");
                 setKind("invite");
                 setInvite(cached);
                 setPhase("ready");
@@ -128,6 +146,7 @@ export function RegisterPage() {
             };
             try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(fallbackPayload)); } catch (e) { /* noop */ }
             if (!cancelled) {
+                console.log("[RegisterPage] usando fallback (URL como fuente de verdad):", fallbackPayload);
                 setKind("invite");
                 setInvite(fallbackPayload);
                 setPhase("ready");
