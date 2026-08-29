@@ -127,3 +127,67 @@
         --tw-ring-color: var(--brand-color);
     }
 }
+
+/* =====================================================================
+   MOZONA TPV — Reglas de impresión térmica
+   Aseguran que el ticket salga en blanco y negro, alto contraste,
+   sin fondos, sin animaciones y en una sola columna.
+   ===================================================================== */
+
+@media print {
+    /* Quita márgenes del navegador y oscurece la tinta */
+    @page { margin: 4mm; }
+
+    html, body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Tipografía monoespaciada y alto contraste para papel térmico 80mm */
+    body, .ticket, .printable, .receipt, .invoice {
+        font-family: ui-monospace, "Courier New", "Menlo", monospace !important;
+        color: #000000 !important;
+        background: #ffffff !important;
+        font-size: 12px !important;
+        line-height: 1.35 !important;
+        -webkit-font-smoothing: none;
+    }
+
+    /* Elimina cualquier fondo de color que manche el ticket */
+    * {
+        background: transparent !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        animation: none !important;
+        transition: none !important;
+        filter: none !important;
+    }
+
+    /* Sólo los textos se ven, con peso fuerte */
+    p, span, h1, h2, h3, h4, h5, h6, td, th, li, b, strong, em {
+        color: #000000 !important;
+    }
+
+    /* Bordes: sólo negros */
+    hr, .border, [class*="border-"] {
+        border-color: #000000 !important;
+    }
+
+    /* Esconde todo lo que no sea ticket */
+    .no-print, header, nav, aside, button, [role="button"] {
+        display: none !important;
+    }
+
+    /* Una sola columna, sin overflow */
+    body * { visibility: visible; }
+    .printable, .ticket {
+        visibility: visible;
+        position: static !important;
+        width: 72mm !important;
+        max-width: 72mm !important;
+        margin: 0 !important;
+        padding: 2mm !important;
+    }
+}

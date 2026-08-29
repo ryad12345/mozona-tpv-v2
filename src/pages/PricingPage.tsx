@@ -130,7 +130,7 @@ export function PricingPage() {
         if (!token.trim()) return;
         setRedeeming(true);
         setRedeemMsg(null);
-        const { error } = await auth.redeemInvite(token.trim());
+        const { error } = await (auth.redeemInvite ?? (async () => ({ error: "no provider" })))(token.trim());
         setRedeeming(false);
         if (error) {
             setRedeemMsg({ kind: "err", text: error });

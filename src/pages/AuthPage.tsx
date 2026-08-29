@@ -77,7 +77,7 @@ export function AuthPage() {
     const handleGoogle = async () => {
         setMsg(null);
         setBusy(true);
-        const { error } = await auth.signInWithGoogle();
+        const { error } = await (auth.signInWithGoogle ?? (async () => ({ error: "no provider" })))();
         setBusy(false);
         if (error) setMsg({ kind: "err", text: error });
     };

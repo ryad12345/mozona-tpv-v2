@@ -103,8 +103,8 @@ export function PosTopBar({
             <div className="hidden sm:flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
                 <StatusPill
                     icon={<IconWifi size={14} strokeWidth={2} />}
-                    label={localIp ? `LAN ${localIp}` : (lanEndpoint ? `LAN ${lanEndpoint}` : "LAN —")}
-                    tone={(localIp || lanEndpoint) ? "ok" : "muted"}
+                    label="Online"
+                    tone="ok"
                 />
                 <button
                     onClick={onShowQR}

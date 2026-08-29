@@ -16,7 +16,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useWebSocket } from "../hooks/WebSocketProvider";
+import { useWebSocket } from "../context/WebSocketContext";
 import { useWaiterAuth } from "../hooks/useWaiterAuth";
 import { useAuth } from "../lib/auth";
 import { usePosReducer, type PosState } from "../hooks/usePosReducer";
@@ -711,7 +711,7 @@ export function PosTerminalPro() {
                 <DebugPanel
                     state={pos.state}
                     pos={pos}
-                    wsState={ws.state}
+                    wsState={ws.status}
                     wsQueue={ws.queueSize}
                 />
             )}

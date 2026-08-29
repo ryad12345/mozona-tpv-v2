@@ -208,7 +208,7 @@ export function OnboardingWizard() {
                 if (error) throw error;
             }
             // Refrescar el auth state para que el guard no nos redirija
-            await auth.refresh();
+            await (auth.refresh ?? (async () => {}))();
             nav("/app", { replace: true });
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

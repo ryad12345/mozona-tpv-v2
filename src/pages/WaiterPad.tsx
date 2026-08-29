@@ -11,7 +11,7 @@
 // =====================================================================
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useWebSocket } from "../hooks/WebSocketProvider";
+import { useWebSocket } from "../context/WebSocketContext";
 import { useWaiterAuth, type Waiter } from "../hooks/useWaiterAuth";
 import { usePosData } from "../hooks/usePosData";
 import { PinAuthModal } from "../components/auth/PinAuthModal";
