@@ -71,7 +71,23 @@ export function usePosData(): PosDataState {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            // 0) Si hay sesión de camarero (vía /waiter/login), usar
+            // 0) ★ FIX: Detectar cambio de versión y limpiar IndexedDB
+            //    cuando hay una nueva build con cache-bust
+            try {
+                const cacheVersion = localStorage.getItem("mozona.cache_version");
+                const CURRENT_VERSION = "v1.3-sync-fixes";
+                if (cacheVersion !== CURRENT_VERSION) {
+                    console.log("[usePosData] cache-bust:", cacheVersion, "→", CURRENT_VERSION);
+                    const { clearAll } = await import("../lib/offlineStorage");
+                    await clearAll();
+                    localStorage.setItem("mozona.cache_version", CURRENT_VERSION);
+                    console.log("[usePosData] IndexedDB limpiado");
+                }
+            } catch (e) {
+                console.warn("[usePosData] cache-bust check failed:", e);
+            }
+
+            // 1) Si hay sesión de camarero (vía /waiter/login), usar
             //    su tenant_id directamente
             let waiterTenantId: string | null = null;
             if (!auth.user) {
@@ -92,7 +108,7 @@ export function usePosData(): PosDataState {
                     let data;
                     if (waiterTenantId) {
                         data = await loadRestaurantData(waiterTenantId);
-                    } else if (auth.isSuperAdmin) {
+                    } else if (auth.isSuperAdmin || auth.user) {
                         // ★ VIP / SuperAdmin: usar el primer tenant activo
                         //    que encontremos, o el del owner = current user
                         data = await loadRestaurantData();

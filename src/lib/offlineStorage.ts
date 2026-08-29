@@ -428,3 +428,13 @@ export async function deleteWaiter(id: string): Promise<void> {
     const db = await getDB();
     await db.delete("waiters", id);
 }
+
+/** Limpia TODAS las tablas de la BD IndexedDB. Usado en cache-bust. */
+export async function clearAll(): Promise<void> {
+    const db = await getDB();
+    const storeNames = Array.from(db.objectStoreNames);
+    const tx = db.transaction(storeNames, "readwrite");
+    await Promise.all(storeNames.map(name => tx.objectStore(name).clear()));
+    await tx.done;
+    console.log("[offlineStorage] clearAll: todas las tablas vaciadas");
+}
