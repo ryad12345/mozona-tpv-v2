@@ -138,6 +138,47 @@ export async function createOrder(input: CreateOrderInput): Promise<{
                 .eq("id", input.table_id);
         }
 
+        // 5) ★ CRÍTICO: Actualizar/crear el borrador en open_orders
+        //    para que el TPV pueda mostrar las líneas al hacer click
+        //    en la mesa.  Si la mesa ya tenía líneas, se fusionan
+        //    (concatenando las nuevas).
+        try {
+            const { data: existing } = await supabase
+                .from("open_orders")
+                .select("id, items")
+                .eq("tenant_id", input.tenant_id)
+                .eq("table_id", input.table_id ?? "")
+                .maybeSingle();
+            const newItemsAsOrder = (items ?? []).map((it: any) => ({
+                id:          it.id,
+                product_id:  it.product_id,
+                name:        it.name,
+                unit_price:  N(it.price),
+                tax_rate:    10,
+                quantity:    N(it.quantity),
+                notes:       it.notes ?? "",
+                added_at:    new Date().toISOString(),
+            }));
+            const existingItems = Array.isArray(existing?.items) ? existing!.items : [];
+            const merged = [...existingItems, ...newItemsAsOrder];
+            const { error: draftErr } = await supabase
+                .from("open_orders")
+                .upsert({
+                    tenant_id:    input.tenant_id,
+                    table_id:     input.table_id ?? "",
+                    table_number: input.table_label,
+                    waiter_name:  input.waiter_name,
+                    items:        merged,
+                }, { onConflict: "tenant_id,table_id" });
+            if (draftErr) {
+                console.warn("[orders] upsert open_orders error:", draftErr.message);
+            } else {
+                console.log("[orders] open_orders actualizado con", merged.length, "items");
+            }
+        } catch (e) {
+            console.warn("[orders] open_orders upsert exception:", e);
+        }
+
         return {
             order: { ...order, subtotal, tax_total, total } as OrderRow,
             items: (items ?? []) as OrderItemRow[],

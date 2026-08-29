@@ -198,6 +198,13 @@ export async function loadRestaurantData(tenantId?: string): Promise<RestaurantD
             loadTables(tenant.id),
         ]);
 
+        console.log(
+            "[loadRestaurantData] tenant =", tenant.id,
+            "products =", products.length,
+            "categories =", categories.length,
+            "tables =", tables.length,
+        );
+
         return { restaurant: tenant, categories, products, tables, source: "supabase", error: null };
     } catch (e) {
         return {
