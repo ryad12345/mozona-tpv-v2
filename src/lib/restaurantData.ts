@@ -111,14 +111,15 @@ export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
         console.warn("[restaurantData] loadTables error:", error.message);
         return [];
     }
-    return (data ?? []).map((t: any) => ({
+    return (data ?? []).map((t: any, i: number) => ({
         id: t.id,
         restaurant_id: t.tenant_id,
         zone_id: null,
         zone: t.zone,
-        // Extraer SOLO el número del nombre (ej. "B-1" → "1", "S-3" → "3")
-        // Si ya es numérico, se queda igual.
-        table_number: String(t.name ?? "").match(/\d+/)?.[0] ?? String(t.name ?? ""),
+        // Numeración SECUENCIAL basada en el orden del array (1, 2, 3, ..., 16)
+        // Esto evita duplicados cuando la BD tiene nombres como "B-1" y "S-1"
+        // que ambos extraerían el dígito "1".
+        table_number: String(i + 1),
         status: t.status === "occupied" ? "OCCUPIED"
               : t.status === "billed"   ? "BILL_REQUESTED"
               : t.status === "reserved" ? "RESERVED"

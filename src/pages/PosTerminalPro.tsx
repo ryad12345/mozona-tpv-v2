@@ -68,6 +68,21 @@ function buildPreBillHtml(params: {
                  + `<tr><td>I.V.A. ${r}%</td><td style="text-align:right">${fmt(tax)}</td></tr>`;
         }).join("");
 
+    // Helper: formatea una línea con label a la izquierda y precio a la derecha,
+    // usando caracteres de espacio y puntos para que se alinee perfecto en
+    // cualquier fuente monoespaciada.
+    const lineRow = (label: string, value: string, bold = false): string => {
+        const cls = bold ? "row b" : "row";
+        return `<div class="${cls}"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
+    };
+    const noteRow = (txt: string): string =>
+        `<div class="row meta"><span class="lbl">&nbsp;&nbsp;&gt; ${txt}</span></div>`;
+    const itemRow = (l: { name: string; qty: number; price: number; notes?: string }): string => {
+        const line = l.qty > 1 ? `${l.qty}x ${l.name}` : `1x ${l.name}`;
+        const pr   = fmt(l.qty * l.price);
+        return lineRow(line, pr) + (l.notes ? noteRow(l.notes.replace(/</g, "&lt;")) : "");
+    };
+
     return `<!doctype html>
 <html lang="es">
 <head>
@@ -82,19 +97,22 @@ function buildPreBillHtml(params: {
       position: absolute;
       left: 0; top: 0;
       width: 58mm;
+      max-width: 58mm;
+      box-sizing: border-box;
       margin: 0;
-      padding: 0 1mm;
+      padding: 1mm 2mm;
       color: #000000 !important;
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       font-family: 'Courier New', Courier, monospace !important;
-      font-size: 13px !important;
+      font-size: 12px !important;
       font-weight: 800 !important;
       line-height: 1.2 !important;
-      letter-spacing: -0.2px;
+      letter-spacing: 0;
       -webkit-font-smoothing: none !important;
       text-rendering: geometricPrecision !important;
+      overflow: visible !important;
     }
     @page { size: auto; margin: 0; }
   }
@@ -106,22 +124,25 @@ function buildPreBillHtml(params: {
     width: 80mm;
     max-width: 100%;
     margin: 0 auto;
-    padding: 8px 12px;
+    padding: 4mm;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1.25;
+    box-sizing: border-box;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
-  h1    { font-size: 15px; font-weight: 900; text-align: center; margin: 0 0 2px; letter-spacing: -0.5px; }
+  h1    { font-size: 14px; font-weight: 900; text-align: center; margin: 0 0 2px; letter-spacing: -0.5px; word-wrap: break-word; }
   .ctr  { text-align: center; }
-  .sep  { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; margin: 4px 0; white-space: pre; overflow: hidden; }
-  table { width: 100%; border-collapse: collapse; }
-  td    { padding: 1px 0; vertical-align: top; }
-  td.r  { text-align: right; }
-  .total{ font-weight: 900; font-size: 15px; }
+  .sep  { font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #000; margin: 3px 0; white-space: pre; overflow: hidden; }
+  /* Filas label + valor con FLEXBOX: nombre izquierda, importe derecha */
+  .row  { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
+  .row .lbl { flex: 1 1 auto; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+  .row .val { flex: 0 0 auto; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+  .total{ font-weight: 900; font-size: 14px; }
   .meta { font-size: 11px; font-weight: 700; }
   .b    { font-weight: 900; }
+  .b .val { font-weight: 900; }
 </style>
 </head>
 <body>
@@ -130,21 +151,21 @@ function buildPreBillHtml(params: {
   <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
   <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
   <div class="sep">${"─".repeat(32)}</div>
-  ${table  ? `<div class="meta">Mesa: <span class="b">${table.table_number}</span></div>` : ""}
-  ${waiter ? `<div class="meta">Camarero: <span class="b">${waiter.name.replace(/</g, "&lt;")}</span></div>` : ""}
+  ${table  ? `<div class="row meta"><span class="lbl">Mesa:</span><span class="val b">${table.table_number}</span></div>` : ""}
+  ${waiter ? `<div class="row meta"><span class="lbl">Camarero:</span><span class="val b">${waiter.name.replace(/</g, "&lt;")}</span></div>` : ""}
   <div class="sep">${"─".repeat(32)}</div>
-  <table>
-    ${lines.map(l => {
-        const line = l.qty > 1 ? `${l.name} x${l.qty}` : l.name;
-        const pr   = fmt(l.qty * l.price);
-        return `<tr><td>${line.replace(/</g, "&lt;")}</td><td class="r">${pr}</td></tr>`
-             + (l.notes ? `<tr><td colspan="2" class="meta">&nbsp;&nbsp;&gt; ${l.notes.replace(/</g, "&lt;")}</td></tr>` : "");
-    }).join("")}
-  </table>
+  ${lines.map(itemRow).join("")}
   <div class="sep">${"─".repeat(32)}</div>
-  <table>${taxRows}</table>
+  ${taxRows.split("</tr>").filter(Boolean).map(r => {
+      // Cada taxRow es algo como:
+      // <tr><td>Base 10%</td><td style="text-align:right">16.50 €</td></tr>
+      // Lo convertimos al formato flex
+      const m = r.match(/<td>(.*?)<\/td><td[^>]*>(.*?)<\/td>/);
+      if (!m) return "";
+      return lineRow(m[1], m[2]);
+  }).join("")}
   <div class="sep">${"═".repeat(32)}</div>
-  <table><tr class="total"><td>TOTAL</td><td class="r">${fmt(gross)}</td></tr></table>
+  ${lineRow("TOTAL", fmt(gross), true)}
   <div class="sep">${"─".repeat(32)}</div>
   <div class="ctr" style="margin-top:4px;font-weight:900;">— PRE-CUENTA —</div>
   <div class="sep">${"─".repeat(32)}</div>

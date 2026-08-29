@@ -65,7 +65,9 @@ BEGIN
     END IF;
 
     -- Comparación directa de PIN (texto plano, 4-6 caracteres)
-    IF rec.waiter_pin <> TRIM(p_pin) THEN
+    -- Normalizamos a UPPER y TRIM para evitar fallos por mayúsculas/minúsculas
+    -- o espacios al pegar.
+    IF UPPER(TRIM(COALESCE(rec.waiter_pin, ''))) <> UPPER(TRIM(COALESCE(p_pin, ''))) THEN
         RETURN jsonb_build_object('ok', false, 'error', 'PIN incorrecto');
     END IF;
 
@@ -156,8 +158,8 @@ BEGIN
     END IF;
 
     UPDATE public.tenant_users
-    SET username = p_username,
-        waiter_pin = p_password
+    SET username = LOWER(TRIM(p_username)),
+        waiter_pin = UPPER(TRIM(p_password))
     WHERE id = p_tenant_user_id;
 
     RETURN json_build_object('ok', true, 'username', p_username);

@@ -200,7 +200,7 @@ export function WaiterLoginPage() {
                     />
                 </Field>
 
-                <Field label="PIN (4 caracteres)" required>
+                <Field label="PIN (4-6 caracteres)" required>
                     <div className="relative">
                         <input
                             type={showPwd ? "text" : "password"}
