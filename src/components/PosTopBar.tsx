@@ -90,7 +90,7 @@ export function PosTopBar({
                             "
                         >
                             <IconShield size={9} strokeWidth={2.4} />
-                            PRO LOCAL
+                            PRO CLOUD
                         </span>
                         <span className="text-[9px] font-medium text-slate-400">
                             v{version}

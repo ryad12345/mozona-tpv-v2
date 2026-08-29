@@ -228,10 +228,26 @@ export function PosTerminalPro() {
     // -----------------------------------------------------------------
     // Selección de mesa desde el array real (sobrescribe estado en vivo)
     // -----------------------------------------------------------------
-    const tablesWithStatus = useMemo(
-        () => tables.map(t => ({ ...t, status: tableStatuses[t.id] ?? t.status })),
-        [tables, tableStatuses]
-    );
+    const tablesWithStatus = useMemo(() => {
+        const real = tables.map(t => ({ ...t, status: tableStatuses[t.id] ?? t.status }));
+        // Si hay menos de 16 mesas, rellenamos con mesas dummy 1..16
+        if (real.length >= 16) return real;
+        const seen = new Set(real.map(t => String(t.table_number)));
+        const filler: typeof real = [];
+        for (let i = 1; i <= 16; i++) {
+            if (!seen.has(String(i))) {
+                filler.push({
+                    id: `local-table-${i}`,
+                    restaurant_id: real[0]?.restaurant_id ?? "local",
+                    zone_id: null,
+                    zone: null,
+                    table_number: String(i),
+                    status: "FREE",
+                } as typeof real[number]);
+            }
+        }
+        return [...real, ...filler].slice(0, 16);
+    }, [tables, tableStatuses]);
 
     // -----------------------------------------------------------------
     // Acciones de cobro
@@ -410,7 +426,7 @@ export function PosTerminalPro() {
                     ${ws.isConnected ? "bg-emerald-500" : "bg-rose-500"}
                 `} />
                 <span className="text-slate-700 font-semibold">
-                    {ws.isConnected ? "LAN WS conectado" : "Sin conexión"}
+                    {ws.isConnected ? "Conectado a la nube" : "Sin conexión"}
                 </span>
                 {ws.latencyMs !== null && (
                     <span className="text-slate-500">· {ws.latencyMs} ms</span>
@@ -459,9 +475,9 @@ export function PosTerminalPro() {
               <div className="w-[70%] h-full flex flex-col gap-2.5 overflow-hidden">
                 {/* Superior Izquierda: Mesas (altura fija compacta) */}
                 <section className="h-44 shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3 shadow-sm flex flex-col justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mesas</span>
-                  <div className="grid grid-cols-8 gap-1.5 my-auto">
-                    {tablesWithStatus.map((t, idx) => (
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mesas (1–16)</span>
+                  <div className="grid grid-cols-8 gap-2 my-auto">
+                    {tablesWithStatus.slice(0, 16).map((t) => (
                       <button
                         key={t.id}
                         onClick={() => handleSelectTable(t.id === pos.state.selectedTableId ? null : t.id)}
@@ -480,7 +496,7 @@ export function PosTerminalPro() {
                             : "bg-slate-200 text-slate-600 hover:bg-slate-300"
                         )}
                       >
-                        <span className="tabular-nums">{idx + 1}</span>
+                        <span className="tabular-nums">{t.table_number}</span>
                       </button>
                     ))}
                   </div>

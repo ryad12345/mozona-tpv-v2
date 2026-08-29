@@ -140,7 +140,7 @@ export function CatalogPanel(props: any) {
           >
             <div className="relative w-full h-20 shrink-0 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700">
               <img
-                src={product.image || product.image_url || FALLBACK_IMG}
+                src={product.image_url || product.image || FALLBACK_IMG}
                 alt={product.name}
                 className="w-full h-full object-cover"
                 loading="lazy"
