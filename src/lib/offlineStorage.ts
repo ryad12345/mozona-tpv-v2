@@ -23,7 +23,7 @@ export interface CachedWaiter {
     tenant_id:  string;
     user_id:    string | null;
     name:       string;
-    pin_code:   string;
+    pin_code:   string | null;
     role:       "owner" | "manager" | "waiter" | "kitchen";
     is_active:  boolean;
     cached_at:  number;
@@ -160,7 +160,7 @@ export function getDB(): Promise<IDBPDatabase<MozonaDB>> {
                 if (!db.objectStoreNames.contains("waiters")) {
                     const s = db.createObjectStore("waiters", { keyPath: "id" });
                     s.createIndex("by-tenant", "tenant_id");
-                    s.createIndex("by-pin",    "pin_code");
+                    s.createIndex("by-pin",    "pin_code", { unique: false });
                 }
             }
             // Futuras migraciones: if (oldVersion < 3) { ... }

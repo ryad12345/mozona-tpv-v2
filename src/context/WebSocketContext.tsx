@@ -50,6 +50,28 @@ export interface WebSocketContextValue {
 const NOOP = (): void => undefined;
 const NOOP_SUB = (): (() => void) => () => undefined;
 
+/** Sanitiza payloads de Realtime: previene inyección de prototipos
+ *  y limita la profundidad. */
+function sanitizePayload(payload: unknown, depth = 0): unknown {
+    if (depth > 5) return null;
+    if (payload === null) return null;
+    if (typeof payload !== "object") return payload;
+    if (Array.isArray(payload)) {
+        return payload.slice(0, 100).map(item => sanitizePayload(item, depth + 1));
+    }
+    const out: Record<string, unknown> = {};
+    const obj = payload as Record<string, unknown>;
+    let count = 0;
+    for (const k of Object.keys(obj)) {
+        if (count++ > 50) break;
+        // Filtrar keys con __proto__, constructor, prototype para
+        // evitar prototype pollution
+        if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+        out[k.slice(0, 100)] = sanitizePayload(obj[k], depth + 1);
+    }
+    return out;
+}
+
 const FALLBACK: WebSocketContextValue = {
     isConnected:      true,
     status:           "online",
@@ -109,11 +131,34 @@ export function WebSocketProvider({ children, demoMode = true }: WebSocketProvid
     }, [send]);
 
     const subscribe = useCallback((event: string, cb: WsEventHandler): (() => void) => {
+        // Sanitización: validar que event es string simple y cb es función
+        if (typeof event !== "string" || event.length > 64 || !/^[A-Z0-9_]+$/.test(event)) {
+            console.warn("[WebSocket] subscribe: event inválido:", event);
+            return () => undefined;
+        }
+        if (typeof cb !== "function") {
+            console.warn("[WebSocket] subscribe: handler no es función");
+            return () => undefined;
+        }
+        // Wrappear el callback para sanitizar el payload
+        const safe: WsEventHandler = (env) => {
+            try {
+                if (!env || typeof env !== "object") return;
+                const safeEnv = {
+                    type:      String(env.type ?? event).slice(0, 64),
+                    data:      env.data !== undefined ? sanitizePayload(env.data) : null,
+                    timestamp: typeof env.timestamp === "string" ? env.timestamp : undefined,
+                };
+                cb(safeEnv);
+            } catch (e) {
+                console.warn("[WebSocket] handler error:", e);
+            }
+        };
         const set = handlersRef.current.get(event) ?? new Set<WsEventHandler>();
-        set.add(cb);
+        set.add(safe);
         handlersRef.current.set(event, set);
         return () => {
-            set.delete(cb);
+            set.delete(safe);
             if (set.size === 0) handlersRef.current.delete(event);
         };
     }, []);

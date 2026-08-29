@@ -71,10 +71,27 @@ export function usePosData(): PosDataState {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            // 1) Si hay sesión Supabase, cargar del tenant real
-            if (isSupabaseConfigured && auth.user) {
+            // 0) Si hay sesión de camarero (vía /waiter/login), usar
+            //    su tenant_id directamente
+            let waiterTenantId: string | null = null;
+            if (!auth.user) {
                 try {
-                    const data = await loadRestaurantData();
+                    const cached = localStorage.getItem("mozona.waiter_session");
+                    if (cached) {
+                        const parsed = JSON.parse(cached);
+                        if (parsed.ok && parsed.tenant_id) {
+                            waiterTenantId = parsed.tenant_id;
+                        }
+                    }
+                } catch (e) { /* noop */ }
+            }
+
+            // 1) Si hay sesión Supabase o de camarero, cargar del tenant real
+            if (isSupabaseConfigured && (auth.user || waiterTenantId)) {
+                try {
+                    const data = waiterTenantId
+                        ? await loadRestaurantData(waiterTenantId)
+                        : await loadRestaurantData();
                     if (data.error) {
                         console.warn("[usePosData] loadRestaurantData:", data.error);
                     }

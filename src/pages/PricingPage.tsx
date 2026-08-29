@@ -113,7 +113,11 @@ export function PricingPage() {
         // Stripe Checkout real
         try {
             const { data, error } = await supabase.functions.invoke("create-checkout", {
-                body: { priceId, successUrl: `${PUBLIC_URL}/app`, cancelUrl: `${PUBLIC_URL}/pricing` },
+                body: {
+                    priceId,
+                    successUrl: `${PUBLIC_URL}/register?session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
+                    cancelUrl:  `${PUBLIC_URL}/pricing`,
+                },
             });
             if (error) throw error;
             if (data?.url) window.location.href = data.url;

@@ -6,20 +6,22 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
 import {
     syncWaiters, listCachedWaiters, findByPinCached,
-    createWaiter, updateWaiter, deleteWaiterById,
+    createWaiter, updateWaiter, deleteWaiterById, resetWaiterPassword,
+    type CreateWaiterResult,
     type Waiter, type WaiterRole,
 } from "../lib/waiters";
 import type { CachedWaiter } from "../lib/offlineStorage";
 
 export interface UseWaitersReturn {
-    waiters:     Waiter[];
-    loading:     boolean;
-    error:       string | null;
-    refresh:     () => Promise<void>;
-    create:      (input: { name: string; pin_code: string; role: WaiterRole }) => Promise<Waiter | null>;
-    update:      (id: string, patch: { name?: string; pin_code?: string; role?: WaiterRole; is_active?: boolean }) => Promise<Waiter | null>;
-    remove:      (id: string) => Promise<boolean>;
-    validatePin: (pin: string) => Promise<CachedWaiter | null>;
+    waiters:       Waiter[];
+    loading:       boolean;
+    error:         string | null;
+    refresh:       () => Promise<void>;
+    create:        (input: { name: string; role: WaiterRole }) => Promise<CreateWaiterResult | null>;
+    update:        (id: string, patch: { name?: string; role?: WaiterRole; is_active?: boolean }) => Promise<Waiter | null>;
+    remove:        (id: string) => Promise<boolean>;
+    resetPassword: (id: string) => Promise<string | null>;
+    validatePin:   (pin: string) => Promise<CachedWaiter | null>;
 }
 
 export function useWaiters(): UseWaitersReturn {
@@ -38,7 +40,6 @@ export function useWaiters(): UseWaitersReturn {
         setLoading(true);
         setError(null);
         try {
-            // 1) Carga instantánea desde caché
             const cached = await listCachedWaiters(tenantId);
             if (cached.length > 0) {
                 setWaiters(cached.map(c => ({
@@ -48,7 +49,6 @@ export function useWaiters(): UseWaitersReturn {
                     created_at: new Date(c.cached_at).toISOString(),
                 })));
             }
-            // 2) Sync con Supabase en background
             const remote = await syncWaiters(tenantId);
             setWaiters(remote);
         } catch (e) {
@@ -64,12 +64,12 @@ export function useWaiters(): UseWaitersReturn {
         }
     }, [auth.isReady, tenantId, refresh]);
 
-    const create = useCallback(async (input: { name: string; pin_code: string; role: WaiterRole }) => {
+    const create = useCallback(async (input: { name: string; role: WaiterRole }) => {
         if (!tenantId) return null;
         try {
-            const w = await createWaiter({ ...input, tenant_id: tenantId });
-            setWaiters(prev => [...prev, w]);
-            return w;
+            const result = await createWaiter({ ...input, tenant_id: tenantId });
+            setWaiters(prev => [...prev, result.waiter]);
+            return result;
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
             return null;
@@ -78,7 +78,7 @@ export function useWaiters(): UseWaitersReturn {
 
     const update = useCallback(async (
         id: string,
-        patch: { name?: string; pin_code?: string; role?: WaiterRole; is_active?: boolean },
+        patch: { name?: string; role?: WaiterRole; is_active?: boolean },
     ) => {
         try {
             const w = await updateWaiter(id, patch);
@@ -101,10 +101,23 @@ export function useWaiters(): UseWaitersReturn {
         }
     }, []);
 
+    const resetPassword = useCallback(async (id: string) => {
+        try {
+            const newPwd = await resetWaiterPassword(id);
+            return newPwd;
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+            return null;
+        }
+    }, []);
+
     const validatePin = useCallback(async (pin: string) => {
         if (!tenantId) return null;
         return findByPinCached(tenantId, pin);
     }, [tenantId]);
 
-    return { waiters, loading, error, refresh, create, update, remove, validatePin };
+    return {
+        waiters, loading, error,
+        refresh, create, update, remove, resetPassword, validatePin,
+    };
 }

@@ -60,11 +60,29 @@ export function WaiterPad() {
     const [tableStatuses, setTableStatuses] = useState<Record<string, TableStatus>>({});
 
     // -----------------------------------------------------------------
-    // Si no hay sesión, mostrar modal de PIN
+    // Si no hay sesión, mostrar modal de PIN.
+    // También detecta sesión de camarero creada vía /waiter/login
+    // (con username + password) y la propaga a useWaiterAuth.
     // -----------------------------------------------------------------
     useEffect(() => {
+        // 1) Sesión vía username+password en localStorage
+        try {
+            const cached = localStorage.getItem("mozona.waiter_session");
+            if (cached && !auth.isAuthenticated) {
+                const parsed = JSON.parse(cached);
+                if (parsed.ok && parsed.name) {
+                    auth.login({
+                        id:   parsed.user_id ?? parsed.tenant_id ?? "waiter",
+                        name: parsed.name,
+                        role: (parsed.role ?? "waiter") as "owner" | "manager" | "waiter" | "kitchen",
+                    });
+                }
+            }
+        } catch (e) { /* noop */ }
+
+        // 2) Si sigue sin sesión, mostrar modal de PIN
         if (!auth.isAuthenticated) setShowAuth(true);
-    }, [auth.isAuthenticated]);
+    }, [auth]);
 
     // -----------------------------------------------------------------
     // Suscripción a TABLE_STATUS_CHANGED para refrescar colores en vivo

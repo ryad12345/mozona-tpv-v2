@@ -7,9 +7,19 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PosTerminalPro } from "./pages/PosTerminalPro";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AuthPage } from "./pages/AuthPage";
-import { DeviceDetect } from "./pages/DeviceDetect";
+import { LandingPage } from "./pages/LandingPage";
+import { PricingPage } from "./pages/PricingPage";
+import { RegisterPage } from "./pages/RegisterPage";
+import { BillingSuccessPage } from "./pages/BillingSuccessPage";
+import { BillingCancelPage } from "./pages/BillingCancelPage";
+import { WaiterLoginPage } from "./pages/WaiterLoginPage";
+import { WaiterPad } from "./pages/WaiterPad";
+import { AdminInvitesPage } from "./pages/AdminInvitesPage";
+import { SetupCajaPage } from "./pages/SetupCajaPage";
 import { WebSocketProvider } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { DesktopGuard } from "./components/DesktopGuard";
+import { SubscriptionGuard } from "./components/ProtectedRoute";
 
 // ---------------------------------------------------------------------
 // ErrorBoundary
@@ -96,11 +106,24 @@ export function App() {
                 <WebSocketProvider>
                     <BrowserRouter>
                         <Routes>
-                            <Route path="/"        element={<DeviceDetect />} />
-                            <Route path="/auth"     element={<AuthPage />} />
-                            <Route path="/app"      element={<ProtectedRoute><PosTerminalPro /></ProtectedRoute>} />
-                            <Route path="/waiter"   element={<ProtectedRoute><PosTerminalPro /></ProtectedRoute>} />
-                            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                            {/* Públicas */}
+                            <Route path="/"        element={<LandingPage />} />
+                            <Route path="/pricing" element={<PricingPage />} />
+                            <Route path="/auth"    element={<AuthPage />} />
+                            <Route path="/register" element={<RegisterPage />} />
+                            <Route path="/billing/success" element={<BillingSuccessPage />} />
+                            <Route path="/billing/cancel"  element={<BillingCancelPage />} />
+                            <Route path="/waiter/login"    element={<WaiterLoginPage />} />
+                            <Route path="/setup-caja"      element={<SetupCajaPage />} />
+                            <Route path="/admin/invites"   element={<AdminInvitesPage />} />
+
+                            {/* TPV Admin — solo desktop/tablet */}
+                            <Route path="/app"      element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><PosTerminalPro /></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
+                            <Route path="/settings" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><SettingsPage /></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
+
+                            {/* Camarero — solo móvil */}
+                            <Route path="/waiter"   element={<ProtectedRoute><WaiterPad /></ProtectedRoute>} />
+
                             <Route path="*"        element={<Navigate to="/" replace />} />
                         </Routes>
                     </BrowserRouter>
