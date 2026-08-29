@@ -248,10 +248,19 @@ export function PosTerminalPro() {
     const [showQR, setShowQR]         = useState(false);
     const [catalogSearch, setCatalogSearch] = useState("");
 
-    // Mostrar PIN al montar si no hay sesión
+    // Mostrar PIN al montar si no hay sesión de camarero
+    // BYPASS para VIP / SuperAdmin: no se les exige PIN
     useEffect(() => {
-        if (!auth.isAuthenticated) setShowAuth(true);
-    }, [auth.isAuthenticated]);
+        if (!auth.isAuthenticated) {
+            // Si es VIP o SuperAdmin, no exigir PIN
+            const userEmail = saasAuth.user?.email;
+            if (isVipOrAdmin(userEmail)) {
+                console.log("[PosTerminalPro] bypass PIN para VIP:", userEmail);
+                return;
+            }
+            setShowAuth(true);
+        }
+    }, [auth.isAuthenticated, saasAuth.user?.email]);
 
     // Toast auto-hide
     useEffect(() => {
