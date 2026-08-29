@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../lib/auth';
+import { supabase } from '../../lib/supabase';
+import { resolveRealTenantId } from '../../lib/waiters';
 
 export interface CustomProduct {
   id: string;
@@ -346,9 +349,13 @@ export const RESTAURANT_MENU: CustomProduct[] = [
 ];
 
 export function ItemsPanel() {
+  const auth = useAuth();
   const [items, setItems] = useState<CustomProduct[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CustomProduct | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -358,21 +365,64 @@ export function ItemsPanel() {
 
   const STORAGE_KEY = `pos_custom_products_${TARGET_USER_EMAIL}`;
 
+  // -------------------------------------------------------------------
+  // Cargar productos desde Supabase al montar
+  // Fallback: si Supabase no tiene productos, usa el menú seed (RESTAURANT_MENU)
+  // -------------------------------------------------------------------
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setItems(JSON.parse(saved));
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(RESTAURANT_MENU));
-        localStorage.setItem('pos_custom_products', JSON.stringify(RESTAURANT_MENU));
-        setItems(RESTAURANT_MENU);
-        window.dispatchEvent(new Event('storage'));
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const realId = await resolveRealTenantId(auth.tenant?.id);
+        if (!realId || !supabase) {
+          // Sin Supabase: fallback a localStorage
+          const saved = localStorage.getItem(STORAGE_KEY);
+          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+          setLoading(false);
+          return;
+        }
+        const { data, error: dbErr } = await supabase
+          .from("products")
+          .select("id, name, price, category, image_url, is_available")
+          .eq("tenant_id", realId)
+          .order("name");
+        if (cancelled) return;
+        if (dbErr) {
+          console.warn("[ItemsPanel] load error:", dbErr.message);
+          setError(`BD: ${dbErr.message} (code ${dbErr.code})`);
+          // Fallback a localStorage
+          const saved = localStorage.getItem(STORAGE_KEY);
+          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+        } else if (!data || data.length === 0) {
+          console.log("[ItemsPanel] sin productos en BD, usando seed");
+          setItems(RESTAURANT_MENU);
+        } else {
+          const mapped: CustomProduct[] = data.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description ?? undefined,
+            price: Number(p.price ?? 0),
+            category: p.category ?? "Otros",
+            image: p.image_url ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500",
+          }));
+          console.log("[ItemsPanel] cargados", mapped.length, "productos de Supabase");
+          setItems(mapped);
+        }
+      } catch (e) {
+        console.warn("[ItemsPanel] exception:", e);
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+          const saved = localStorage.getItem(STORAGE_KEY);
+          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+        }
       }
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.tenant?.id]);
 
   const openNewModal = () => {
     setEditingItem(null);
@@ -407,64 +457,170 @@ export function ItemsPanel() {
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  // -------------------------------------------------------------------
+  // Guardar producto (CREATE o UPDATE) en Supabase
+  // -------------------------------------------------------------------
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.price) return;
 
-    let updated: CustomProduct[];
-    if (editingItem) {
-      updated = items.map(it =>
-        it.id === editingItem.id
-          ? {
-              ...it,
-              name: formData.name.trim(),
-              price: parseFloat(formData.price),
-              category: formData.category,
-              image: formData.image
-            }
-          : it
-      );
-    } else {
-      const newItem: CustomProduct = {
-        id: `prod_${Date.now()}`,
-        name: formData.name.trim(),
-        price: parseFloat(formData.price),
-        category: formData.category,
-        image: formData.image
-      };
-      updated = [newItem, ...items];
+    setSaving(true);
+    setError(null);
+
+    const realId = await resolveRealTenantId(auth.tenant?.id);
+    if (!realId || !supabase) {
+      setError("No se pudo resolver el tenant_id");
+      setSaving(false);
+      return;
     }
 
-    setItems(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    localStorage.setItem('pos_custom_products', JSON.stringify(updated));
-    window.dispatchEvent(new Event('storage'));
-    setIsModalOpen(false);
+    const row = {
+      tenant_id:    realId,
+      name:         formData.name.trim(),
+      price:        parseFloat(formData.price),
+      category:     formData.category,
+      image_url:    formData.image,
+      is_available: true,
+    };
+
+    try {
+      if (editingItem) {
+        // Si el id es UUID (de Supabase), UPDATE
+        // Si es "prod_*" o "ent_*" (seed), INSERT
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingItem.id);
+        if (isUuid) {
+          const { error: updErr } = await supabase
+            .from("products")
+            .update(row)
+            .eq("id", editingItem.id)
+            .eq("tenant_id", realId);
+          if (updErr) throw updErr;
+          console.log("[ItemsPanel] producto actualizado:", editingItem.id);
+        } else {
+          // Seed item: INSERT
+          const { data: ins, error: insErr } = await supabase
+            .from("products")
+            .insert(row)
+            .select()
+            .single();
+          if (insErr) throw insErr;
+          // Reemplazar el seed con el nuevo UUID
+          setItems(prev => prev.map(it => it.id === editingItem.id ? {
+            ...it, id: ins.id, name: row.name, price: row.price,
+            category: row.category, image: row.image_url,
+          } : it));
+          console.log("[ItemsPanel] seed migrado a BD:", ins.id);
+          setIsModalOpen(false);
+          setSaving(false);
+          return;
+        }
+      } else {
+        // CREATE nuevo
+        const { data: ins, error: insErr } = await supabase
+          .from("products")
+          .insert(row)
+          .select()
+          .single();
+        if (insErr) throw insErr;
+        const newItem: CustomProduct = {
+          id: ins.id, name: row.name, price: row.price,
+          category: row.category, image: row.image_url,
+        };
+        setItems(prev => [newItem, ...prev]);
+        console.log("[ItemsPanel] producto creado:", ins.id);
+      }
+      // Si era edición de un item de BD, actualizar el state
+      if (editingItem) {
+        setItems(prev => prev.map(it => it.id === editingItem.id ? {
+          ...it, name: row.name, price: row.price,
+          category: row.category, image: row.image_url,
+        } : it));
+      }
+      setIsModalOpen(false);
+    } catch (e) {
+      console.error("[ItemsPanel] save error:", e);
+      setError(e instanceof Error ? e.message : "Error al guardar");
+    }
+    setSaving(false);
   };
 
-  const handleDelete = (id: string) => {
-    const updated = items.filter(it => it.id !== id);
-    setItems(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    localStorage.setItem('pos_custom_products', JSON.stringify(updated));
-    window.dispatchEvent(new Event('storage'));
+  // -------------------------------------------------------------------
+  // Eliminar producto de Supabase
+  // -------------------------------------------------------------------
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Eliminar este producto?  Se borrará de Supabase.")) return;
+    try {
+      const realId = await resolveRealTenantId(auth.tenant?.id);
+      if (realId && supabase) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (isUuid) {
+          const { error: delErr } = await supabase
+            .from("products")
+            .delete()
+            .eq("id", id)
+            .eq("tenant_id", realId);
+          if (delErr) throw delErr;
+        }
+        // Si NO es UUID, es un item seed: solo lo quitamos del state
+      }
+      setItems(prev => prev.filter(it => it.id !== id));
+      console.log("[ItemsPanel] producto eliminado:", id);
+    } catch (e) {
+      console.error("[ItemsPanel] delete error:", e);
+      setError(e instanceof Error ? e.message : "Error al eliminar");
+    }
   };
 
-  const handleResetMenu = () => {
-    if (confirm('¿Restaurar todo el menú original con sus fotos y precios exactos?')) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(RESTAURANT_MENU));
-      localStorage.setItem('pos_custom_products', JSON.stringify(RESTAURANT_MENU));
+  // -------------------------------------------------------------------
+  // Reset al menú seed (limpia Supabase y re-inserta el seed)
+  // -------------------------------------------------------------------
+  const handleResetMenu = async () => {
+    if (!confirm('¿Restaurar todo el menú original con sus fotos y precios exactos?')) return;
+    setSaving(true);
+    try {
+      const realId = await resolveRealTenantId(auth.tenant?.id);
+      if (realId && supabase) {
+        // Borrar productos del tenant
+        await supabase.from("products").delete().eq("tenant_id", realId);
+        // Re-insertar el seed
+        const seedRows = RESTAURANT_MENU.map(p => ({
+          tenant_id:    realId,
+          name:         p.name,
+          price:        p.price,
+          category:     p.category,
+          image_url:    p.image,
+          is_available: true,
+        }));
+        const { error: insErr } = await supabase.from("products").insert(seedRows);
+        if (insErr) throw insErr;
+      }
       setItems(RESTAURANT_MENU);
-      window.dispatchEvent(new Event('storage'));
+      console.log("[ItemsPanel] menú restaurado");
+    } catch (e) {
+      console.error("[ItemsPanel] reset error:", e);
+      setError(e instanceof Error ? e.message : "Error al restaurar");
     }
+    setSaving(false);
   };
 
   return (
     <div className="flex flex-col gap-4">
+      {error && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[12.5px]">
+          <strong>⚠️ {error}</strong>
+        </div>
+      )}
+      {loading && (
+        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-[12.5px]">
+          ⏳ Cargando productos desde Supabase…
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">Menú Oficial ({TARGET_USER_EMAIL})</h2>
-          <p className="text-xs text-slate-500">Total: {items.length} platos y bebidas configurados</p>
+          <p className="text-xs text-slate-500">
+            Total: {items.length} platos · Sincronizado en la nube ☁️
+          </p>
         </div>
         <div className="flex gap-2">
           <button
