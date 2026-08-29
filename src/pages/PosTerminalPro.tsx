@@ -148,6 +148,21 @@ function buildPreBillHtml(params: {
   .meta { font-size: 11px; font-weight: 700; }
   .b    { font-weight: 900; }
   .b .val { font-weight: 900; }
+  /* Bloque mesa/camarero: filas alineadas con etiqueta fija */
+  .meta-block { display: block; margin: 0; padding: 0; }
+  .kv {
+    display: grid;
+    grid-template-columns: 22mm 1fr;
+    align-items: baseline;
+    gap: 2mm;
+    width: 100%;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .kv .k { color: #000; text-align: left; }
+  .kv .v { color: #000; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .kv .b { font-weight: 900; }
 </style>
 </head>
 <body>
@@ -155,9 +170,18 @@ function buildPreBillHtml(params: {
   <h1>${(restaurant?.business_name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
   <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
   <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
+  ${restaurant?.phone ? `<div class="ctr meta">Tel: ${String(restaurant.phone).replace(/</g, "&lt;")}</div>` : ""}
   <div class="sep">${"─".repeat(32)}</div>
-  ${table && table.table_number != null ? `<div class="row meta"><span class="lbl">Mesa:</span><span class="val b">${String(table.table_number).replace(/</g, "&lt;")}</span></div>` : ""}
-  ${waiter && waiter.name ? `<div class="row meta"><span class="lbl">Camarero:</span><span class="val b">${String(waiter.name).replace(/</g, "&lt;")}</span></div>` : ""}
+  ${table && table.table_number != null || (waiter && waiter.name)
+    ? `<div class="meta-block">
+        ${table && table.table_number != null
+          ? `<div class="kv"><span class="k">Mesa:</span><span class="v b">${String(table.table_number).replace(/</g, "&lt;")}</span></div>`
+          : ""}
+        ${waiter && waiter.name
+          ? `<div class="kv"><span class="k">Camarero:</span><span class="v b">${String(waiter.name).replace(/</g, "&lt;")}</span></div>`
+          : ""}
+      </div>`
+    : ""}
   <div class="sep">${"─".repeat(32)}</div>
   ${lines.map(itemRow).join("")}
   <div class="sep">${"─".repeat(32)}</div>

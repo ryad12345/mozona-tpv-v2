@@ -69,85 +69,65 @@ export function WaiterLoginPage() {
 
         setBusy(true);
         try {
-            // 1) Login vía Edge Function `waiter-api` (que devuelve
-            //    un token HMAC firmado, válido 24h, necesario para
-            //    acceder al resto de endpoints)
             const { supabase } = await import("../lib/supabase");
-            const { data, error } = await supabase.functions.invoke<{
-                ok: boolean;
-                token?: string;
-                tenant_id?: string;
-                name?: string;
-                role?: string;
-                error?: string;
-            }>("waiter-api", {
-                body: { action: "login", username: username.trim(), pin: pin.trim() },
+            const cleanUsername = username.trim().toLowerCase();
+            const cleanPin      = pin.trim().toUpperCase();
+
+            // ============================================================
+            // PASO 1: RPC directa `verify_waiter_login` (SECURITY DEFINER,
+            //         bypass RLS, SIEMPRE funciona si el SQL está ejecutado).
+            // ============================================================
+            const { data: rpcData, error: rpcErr } = await supabase.rpc("verify_waiter_login", {
+                p_username: cleanUsername,
+                p_pin:      cleanPin,
             });
+            if (rpcErr) throw new Error(`Error RPC: ${rpcErr.message}`);
 
-            if (error) {
-                // Fallback: la Edge Function no está desplegada,
-                // intentar con la RPC directa
-                console.warn("[WaiterLogin] Edge function error, fallback RPC:", error);
-                const { data: rpcData, error: rpcErr } = await supabase.rpc("verify_waiter_login", {
-                    p_username: username.trim(),
-                    p_pin:      pin.trim(),
-                });
-                if (rpcErr) throw new Error(rpcErr.message);
-                const result = rpcData as WaiterLoginResult;
-                if (!result.ok) {
-                    const next = rate.recordFailure();
-                    setMsg({
-                        kind: "err",
-                        text: next.blocked
-                            ? `Demasiados intentos. Espera ${rate.remainingSeconds}s.`
-                            : (result.error || "Credenciales incorrectas"),
-                    });
-                    setBusy(false);
-                    return;
-                }
-                rate.reset();
-                // Sin token (modo fallback) — sólo guardamos el tenant_id
-                const fallback: WaiterLoginResult = {
-                    ok:        true,
-                    tenant_id: result.tenant_id ?? null,
-                    user_id:   result.user_id ?? null,
-                    role:      result.role ?? "waiter",
-                    name:      result.name ?? username,
-                    email:     result.email ?? null,
-                    token:     null,
-                };
-                localStorage.setItem("mozona.waiter_session", JSON.stringify(fallback));
-                setWaiter(fallback);
-                setMsg({ kind: "ok", text: `Bienvenido, ${fallback.name} (modo limitado)` });
-                setTimeout(() => nav(redirectTo, { replace: true }), 400);
-                setBusy(false);
-                return;
-            }
-
-            if (!data?.ok || !data?.token) {
+            const result = rpcData as WaiterLoginResult;
+            if (!result?.ok) {
                 const next = rate.recordFailure();
                 setMsg({
                     kind: "err",
                     text: next.blocked
                         ? `Demasiados intentos. Espera ${rate.remainingSeconds}s.`
-                        : (data?.error || "Credenciales incorrectas"),
+                        : (result?.error || "Usuario no encontrado o PIN incorrecto"),
                 });
                 setBusy(false);
                 return;
             }
-
             rate.reset();
 
-            // 2) Persistir sesión con token
+            // Sesión básica (mínimo viable)
             const session: WaiterLoginResult = {
                 ok:        true,
-                token:     data.token,
-                tenant_id: data.tenant_id ?? null,
-                user_id:   null,
-                role:      data.role ?? "waiter",
-                name:      data.name ?? username,
-                email:     null,
+                token:     null,
+                tenant_id: result.tenant_id ?? null,
+                user_id:   result.user_id ?? null,
+                role:      result.role ?? "waiter",
+                name:      result.name ?? username,
+                email:     result.email ?? null,
             };
+
+            // ============================================================
+            // PASO 2 (opcional): Si la Edge Function `waiter-api` está
+            //   desplegada, intentar obtener un token HMAC para llamadas
+            //   autenticadas al backend. Si falla, el login sigue siendo
+            //   válido con la sesión básica.
+            // ============================================================
+            try {
+                const { data: efData, error: efErr } = await supabase.functions.invoke<{
+                    ok: boolean;
+                    token?: string;
+                }>("waiter-api", {
+                    body: { action: "login", username: cleanUsername, pin: cleanPin },
+                });
+                if (!efErr && efData?.ok && efData?.token) {
+                    session.token = efData.token;
+                }
+            } catch (e) {
+                console.warn("[WaiterLogin] waiter-api EF no disponible (modo limitado):", e);
+            }
+
             localStorage.setItem("mozona.waiter_session", JSON.stringify(session));
             setWaiter(session);
             setMsg({ kind: "ok", text: `Bienvenido, ${session.name}` });
