@@ -93,13 +93,62 @@ export function SalesPanel() {
             )}
 
             {records.length === 0 && !loading && !error && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[12.5px]">
-                    <p className="font-bold mb-1">📭 No hay ventas registradas este mes</p>
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[12.5px] space-y-2">
+                    <p className="font-bold">📭 No hay ventas registradas este mes</p>
                     <p>
                         Las ventas aparecerán aquí en cuanto cobres la primera mesa.
-                        Si acabas de cobrar y no aparece, abre la consola del navegador
-                        (F12) y revisa los mensajes de <code className="bg-amber-100 px-1 rounded">[PosTerminalPro] INSERT orders</code>.
                     </p>
+                    <div className="flex gap-2 pt-1">
+                        <a
+                            href="/app"
+                            className="inline-flex items-center gap-1 h-8 px-3 bg-amber-600 hover:bg-amber-700 text-white text-[11.5px] font-bold rounded-lg active:scale-95 transition"
+                        >
+                            🚀 Ir al TPV a cobrar
+                        </a>
+                        <button
+                            type="button"
+                            onClick={load}
+                            className="inline-flex items-center gap-1 h-8 px-3 bg-white border border-amber-300 text-amber-800 text-[11.5px] font-bold rounded-lg active:scale-95 transition"
+                        >
+                            🔄 Refrescar
+                        </button>
+                    </div>
+                    <details className="mt-2">
+                        <summary className="cursor-pointer text-amber-800 font-semibold text-[11.5px]">
+                            🔧 ¿No aparece después de cobrar?  Diagnóstico paso a paso
+                        </summary>
+                        <ol className="mt-2 ml-4 list-decimal space-y-1.5 text-[11.5px] text-amber-900">
+                            <li>
+                                Abre Supabase → SQL Editor y ejecuta{" "}
+                                <code className="bg-amber-100 px-1 rounded font-mono">database/12_open_orders.sql</code>
+                                {" "}(crea la tabla <code className="bg-amber-100 px-1 rounded">public.orders</code>).
+                            </li>
+                            <li>
+                                Abre DevTools (F12) → pestaña <strong>Console</strong> → ve al TPV.
+                            </li>
+                            <li>
+                                Cobra una mesa de prueba (cualquier producto, método "Efectivo").
+                            </li>
+                            <li>
+                                En la consola debe aparecer:{" "}
+                                <code className="bg-amber-100 px-1 rounded font-mono text-[10.5px]">
+                                    [PosTerminalPro] ticket persistido en orders: &lt;uuid&gt;
+                                </code>
+                            </li>
+                            <li>
+                                Si ves <code className="bg-rose-100 px-1 rounded font-mono text-[10.5px]">
+                                    [PosTerminalPro] INSERT orders error
+                                </code>, cópialo y pégamelo — el toast{" "}
+                                <code className="bg-rose-100 px-1 rounded font-mono text-[10.5px]">
+                                    err
+                                </code>{" "}
+                                rojo te indicará el problema.
+                            </li>
+                            <li>
+                                Vuelve aquí y pulsa <strong>🔄 Refrescar</strong> (o espera 30s al auto-refresco).
+                            </li>
+                        </ol>
+                    </details>
                 </div>
             )}
 
