@@ -338,16 +338,39 @@ export function PosTerminalPro() {
 
     // -----------------------------------------------------------------
     // Selección de mesa (carga líneas vacías para empezar)
+    // FIX: handler robusto que tolera mesas dummy (local-table-*) y
+    // mesas reales, con try-catch y logging para diagnóstico
     // -----------------------------------------------------------------
     const handleSelectTable = useCallback((id: string | null) => {
-        if (id === null) {
-            pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
-            return;
+        try {
+            console.log("[PosTerminalPro] click mesa id=", id, " tablesCount=", tables.length);
+            if (id === null) {
+                pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
+                return;
+            }
+            const t = tables.find(tb => tb.id === id);
+            if (!t) {
+                // Fallback: mesa dummy (local-table-N) — buscar por número
+                const numMatch = /local-table-(\d+)/.exec(id);
+                if (numMatch) {
+                    console.log("[PosTerminalPro] mesa dummy detectada, número=", numMatch[1]);
+                    pos.dispatch({
+                        type: "SELECT_TABLE",
+                        tableId: id,
+                        tableLabel: numMatch[1],
+                    });
+                    pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
+                    return;
+                }
+                console.warn("[PosTerminalPro] mesa no encontrada:", id);
+                return;
+            }
+            console.log("[PosTerminalPro] mesa encontrada:", t.table_number);
+            pos.dispatch({ type: "SELECT_TABLE", tableId: t.id, tableLabel: t.table_number });
+            pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
+        } catch (e) {
+            console.error("[PosTerminalPro] handleSelectTable error:", e);
         }
-        const t = tables.find(tb => tb.id === id);
-        if (!t) return;
-        pos.dispatch({ type: "SELECT_TABLE", tableId: t.id, tableLabel: t.table_number });
-        pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
     }, [tables, pos]);
 
     // -----------------------------------------------------------------

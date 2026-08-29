@@ -87,12 +87,25 @@ export function OrderPanel({
                             <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 mb-2">
                                 <IconReceipt size={28} strokeWidth={1.4} />
                             </div>
-                            <p className="text-[13px] font-semibold text-slate-500">
-                                Añade productos desde el catálogo
-                            </p>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                                Selecciona una mesa para empezar
-                            </p>
+                            {tableLabel ? (
+                                <>
+                                    <p className="text-[13px] font-semibold text-slate-700">
+                                        Mesa {tableLabel.match(/\d+/)?.[0] ?? tableLabel} seleccionada
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Añade productos desde el catálogo
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-[13px] font-semibold text-slate-500">
+                                        Añade productos desde el catálogo
+                                    </p>
+                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                        Selecciona una mesa para empezar
+                                    </p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <ul className="space-y-1.5">
