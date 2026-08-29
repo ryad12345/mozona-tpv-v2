@@ -14,7 +14,7 @@
 //   • VeriFactu RPC → emisión de factura (simulada aquí, ver onChargeVeriFactu)
 // =====================================================================
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useWaiterAuth } from "../hooks/useWaiterAuth";
@@ -444,6 +444,25 @@ export function PosTerminalPro() {
             console.warn("[PosTerminalPro] persistDraft error:", e);
         }
     }, [restaurant?.id, auth.activeWaiter?.name]);
+
+    // -----------------------------------------------------------------
+    // Persistencia REACTIVA: cada vez que cambian los items de la mesa
+    // seleccionada, guardar en open_orders automáticamente
+    // -----------------------------------------------------------------
+    const lastPersistedJsonRef = useRef<string>("");
+    useEffect(() => {
+        const tid = pos.state.selectedTableId;
+        const tlabel = pos.state.selectedTableLabel;
+        if (!tid || !tlabel) return;
+        // Solo persistir si hay cambios reales
+        const itemsJson = JSON.stringify(pos.state.orderItems);
+        if (itemsJson === lastPersistedJsonRef.current) return;
+        lastPersistedJsonRef.current = itemsJson;
+        console.log("[PosTerminalPro] auto-persist:", pos.state.orderItems.length, "items, mesa", tlabel);
+        void persistDraft(tid, tlabel, pos.state.orderItems);
+        // Marcar mesa como ocupada
+        setTableStatuses(prev => prev[tid] ? prev : { ...prev, [tid]: "OCCUPIED" });
+    }, [pos.state.selectedTableId, pos.state.selectedTableLabel, pos.state.orderItems, persistDraft]);
 
     // -----------------------------------------------------------------
     // Wrapper de dispatch que persiste en BD después de cada cambio

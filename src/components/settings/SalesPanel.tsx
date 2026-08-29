@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../lib/auth";
 import { listMonthSales, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
 import { fmtEUR } from "../../lib/format";
+import { supabase } from "../../lib/supabase";
 
 export function SalesPanel() {
     const auth = useAuth();
@@ -38,6 +39,26 @@ export function SalesPanel() {
         void load();
         const interval = setInterval(() => { void load(); }, 30_000);
         return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tenantId]);
+
+    // ★ Realtime: cuando se inserta un order en Supabase, refrescar
+    useEffect(() => {
+        if (!supabase || !tenantId) return;
+        const channel = supabase
+            .channel("sales-orders-changes")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "orders" },
+                (payload) => {
+                    console.log("[SalesPanel] realtime order change:", payload.eventType);
+                    void load();
+                },
+            )
+            .subscribe();
+        return () => {
+            void supabase.removeChannel(channel);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tenantId]);
 

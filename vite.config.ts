@@ -138,7 +138,8 @@ export default defineConfig({
     },
     envPrefix: ["VITE_", "TAURI_"],
     build: {
-        target: "es2022",
+        // ES2017 = compatible con Chrome 49+, Android 5+, iOS 10+
+        target: "es2017",
         minify: "esbuild",
         sourcemap: false,
     },
