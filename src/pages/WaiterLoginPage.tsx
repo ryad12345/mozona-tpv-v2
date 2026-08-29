@@ -16,6 +16,7 @@ import { IconArrowRight, IconLock, IconShield, IconUser } from "../components/ic
 interface WaiterLoginResult {
     ok:        boolean;
     error?:    string;
+    token?:     string | null;
     tenant_id?: string | null;
     user_id?:   string | null;
     role?:      string;
@@ -67,20 +68,68 @@ export function WaiterLoginPage() {
 
         setBusy(true);
         try {
-            const { data, error } = await supabase.rpc("waiter_login", {
-                p_username: username.trim(),
-                p_password: password,
+            // 1) Login vía Edge Function `waiter-api` (que devuelve
+            //    un token HMAC firmado, válido 24h, necesario para
+            //    acceder al resto de endpoints)
+            const { supabase } = await import("../lib/supabase");
+            const { data, error } = await supabase.functions.invoke<{
+                ok: boolean;
+                token?: string;
+                tenant_id?: string;
+                name?: string;
+                role?: string;
+                error?: string;
+            }>("waiter-api", {
+                body: { action: "login", username: username.trim(), password },
             });
-            if (error) throw new Error(error.message);
 
-            const result = data as WaiterLoginResult;
-            if (!result.ok) {
+            if (error) {
+                // Fallback: la Edge Function no está desplegada,
+                // intentar con la RPC directa
+                console.warn("[WaiterLogin] Edge function error, fallback RPC:", error);
+                const { data: rpcData, error: rpcErr } = await supabase.rpc("waiter_login", {
+                    p_username: username.trim(),
+                    p_password: password,
+                });
+                if (rpcErr) throw new Error(rpcErr.message);
+                const result = rpcData as WaiterLoginResult;
+                if (!result.ok) {
+                    const next = rate.recordFailure();
+                    setMsg({
+                        kind: "err",
+                        text: next.blocked
+                            ? `Demasiados intentos. Espera ${rate.remainingSeconds}s.`
+                            : (result.error || "Credenciales incorrectas"),
+                    });
+                    setBusy(false);
+                    return;
+                }
+                rate.reset();
+                // Sin token (modo fallback) — sólo guardamos el tenant_id
+                const fallback: WaiterLoginResult = {
+                    ok:        true,
+                    tenant_id: result.tenant_id ?? null,
+                    user_id:   result.user_id ?? null,
+                    role:      result.role ?? "waiter",
+                    name:      result.name ?? username,
+                    email:     result.email ?? null,
+                    token:     null,
+                };
+                localStorage.setItem("mozona.waiter_session", JSON.stringify(fallback));
+                setWaiter(fallback);
+                setMsg({ kind: "ok", text: `Bienvenido, ${fallback.name} (modo limitado)` });
+                setTimeout(() => nav(redirectTo, { replace: true }), 400);
+                setBusy(false);
+                return;
+            }
+
+            if (!data?.ok || !data?.token) {
                 const next = rate.recordFailure();
                 setMsg({
                     kind: "err",
                     text: next.blocked
                         ? `Demasiados intentos. Espera ${rate.remainingSeconds}s.`
-                        : (result.error || "Credenciales incorrectas"),
+                        : (data?.error || "Credenciales incorrectas"),
                 });
                 setBusy(false);
                 return;
@@ -88,15 +137,15 @@ export function WaiterLoginPage() {
 
             rate.reset();
 
-            // Persistir localmente para que el resto de la app sepa
-            // el tenant_id del camarero
+            // 2) Persistir sesión con token
             const session: WaiterLoginResult = {
-                ok:         true,
-                tenant_id:  result.tenant_id ?? null,
-                user_id:    result.user_id ?? null,
-                role:       result.role ?? "waiter",
-                name:       result.name ?? username,
-                email:      result.email ?? null,
+                ok:        true,
+                token:     data.token,
+                tenant_id: data.tenant_id ?? null,
+                user_id:   null,
+                role:      data.role ?? "waiter",
+                name:      data.name ?? username,
+                email:     null,
             };
             localStorage.setItem("mozona.waiter_session", JSON.stringify(session));
             setWaiter(session);

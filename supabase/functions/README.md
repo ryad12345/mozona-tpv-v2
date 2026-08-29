@@ -10,6 +10,8 @@ Este directorio contiene las Edge Functions que viven en `supabase/functions/`.
 | `create-checkout-session`| `POST /functions/v1/create-checkout-session`          | JWT usuario  | Crea sesión de Stripe Checkout (suscripción) |
 | `billing-portal`         | `POST /functions/v1/billing-portal`                   | JWT usuario  | Abre Stripe Customer Portal                  |
 | `stripe-webhook`         | `POST /functions/v1/stripe-webhook`                   | Firma Stripe | Sincroniza `tenants.subscription_status`     |
+| `verify-checkout-session`| `POST /functions/v1/verify-checkout-session`          | anon         | Valida sesión de Stripe (pago confirmado)    |
+| `waiter-api`             | `GET/POST /functions/v1/waiter-api?action=...`        | Token HMAC   | API para camareros (login, productos, mesas, órdenes) |
 
 ## Despliegue (una sola vez)
 
