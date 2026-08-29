@@ -5,25 +5,16 @@ const FALLBACK_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?
 export function CatalogPanel(props: any) {
   const categoriesRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
+  // FIX: usar SIEMPRE props.products (de Supabase vía usePosData).
+  // Antes: leía de localStorage 'pos_custom_products_*' lo que causaba
+  // desincronización entre Settings y TPV.
   const [productsList, setProductsList] = useState<any[]>(props.products || []);
   const [internalCategory, setInternalCategory] = useState<string>('all');
 
   useEffect(() => {
-    const sync = () => {
-      try {
-        const raw = localStorage.getItem("pos_custom_products_chalohiahmd1980@gmail.com") || localStorage.getItem('pos_custom_products');
-        if (raw) {
-          setProductsList(JSON.parse(raw));
-        } else if (props.products && props.products.length > 0) {
-          setProductsList(props.products);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    sync();
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
+    if (props.products && props.products.length > 0) {
+      setProductsList(props.products);
+    }
   }, [props.products]);
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
@@ -167,7 +158,16 @@ export function CatalogPanel(props: any) {
 
         {filtered.length === 0 && (
           <div className="col-span-full py-12 text-center text-slate-400 text-xs font-semibold">
-            No hay platos en esta categoría.
+            {productsList.length === 0 ? (
+              <div>
+                <p className="mb-1">📭 No hay productos en este tenant.</p>
+                <p className="text-[10.5px] text-slate-500 mt-1">
+                  Ve a Settings → 🍽️ Productos o ejecuta database/15_seed_products.sql
+                </p>
+              </div>
+            ) : (
+              "No hay platos en esta categoría."
+            )}
           </div>
         )}
       </div>

@@ -26,7 +26,16 @@ export async function getMyTenant(): Promise<Restaurant | null> {
     if (!isSupabaseConfigured) return null;
     try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
+        if (!user) {
+            // Sin sesión: intentar el primer tenant activo (VIP bypass)
+            const firstActive = await getFirstActiveTenant();
+            if (firstActive) {
+                const { data } = await supabase
+                    .from("tenants").select("*").eq("id", firstActive).maybeSingle();
+                if (data) return data as Restaurant;
+            }
+            return null;
+        }
 
         // 1) Por owner_id
         const { data: byOwner } = await supabase
@@ -44,9 +53,32 @@ export async function getMyTenant(): Promise<Restaurant | null> {
             .maybeSingle();
         if (tu?.tenants) return tu.tenants as unknown as Restaurant;
 
+        // 3) VIP / SuperAdmin: no es owner pero debe ver el primer tenant activo
+        const firstActive = await getFirstActiveTenant();
+        if (firstActive) {
+            const { data } = await supabase
+                .from("tenants").select("*").eq("id", firstActive).maybeSingle();
+            if (data) {
+                console.log("[getMyTenant] VIP bypass → primer tenant activo:", firstActive);
+                return data as Restaurant;
+            }
+        }
+
         return null;
     } catch (e) {
         console.warn("[restaurantData] getMyTenant error:", e);
+        return null;
+    }
+}
+
+/** Llama al RPC get_first_active_tenant() (SECURITY DEFINER, bypasea RLS). */
+async function getFirstActiveTenant(): Promise<string | null> {
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase.rpc("get_first_active_tenant");
+        if (error || !data) return null;
+        return data as string;
+    } catch {
         return null;
     }
 }
