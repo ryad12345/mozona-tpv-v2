@@ -272,15 +272,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
 const STUB_AUTH: AuthContextValue = {
-    user: null, tenant: null, isReady: true, status: "disabled" as const,
+    user: null,
+    tenant: null,
+    profile: null,
+    tenantRole: null,
+    isReady: true,
+    status: "disabled" as const,
     isSuperAdmin: false,
     signIn: async () => ({ error: "no provider" as const }),
     signUp: async () => ({ error: "no provider" as const }),
     signInWithGoogle: async () => ({ error: "no provider" as const }),
     signOut: async () => {},
     refresh: async () => {},
-    createTenant: async () => ({ error: "no provider" as const }),
-    redeemInvite: async () => ({ error: "no provider" as const }),
+    createTenant: async () => ({ tenant: null, error: "no provider" as const }),
+    redeemInvite: async () => ({ tenant: null, error: "no provider" as const }),
 };
 
 export function useAuth(): AuthContextValue {
