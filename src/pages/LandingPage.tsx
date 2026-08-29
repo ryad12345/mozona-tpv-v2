@@ -13,7 +13,7 @@ import {
 // IconSparkles se mantiene en el import por si se reutiliza en el futuro.
 // (TS no se queja por imports no usados a menos que esté habilitado noUnusedLocals)
 import { Logo } from "../components/Logo";
-import { DemoVideo } from "../components/DemoVideo";
+import { HeroMockup } from "../components/HeroMockup";
 import { useAuth } from "../lib/auth";
 import { cn } from "../lib/cn";
 
@@ -123,12 +123,8 @@ export function LandingPage() {
                             Ver características
                         </a>
                     </div>
-                    <div className="mt-12 max-w-4xl mx-auto">
-                        <DemoVideo
-                            src="/demo.mp4"
-                            badge="TPV en acción"
-                            className="aspect-[16/9]"
-                        />
+                    <div className="mt-12 max-w-5xl mx-auto">
+                        <HeroMockup />
                     </div>
                 </div>
             </section>
