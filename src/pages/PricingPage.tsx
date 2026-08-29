@@ -146,28 +146,27 @@ export function PricingPage() {
             return;
         }
 
-        // 2) Guardar el código validado en localStorage para que
-        //    /register lo consuma al crear la cuenta (sustituye a la
-        //    sesión de Stripe verificada)
+        // 2) Guardar el código validado en sessionStorage como backup
+        //    (pero la fuente de verdad es la URL)
         try {
             sessionStorage.setItem("mozona.redeemed_invite", JSON.stringify({
-                code:      result.code,
-                plan:      result.plan,
+                code:       result.code,
+                plan:       result.plan,
                 redeemedAt: new Date().toISOString(),
             }));
         } catch (e) { /* noop */ }
 
         setRedeemMsg({
             kind: "ok",
-            text: `¡Código canjeado! Plan ${result.plan} activado.  Crea tu cuenta para continuar.`,
+            text: `¡Código canjeado! Plan ${result.plan} activado.  Redirigiendo…`,
         });
 
-        // 3) Redirigir a /register con el plan y el código de invitación
-        setTimeout(() => {
-            const plan = result.plan ?? "lifetime_vip";
-            nav(`/register?invite_code=${encodeURIComponent(token.trim())}&plan=${plan}`, { replace: true });
-        }, 900);
-        setRedeeming(false);
+        // 3) Redirigir INMEDIATAMENTE (sin setTimeout que pueda
+        //    interferir con un useEffect de la propia página).
+        //    La URL es la fuente de verdad, sessionStorage es sólo
+        //    un cache de respaldo.
+        const plan = result.plan ?? "lifetime_vip";
+        nav(`/register?invite_code=${encodeURIComponent(token.trim())}&plan=${plan}`, { replace: true });
     };
 
     return (
