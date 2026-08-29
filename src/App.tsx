@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PosTerminalPro } from "./pages/PosTerminalPro";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AuthPage } from "./pages/AuthPage";
+import { LandingPage } from "./pages/LandingPage";
 import { WebSocketProvider } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
@@ -95,11 +96,12 @@ export function App() {
                 <WebSocketProvider>
                     <BrowserRouter>
                         <Routes>
-                            <Route path="/"        element={<Navigate to="/auth" replace />} />
+                            <Route path="/"        element={<LandingPage />} />
                             <Route path="/auth"     element={<AuthPage />} />
                             <Route path="/app"      element={<ProtectedRoute><PosTerminalPro /></ProtectedRoute>} />
+                            <Route path="/waiter"   element={<ProtectedRoute><PosTerminalPro /></ProtectedRoute>} />
                             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-                            <Route path="*"        element={<Navigate to="/auth" replace />} />
+                            <Route path="*"        element={<Navigate to="/" replace />} />
                         </Routes>
                     </BrowserRouter>
                 </WebSocketProvider>
