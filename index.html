@@ -27,6 +27,85 @@
 
         <link rel="manifest" href="/manifest.webmanifest" />
         <title>MOZONA TPV — Tu negocio bajo control</title>
+
+        <!-- ★ POLYFILLS RUNTIME para tablets antiguas (Android 4.4-7, Chrome 40-55) -->
+        <script>
+            // 1) globalThis (Node 12+ / Chrome 71+)
+            if (typeof globalThis === 'undefined') {
+                window.globalThis = window;
+            }
+            // 2) ResizeObserver (no existe en Safari < 13, Chrome < 64)
+            if (typeof window.ResizeObserver === 'undefined') {
+                window.ResizeObserver = class {
+                    observe() {} unobserve() {} disconnect() {}
+                };
+            }
+            // 3) structuredClone (Chrome 98+)
+            if (typeof window.structuredClone === 'undefined') {
+                window.structuredClone = function(o) { return JSON.parse(JSON.stringify(o)); };
+            }
+            // 4) Array.prototype.flat (Chrome 69+)
+            if (!Array.prototype.flat) {
+                Array.prototype.flat = function() {
+                    var depth = arguments[0], arr = this;
+                    depth = depth === undefined ? 1 : depth;
+                    function flatten(a, d) {
+                        if (d <= 0) return a.slice();
+                        return [].concat.apply([], a.map(function(x) {
+                            return Array.isArray(x) ? flatten(x, d - 1) : [x];
+                        }));
+                    }
+                    return depth === Infinity ? (function loop(a) {
+                        return [].concat.apply([], a.map(function(x) {
+                            return Array.isArray(x) ? loop(x) : [x];
+                        }));
+                    })(arr) : flatten(arr, depth);
+                };
+            }
+            // 5) Object.fromEntries (Chrome 73+)
+            if (!Object.fromEntries) {
+                Object.fromEntries = function(iter) {
+                    var obj = {};
+                    iter.forEach(function(kv) { obj[kv[0]] = kv[1]; });
+                    return obj;
+                };
+            }
+            // 6) String.prototype.replaceAll (Chrome 85+)
+            if (!String.prototype.replaceAll) {
+                String.prototype.replaceAll = function(s, r) {
+                    return this.split(s).join(r);
+                };
+            }
+        </script>
+
+        <!-- ★ Captura global de errores de arranque (visible en pantalla) -->
+        <script>
+            window.__mozona_start_errors__ = [];
+            window.addEventListener('error', function(e) {
+                var msg = (e.error && e.error.stack) || (e.message + ' en ' + e.filename + ':' + e.lineno);
+                window.__mozona_start_errors__.push(msg);
+                var div = document.getElementById('__mozona_error_overlay__');
+                if (!div) {
+                    div = document.createElement('pre');
+                    div.id = '__mozona_error_overlay__';
+                    div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fee2e2;color:#991b1b;padding:16px;z-index:99999;font-size:11px;white-space:pre-wrap;font-family:monospace;border-bottom:2px solid #991b1b;max-height:50vh;overflow:auto;';
+                    document.body && document.body.appendChild(div);
+                }
+                div.textContent = '⚠️ Error de arranque:\n' + msg;
+            });
+            window.addEventListener('unhandledrejection', function(e) {
+                var msg = (e.reason && e.reason.stack) || String(e.reason);
+                window.__mozona_start_errors__.push('PROMISE: ' + msg);
+                var div = document.getElementById('__mozona_error_overlay__');
+                if (!div) {
+                    div = document.createElement('pre');
+                    div.id = '__mozona_error_overlay__';
+                    div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#92400e;padding:16px;z-index:99999;font-size:11px;white-space:pre-wrap;font-family:monospace;border-bottom:2px solid #92400e;max-height:50vh;overflow:auto;';
+                    document.body && document.body.appendChild(div);
+                }
+                div.textContent = '⚠️ Promise rechazada:\n' + msg;
+            });
+        </script>
     </head>
     <body>
         <div id="root"></div>
