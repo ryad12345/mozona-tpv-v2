@@ -1,12 +1,10 @@
 // =====================================================================
 // MOZONA TPV — Logo component
 // =====================================================================
-// Logo oficial SVG inline para máxima nitidez y escalabilidad.
-// Variantes:
-//   - variant="full":   icono + texto MOZONA + TPV + nube
-//   - variant="mark":   solo el icono (monitor + plato con check)
-//   - variant="text":   solo el texto
-//   - variant="square": cuadrado 1:1 (para favicon, avatares)
+// Logo oficial SVG inline.  Recreado del brand guidelines:
+//   - Monitor/tablet azul corporativo con "M" grande en pantalla
+//   - Bandeja cloche con check verde (servicio completado)
+//   - "MOZONA" en azul + "TPV" en verde con nube
 // =====================================================================
 
 import { cn } from "../lib/cn";
@@ -18,19 +16,135 @@ interface LogoProps {
     variant?: LogoVariant;
     size?:    LogoSize;
     className?: string;
-    /** Color principal de marca (azul oscuro por defecto) */
     brandColor?: string;
-    /** Color de acento (verde por defecto) */
     accentColor?: string;
+    withWordmark?: boolean;
 }
 
-const SIZE_MAP: Record<LogoSize, { h: number; w: number; text: string }> = {
-    xs: { h: 20,  w: 64,  text: "text-[10px]" },
-    sm: { h: 28,  w: 90,  text: "text-[12px]" },
-    md: { h: 36,  w: 120, text: "text-[14px]" },
-    lg: { h: 48,  w: 160, text: "text-[18px]" },
-    xl: { h: 64,  w: 220, text: "text-[22px]" },
+interface SizeSpec {
+    /** Alto del icono en px */
+    h: number;
+    /** Alto del wordmark en px (full/text) */
+    wordmark: number;
+    /** Ancho del wordmark en px (full) */
+    wordmarkW: number;
+}
+
+const SIZE_MAP: Record<LogoSize, SizeSpec> = {
+    xs: { h: 22,  wordmark: 12, wordmarkW: 56 },
+    sm: { h: 32,  wordmark: 16, wordmarkW: 80 },
+    md: { h: 44,  wordmark: 20, wordmarkW: 110 },
+    lg: { h: 60,  wordmark: 28, wordmarkW: 150 },
+    xl: { h: 88,  wordmark: 40, wordmarkW: 210 },
 };
+
+// ICONO — SVG vectorial del "monitor + bandeja cloche con check"
+function LogoMarkSVG({
+    h,
+    brandColor = "#0F2942",
+    accentColor = "#10B981",
+}: { h: number; brandColor?: string; accentColor?: string }) {
+    return (
+        <svg
+            viewBox="0 0 200 200"
+            height={h}
+            width={h}
+            className="inline-block shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <defs>
+                <linearGradient id={`monitor-${brandColor.slice(1)}`} x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor={brandColor}/>
+                    <stop offset="100%" stopColor="#0A1E30"/>
+                </linearGradient>
+                <linearGradient id={`screen-${brandColor.slice(1)}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#FFFFFF"/>
+                    <stop offset="100%" stopColor="#F1F5F9"/>
+                </linearGradient>
+                <linearGradient id={`cloche-${accentColor.slice(1)}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={accentColor}/>
+                    <stop offset="100%" stopColor="#047857"/>
+                </linearGradient>
+            </defs>
+
+            {/* ============ BANDEJA CLOCHE CON CHECK (arriba derecha) ============ */}
+            <g transform="translate(118, 6)">
+                {/* Cúpula del cloche */}
+                <path
+                    d="M 8 50 Q 8 4 42 4 Q 76 4 76 50 L 76 56 L 8 56 Z"
+                    fill={`url(#cloche-${accentColor.slice(1)})`}
+                    stroke="#047857"
+                    strokeWidth="2"
+                />
+                {/* Mango (botón superior) */}
+                <circle cx="42" cy="4" r="4" fill="#047857"/>
+                {/* Línea inferior bandeja */}
+                <line x1="0" y1="60" x2="84" y2="60"
+                      stroke="#047857" strokeWidth="3.5" strokeLinecap="round"/>
+                {/* Check sobre el cloche */}
+                <path d="M 28 30 L 38 40 L 56 18"
+                      fill="none" stroke="white" strokeWidth="6"
+                      strokeLinecap="round" strokeLinejoin="round"/>
+            </g>
+
+            {/* ============ MONITOR / TABLET ============ */}
+            {/* Cuerpo del monitor */}
+            <rect x="6" y="30" width="140" height="118" rx="12"
+                  fill={`url(#monitor-${brandColor.slice(1)})`}
+                  stroke="#0A1E30" strokeWidth="2.5"/>
+
+            {/* Pantalla */}
+            <rect x="18" y="42" width="116" height="92" rx="5"
+                  fill={`url(#screen-${brandColor.slice(1)})`}/>
+
+            {/* Letra M grande en la pantalla */}
+            <text x="76" y="118"
+                  fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
+                  fontWeight="900"
+                  fontSize="76"
+                  textAnchor="middle"
+                  fill={brandColor}
+                  letterSpacing="-3">M</text>
+
+            {/* Check pequeño sobre la M */}
+            <path d="M 64 76 L 70 82 L 80 70"
+                  fill="none"
+                  stroke={accentColor}
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"/>
+
+            {/* Teclado */}
+            <rect x="22" y="142" width="108" height="14" rx="2.5"
+                  fill="#0A1E30"/>
+            <rect x="100" y="145" width="22" height="8" rx="1.5"
+                  fill={accentColor}/>
+            {/* Teclas decorativas */}
+            <g fill="#1F4060">
+                {[0,1,2,3,4,5,6,7,8,9].map(i => (
+                    <rect key={i} x={26 + i * 7} y={145} width="5" height="1.5" rx="0.5"/>
+                ))}
+                {[0,1,2,3,4,5,6,7,8,9].map(i => (
+                    <rect key={`r2-${i}`} x={26 + i * 7} y={148} width="5" height="1.5" rx="0.5"/>
+                ))}
+                {[0,1,2,3,4,5,6,7,8,9].map(i => (
+                    <rect key={`r3-${i}`} x={26 + i * 7} y={151} width="5" height="1.5" rx="0.5"/>
+                ))}
+            </g>
+        </svg>
+    );
+}
+
+// NUBE decorativa
+function CloudSVG({ size, color = "#10B981" }: { size: number; color?: string }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 32 24" fill="none"
+             xmlns="http://www.w3.org/2000/svg">
+            <path d="M 7 18 Q 4 18 4 14 Q 4 10 8 9 Q 9 4 16 4 Q 23 4 24 9 Q 28 9 28 14 Q 28 18 24 18 Z"
+                  fill={color} stroke="#FFFFFF" strokeWidth="1.5"/>
+        </svg>
+    );
+}
 
 export function Logo({
     variant = "full",
@@ -38,78 +152,49 @@ export function Logo({
     className,
     brandColor = "#0F2942",
     accentColor = "#10B981",
+    withWordmark = true,
 }: LogoProps) {
     const s = SIZE_MAP[size];
 
     if (variant === "square") {
         return (
-            <div
-                className={cn("inline-flex items-center justify-center rounded-2xl shadow-sm shrink-0",
-                             className)}
-                style={{
-                    width:  s.h,
-                    height: s.h,
-                    background: `linear-gradient(135deg, ${brandColor}, ${brandColor}dd)`,
-                }}
-            >
-                <svg viewBox="0 0 64 64" className="w-3/5 h-3/5">
-                    <text x="32" y="46" textAnchor="middle"
-                          fontSize="42" fontWeight="900"
-                          fontFamily="system-ui, -apple-system, sans-serif"
-                          fill="white">M</text>
-                    <path d="M 20 22 L 28 30 L 44 14" fill="none"
-                          stroke={accentColor} strokeWidth="5"
-                          strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+            <div className={cn("inline-flex items-center justify-center rounded-2xl shrink-0", className)}
+                 style={{
+                     width:  s.h,
+                     height: s.h,
+                     background: `linear-gradient(135deg, ${brandColor}, #0A1E30)`,
+                     boxShadow: `0 4px 12px ${brandColor}30`,
+                 }}>
+                <LogoMarkSVG h={s.h * 0.9} brandColor="#FFFFFF" accentColor={accentColor}/>
             </div>
         );
     }
 
     if (variant === "mark") {
         return (
-            <svg viewBox="0 0 200 180" height={s.h} className={cn("inline-block", className)}>
-                <defs>
-                    <linearGradient id={`mg-${size}`} x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stopColor={brandColor}/>
-                        <stop offset="100%" stopColor={brandColor} stopOpacity="0.85"/>
-                    </linearGradient>
-                </defs>
-                {/* Cloche */}
-                <g transform="translate(125, 8)">
-                    <path d="M 8 38 Q 8 4 38 4 Q 68 4 68 38 L 68 42 L 8 42 Z"
-                          fill={accentColor} stroke={accentColor} strokeWidth="2"/>
-                    <line x1="0" y1="44" x2="76" y2="44" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round"/>
-                    <path d="M 26 22 L 36 30 L 52 14"
-                          fill="none" stroke="white" strokeWidth="5"
-                          strokeLinecap="round" strokeLinejoin="round"/>
-                </g>
-                {/* Monitor */}
-                <rect x="0" y="22" width="128" height="100" rx="11"
-                      fill={`url(#mg-${size})`} stroke={brandColor} strokeWidth="2.5"/>
-                <rect x="11" y="33" width="106" height="76" rx="5" fill="white"/>
-                <text x="64" y="98" textAnchor="middle"
-                      fontSize="60" fontWeight="900"
-                      fontFamily="system-ui, -apple-system, sans-serif"
-                      fill={brandColor} letterSpacing="-3">M</text>
-                <path d="M 58 60 L 64 66 L 73 55"
-                      fill="none" stroke={accentColor} strokeWidth="4.5"
-                      strokeLinecap="round" strokeLinejoin="round"/>
-                <rect x="15" y="115" width="98" height="11" rx="2"
-                      fill={brandColor}/>
-                <rect x="87" y="117.5" width="16" height="6" rx="1" fill={accentColor}/>
-            </svg>
+            <span className={cn("inline-flex items-center", className)}>
+                <LogoMarkSVG h={s.h} brandColor={brandColor} accentColor={accentColor}/>
+            </span>
         );
     }
 
     if (variant === "text") {
         return (
-            <div className={cn("inline-flex items-baseline gap-1.5", className)}>
-                <span className="font-black tracking-tight"
-                      style={{ color: brandColor, fontSize: `${s.h * 0.6}px` }}>
+            <div className={cn("inline-flex items-baseline gap-2", className)}>
+                <span className="font-black tracking-tight leading-none"
+                      style={{
+                          color: brandColor,
+                          fontSize: `${s.wordmark}px`,
+                          letterSpacing: "-0.04em",
+                      }}>
                     MOZONA
                 </span>
-                <span className="font-bold"
-                      style={{ color: accentColor, fontSize: `${s.h * 0.45}px` }}>
+                <span className="font-bold leading-none"
+                      style={{
+                          color: accentColor,
+                          fontSize: `${s.wordmark * 0.7}px`,
+                          letterSpacing: "-0.02em",
+                      }}>
                     TPV
                 </span>
             </div>
@@ -117,25 +202,32 @@ export function Logo({
     }
 
     // variant === "full": icono + texto
+    if (!withWordmark) {
+        return <Logo variant="mark" size={size} brandColor={brandColor} accentColor={accentColor} className={className}/>;
+    }
+
     return (
         <div className={cn("inline-flex items-center gap-2.5", className)}>
-            <Logo variant="mark" size={size} brandColor={brandColor} accentColor={accentColor}/>
+            <LogoMarkSVG h={s.h} brandColor={brandColor} accentColor={accentColor}/>
             <div className="flex flex-col leading-none">
-                <span className="font-black tracking-tight"
-                      style={{ color: brandColor, fontSize: `${s.h * 0.55}px`, letterSpacing: "-0.04em" }}>
+                <span className="font-black tracking-tight leading-none"
+                      style={{
+                          color: brandColor,
+                          fontSize: `${s.wordmark}px`,
+                          letterSpacing: "-0.04em",
+                      }}>
                     MOZONA
                 </span>
                 <div className="flex items-center gap-1 mt-0.5">
-                    <span className="font-bold"
-                          style={{ color: accentColor, fontSize: `${s.h * 0.32}px`, letterSpacing: "-0.02em" }}>
+                    <span className="font-bold leading-none"
+                          style={{
+                              color: accentColor,
+                              fontSize: `${s.wordmark * 0.65}px`,
+                              letterSpacing: "-0.02em",
+                          }}>
                         TPV
                     </span>
-                    {/* Mini nube */}
-                    <svg width={s.h * 0.28} height={s.h * 0.28} viewBox="0 0 24 24" fill="none">
-                        <path d="M 4 14 Q 4 8 10 8 Q 12 2 20 2 Q 24 4 24 8 Q 24 14 20 14 L 10 14 Q 4 14 4 14 Z"
-                              transform="translate(0 4)"
-                              fill={accentColor} opacity="0.85"/>
-                    </svg>
+                    <CloudSVG size={s.wordmark * 0.65} color={accentColor}/>
                 </div>
             </div>
         </div>
