@@ -522,6 +522,8 @@ export function PosTerminalPro() {
             ws.broadcastInvoicePaid(invoice);
 
             // 3) Persistir en `orders` (ticket cerrado) + limpiar draft
+            // FIX: usamos RPC insert_order_with_tenant (SECURITY DEFINER) que
+            // bypasea RLS — útil cuando el VIP no es owner del tenant.
             let persistError: string | null = null;
             let persistOk = false;
             try {
@@ -537,32 +539,52 @@ export function PosTerminalPro() {
                         const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
                         return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
                     }, 0);
-                    console.log("[PosTerminalPro] INSERT orders con tenant_id=", realTenantId);
-                    const { data: orderRow, error: orderErr } = await supabase
-                        .from("orders")
-                        .insert({
-                            tenant_id:      realTenantId,
-                            table_id:       table.id,
-                            table_number:   table.table_number,
-                            waiter_name:    auth.activeWaiter?.name ?? null,
-                            items:          items as any,
-                            subtotal:       round2(sub - tax),
-                            tax_total:      round2(tax),
-                            total:          round2(sub),
-                            payment_method: method,
-                            payment_status: "paid",
-                            status:         "closed",
-                            series:         series,
-                        })
-                        .select()
-                        .single();
-                    if (orderErr) {
-                        console.error("[PosTerminalPro] INSERT orders error:", orderErr);
-                        persistError = `BD: ${orderErr.message} (code ${orderErr.code})`;
-                    } else {
-                        console.log("[PosTerminalPro] ticket persistido en orders:", orderRow?.id);
+                    const orderPayload = {
+                        tenant_id:      realTenantId,
+                        table_id:       table.id,
+                        table_number:   table.table_number,
+                        waiter_name:    auth.activeWaiter?.name ?? null,
+                        items:          items,
+                        subtotal:       round2(sub - tax),
+                        tax_total:      round2(tax),
+                        total:          round2(sub),
+                        payment_method: method,
+                        payment_status: "paid",
+                        status:         "closed",
+                        series:         series,
+                    };
+                    console.log("[PosTerminalPro] intentando INSERT en orders");
+                    console.log("[PosTerminalPro]   tenant_id =", realTenantId);
+                    console.log("[PosTerminalPro]   total    =", round2(sub));
+                    console.log("[PosTerminalPro]   items    =", items.length);
+
+                    // Estrategia 1: RPC insert_order_with_tenant (SECURITY DEFINER, bypasea RLS)
+                    const { data: rpcData, error: rpcErr } = await supabase.rpc(
+                        "insert_order_with_tenant",
+                        { p_order: orderPayload as any },
+                    );
+                    if (!rpcErr && rpcData && (rpcData as any).ok) {
+                        console.log("[PosTerminalPro] ticket persistido vía RPC:", (rpcData as any).id);
                         await clearDraft(realTenantId, table.id);
                         persistOk = true;
+                    } else {
+                        // Estrategia 2: INSERT directo (puede fallar por RLS)
+                        const rpcMsg = rpcErr?.message ?? (rpcData as any)?.error ?? "unknown";
+                        console.warn("[PosTerminalPro] RPC falló:", rpcMsg, "— intentando INSERT directo");
+                        const { data: orderRow, error: orderErr } = await supabase
+                            .from("orders")
+                            .insert(orderPayload)
+                            .select()
+                            .single();
+                        if (orderErr) {
+                            console.error("[PosTerminalPro] INSERT orders error:", orderErr);
+                            persistError = `BD: ${orderErr.message} (code ${orderErr.code}). ` +
+                                          `Si es 42501, ejecuta database/14_insert_order_rpc.sql.`;
+                        } else {
+                            console.log("[PosTerminalPro] ticket persistido en orders:", orderRow?.id);
+                            await clearDraft(realTenantId, table.id);
+                            persistOk = true;
+                        }
                     }
                 }
             } catch (e) {
