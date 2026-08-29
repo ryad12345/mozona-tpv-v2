@@ -184,28 +184,34 @@ export interface UsePosResult {
 export function usePosReducer(): UsePosResult {
     const [state, dispatch] = useReducer(reducer, initialState);
     const { subtotal, taxByRate, total, itemCount } = useMemo(() => {
-        let sub = 0;
-        let tax = 0;
+        // Los precios de la carta YA TIENEN el IVA incluido (hostelería España).
+        // El cliente paga exactamente la suma de los precios.
+        // El desglose fiscal es: base = total / (1 + rate/100), iva = total - base.
+        let total = 0;  // total a pagar (= suma de precios de carta)
         const byRate = new Map<number, { base: number; tax: number }>();
         for (const it of state.orderItems) {
             const unit = Number(it.unit_price ?? 0);
             const qty  = Number(it.quantity   ?? 0);
             const rate = Number(it.tax_rate  ?? 10);
-            const lineSub = unit * qty;
-            const lineTax = lineSub * (rate / 100);
-            sub += lineSub;
-            tax += lineTax;
+            const lineSub = unit * qty;  // precio total de la línea (con IVA)
+            total += lineSub;
+            // Desglose: precio CON IVA → base imponible
+            const base = lineSub / (1 + rate / 100);
+            const tax  = lineSub - base;
             const cur = byRate.get(rate) ?? { base: 0, tax: 0 };
-            cur.base += lineSub;
-            cur.tax += lineTax;
+            cur.base += base;
+            cur.tax  += tax;
             byRate.set(rate, cur);
         }
         const arr = Array.from(byRate.entries()).sort((a, b) => b[0] - a[0]).map(([rate, value]) => ({
             rate, base: round2(value.base), tax: round2(value.tax),
             label: rate === 10 ? "Restauración" : rate === 21 ? "Bebidas alcohólicas" : `IVA ${rate}%`,
         }));
+        const totalBase = arr.reduce((acc, v) => acc + v.base, 0);
         return {
-            subtotal: round2(sub), taxByRate: arr, total: round2(sub + tax),
+            subtotal:  round2(totalBase),   // base imponible (lo que se muestra en comanda)
+            taxByRate: arr,
+            total:     round2(total),        // total = base + iva (igual a suma de precios)
             itemCount: state.orderItems.reduce((acc, item) => acc + item.quantity, 0),
         };
     }, [state.orderItems]);

@@ -118,8 +118,9 @@ export async function createWaiter(input: {
     role:      WaiterRole;
     email?:    string | null;
 }): Promise<CreateWaiterResult> {
-    // 1) Generar username único (5 intentos)
-    let username = generateUsername(input.name);
+    // 1) Generar username único (5 intentos) — siempre LOWERCASE
+    const baseName = generateUsername(input.name);
+    let username = baseName.toLowerCase();
     let tries = 0;
     while (tries < 5) {
         const { data: existing } = await supabase
@@ -130,37 +131,38 @@ export async function createWaiter(input: {
             .maybeSingle();
         if (!existing) break;
         tries++;
-        username = generateUsername(input.name);
+        username = generateUsername(input.name).toLowerCase();
     }
 
-    // 2) Generar PIN de 4 caracteres
-    const pin = generatePassword(4);
+    // 2) Generar PIN de 4 caracteres — siempre UPPERCASE
+    const pin = generatePassword(4).toUpperCase();
 
-    // 3) Crear fila base
+    // 3) Crear fila completa en UN SOLO INSERT (sin RPC).
+    //    El RLS del dueño permite insertar en su tenant.
     const { data, error } = await supabase
         .from("tenant_users")
         .insert({
-            tenant_id: input.tenant_id,
-            name:      input.name,
-            role:      input.role,
-            email:     input.email ?? null,
-            user_id:   null,
-            is_active: true,
-            pin_code:  pin,
+            tenant_id:  input.tenant_id,
+            name:       input.name,
+            role:       input.role,
+            email:      input.email ?? null,
+            user_id:    null,
+            is_active:  true,
+            pin_code:   pin,
+            username:   username,            // LOWER
+            waiter_pin: pin,                // UPPER
         })
         .select()
         .single();
-    if (error) throw error;
-
-    // 4) Llamar a la RPC para asignar username + waiter_pin
-    const { error: rpcErr } = await supabase.rpc("set_waiter_credentials", {
-        p_tenant_user_id: data.id,
-        p_username:       username,
-        p_password:       pin,
-    });
-    if (rpcErr) {
-        await supabase.from("tenant_users").delete().eq("id", data.id);
-        throw new Error(`Error creando credenciales: ${rpcErr.message}`);
+    if (error) {
+        // Si falla por columnas waiter_pin/username inexistentes,
+        // mensaje claro para que el admin ejecute 09_waiter_pin.sql
+        if (error.message.includes("waiter_pin") || error.message.includes("username")) {
+            throw new Error(
+                `Faltan columnas username/waiter_pin.  Ejecuta database/09_waiter_pin.sql en Supabase SQL Editor.`
+            );
+        }
+        throw error;
     }
 
     const waiter: Waiter = {
@@ -186,20 +188,11 @@ export async function createWaiter(input: {
 
 /** Resetea el PIN de un camarero (devuelve el nuevo en claro). */
 export async function resetWaiterPassword(id: string): Promise<string> {
-    const newPin = generatePassword(4);
-    const { data: w } = await supabase
+    const newPin = generatePassword(4).toUpperCase();
+    const { error } = await supabase
         .from("tenant_users")
-        .select("username, tenant_id")
-        .eq("id", id)
-        .single();
-    if (!w) throw new Error("Camarero no encontrado");
-    if (!w.username) throw new Error("El camarero no tiene username");
-
-    const { error } = await supabase.rpc("set_waiter_credentials", {
-        p_tenant_user_id: id,
-        p_username:       w.username,
-        p_password:       newPin,
-    });
+        .update({ waiter_pin: newPin, pin_code: newPin })
+        .eq("id", id);
     if (error) throw new Error(error.message);
     return newPin;
 }

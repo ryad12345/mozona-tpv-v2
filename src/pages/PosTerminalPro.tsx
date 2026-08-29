@@ -49,9 +49,11 @@ function buildPreBillHtml(params: {
     waiter?:      { name: string; loggedInAt?: string } | null;
 }): string {
     const { restaurant, table, lines, waiter } = params;
-    const fmt = (n: number) => n.toFixed(2) + " €";
+    // Formato español: 9,00 € (coma decimal, 2 decimales, símbolo euro con espacio)
+    const fmt = (n: number) => n.toFixed(2).replace(".", ",") + " €";
 
-    // Desglose IVA (precios incluyen IVA → base = price / (1 + rate/100))
+    // Desglose IVA: precios YA incluyen IVA → base = gross / (1 + rate/100)
+    // El cliente paga exactamente la suma de los precios de carta.
     const byRate = new Map<number, number>();
     let gross = 0;
     for (const l of lines) {
@@ -59,14 +61,17 @@ function buildPreBillHtml(params: {
         const r = l.tax_rate ?? 10;
         byRate.set(r, (byRate.get(r) ?? 0) + l.qty * l.price);
     }
-    const taxRows = Array.from(byRate.entries()).sort((a, b) => b[0] - a[0])
-        .map(([r, g]) => {
+    // Generar filas individuales (no concatenadas en una sola cadena)
+    // para poder formatearlas con el helper lineRow (flexbox)
+    const taxBreakdownLines: Array<{ label: string; value: string }> = [];
+    Array.from(byRate.entries())
+        .sort((a, b) => b[0] - a[0])
+        .forEach(([r, g]) => {
             const base = g / (1 + r / 100);
-            const rawTax = g - base;
-  const tax = isNaN(Number(rawTax)) ? 0 : Number(rawTax);
-            return `<tr><td>Base ${r}%</td><td style="text-align:right">${fmt(base)}</td></tr>`
-                 + `<tr><td>I.V.A. ${r}%</td><td style="text-align:right">${fmt(tax)}</td></tr>`;
-        }).join("");
+            const tax  = g - base;
+            taxBreakdownLines.push({ label: `Base (${r}%):`,    value: fmt(base) });
+            taxBreakdownLines.push({ label: `I.V.A. (${r}%):`, value: fmt(tax)  });
+        });
 
     // Helper: formatea una línea con label a la izquierda y precio a la derecha,
     // usando caracteres de espacio y puntos para que se alinee perfecto en
@@ -151,19 +156,12 @@ function buildPreBillHtml(params: {
   <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
   <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
   <div class="sep">${"─".repeat(32)}</div>
-  ${table  ? `<div class="row meta"><span class="lbl">Mesa:</span><span class="val b">${table.table_number}</span></div>` : ""}
-  ${waiter ? `<div class="row meta"><span class="lbl">Camarero:</span><span class="val b">${waiter.name.replace(/</g, "&lt;")}</span></div>` : ""}
+  ${table && table.table_number != null ? `<div class="row meta"><span class="lbl">Mesa:</span><span class="val b">${String(table.table_number).replace(/</g, "&lt;")}</span></div>` : ""}
+  ${waiter && waiter.name ? `<div class="row meta"><span class="lbl">Camarero:</span><span class="val b">${String(waiter.name).replace(/</g, "&lt;")}</span></div>` : ""}
   <div class="sep">${"─".repeat(32)}</div>
   ${lines.map(itemRow).join("")}
   <div class="sep">${"─".repeat(32)}</div>
-  ${taxRows.split("</tr>").filter(Boolean).map(r => {
-      // Cada taxRow es algo como:
-      // <tr><td>Base 10%</td><td style="text-align:right">16.50 €</td></tr>
-      // Lo convertimos al formato flex
-      const m = r.match(/<td>(.*?)<\/td><td[^>]*>(.*?)<\/td>/);
-      if (!m) return "";
-      return lineRow(m[1], m[2]);
-  }).join("")}
+  ${taxBreakdownLines.map(t => lineRow(t.label, t.value)).join("")}
   <div class="sep">${"═".repeat(32)}</div>
   ${lineRow("TOTAL", fmt(gross), true)}
   <div class="sep">${"─".repeat(32)}</div>
