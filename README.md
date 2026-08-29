@@ -224,3 +224,5 @@ producción:
 ## Licencia
 
 Propietaria.  © 2025 MOZONA TPV.
+
+<!-- rebuild 1787965501 -->
