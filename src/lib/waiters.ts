@@ -33,6 +33,9 @@ export function isSyntheticTenantId(s: string | null | undefined): boolean {
  * Si el id ya es un UUID válido → lo retorna.
  * Si es "vip-bypass" o null → busca el primer tenant activo de la BD.
  * Si no encuentra nada → retorna null (el caller debe manejar el error).
+ *
+ * FIX v13: usa el RPC `get_first_active_tenant()` (SECURITY DEFINER) en
+ * lugar de hacer SELECT directo en `tenants`, que fallaba con 403 por RLS.
  */
 export async function resolveRealTenantId(
     candidate: string | null | undefined,
@@ -40,8 +43,21 @@ export async function resolveRealTenantId(
     if (isValidUuid(candidate) && !isSyntheticTenantId(candidate)) {
         return candidate!;
     }
-    // Fallback: buscar el primer tenant activo de la BD
     if (!supabase) return null;
+    // 1) Intentar con el RPC seguro (bypasea RLS)
+    try {
+        const { data, error } = await supabase.rpc("get_first_active_tenant");
+        if (!error && data) {
+            console.log("[resolveRealTenantId] RPC get_first_active_tenant →", data);
+            return data as string;
+        }
+        if (error) {
+            console.warn("[resolveRealTenantId] RPC error:", error.message);
+        }
+    } catch (e) {
+        console.warn("[resolveRealTenantId] RPC exception:", e);
+    }
+    // 2) Fallback: SELECT directo (puede fallar con 403 si RLS bloquea)
     try {
         const { data, error } = await supabase
             .from("tenants")
@@ -50,12 +66,12 @@ export async function resolveRealTenantId(
             .limit(1)
             .maybeSingle();
         if (error) {
-            console.warn("[resolveRealTenantId] error:", error.message);
+            console.warn("[resolveRealTenantId] SELECT tenants error:", error.message);
             return null;
         }
         return data?.id ?? null;
     } catch (e) {
-        console.warn("[resolveRealTenantId] exception:", e);
+        console.warn("[resolveRealTenantId] SELECT exception:", e);
         return null;
     }
 }
