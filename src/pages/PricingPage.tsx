@@ -131,17 +131,43 @@ export function PricingPage() {
     };
 
     const redeem = async () => {
-        if (!token.trim()) return;
-        setRedeeming(true);
-        setRedeemMsg(null);
-        const { error } = await (auth.redeemInvite ?? (async () => ({ error: "no provider" })))(token.trim());
-        setRedeeming(false);
-        if (error) {
-            setRedeemMsg({ kind: "err", text: error });
+        if (!token.trim()) {
+            setRedeemMsg({ kind: "err", text: "Introduce un código de invitación" });
             return;
         }
-        setRedeemMsg({ kind: "ok", text: "Invitación canjeada.  Redirigiendo…" });
-        setTimeout(() => nav("/app"), 1200);
+        setRedeeming(true);
+        setRedeemMsg(null);
+
+        // 1) Validar el código contra la RPC
+        const result = await (auth.redeemInvite ?? (async () => ({ ok: false, error: "Servicio no disponible" })))(token.trim());
+        if (!result.ok) {
+            setRedeeming(false);
+            setRedeemMsg({ kind: "err", text: result.error ?? "Código no válido" });
+            return;
+        }
+
+        // 2) Guardar el código validado en localStorage para que
+        //    /register lo consuma al crear la cuenta (sustituye a la
+        //    sesión de Stripe verificada)
+        try {
+            sessionStorage.setItem("mozona.redeemed_invite", JSON.stringify({
+                code:      result.code,
+                plan:      result.plan,
+                redeemedAt: new Date().toISOString(),
+            }));
+        } catch (e) { /* noop */ }
+
+        setRedeemMsg({
+            kind: "ok",
+            text: `¡Código canjeado! Plan ${result.plan} activado.  Crea tu cuenta para continuar.`,
+        });
+
+        // 3) Redirigir a /register con el plan y el código de invitación
+        setTimeout(() => {
+            const plan = result.plan ?? "lifetime_vip";
+            nav(`/register?invite_code=${encodeURIComponent(token.trim())}&plan=${plan}`, { replace: true });
+        }, 900);
+        setRedeeming(false);
     };
 
     return (

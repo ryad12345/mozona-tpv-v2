@@ -1,14 +1,17 @@
 // =====================================================================
 // MOZONA TPV — RegisterPage (/register)
 // =====================================================================
-// Sólo accesible tras pago verificado:
-//   1. Lee ?session_id=cs_xxx de la URL (devuelta por Stripe Checkout).
-//   2. Llama a la Edge Function `verify-checkout-session` para validar
-//      que la sesión está `paid`.
-//   3. Muestra formulario de creación de cuenta (email + password +
-//      nombre del restaurante) SIN pedir tarjeta de nuevo.
-//   4. Al hacer submit: signUp → crea tenant con plan "active" →
-//      redirige a /setup/onboarding.
+// Sólo accesible tras verificación previa:
+//   • PAGO:   ?session_id=cs_xxx  → valida con Stripe
+//   • INVITE: ?invite_code=XXX&plan=lifetime_vip → código canjeado
+//   • O BIEN sesión de Stripe ya verificada en sessionStorage
+//   • O BIEN código de invitación ya canjeado en sessionStorage
+//
+// Al hacer submit:
+//   1. signUp(email, password, name)
+//   2. Crea tenant con plan "active"
+//   3. Vincula al usuario como owner
+//   4. Redirige a /setup/onboarding
 // =====================================================================
 
 import { useEffect, useState } from "react";
@@ -23,25 +26,53 @@ import {
     applyPaidSessionToTenant,
     type CheckoutSessionInfo,
 } from "../lib/billing";
-import { IconCheck, IconShield, IconArrowRight, IconLock } from "../components/icons";
+import { IconCheck, IconShield, IconArrowRight, IconLock, IconSparkles } from "../components/icons";
 
 type Phase = "verifying" | "ready" | "error" | "signing";
+type EntryKind = "stripe" | "invite";
+
+interface InvitePayload {
+    code:       string;
+    plan:       "plus_30" | "pro_50" | "lifetime_vip";
+    redeemedAt: string;
+}
 
 const PLAN_LABEL: Record<string, { name: string; price: string }> = {
-    plus_30:    { name: "Plus", price: "30€/mes" },
-    pro_50:     { name: "Pro",  price: "50€/mes" },
-    lifetime_vip: { name: "Lifetime VIP", price: "Gratis" },
+    plus_30:    { name: "Plus",         price: "30€/mes" },
+    pro_50:     { name: "Pro",          price: "50€/mes" },
+    lifetime_vip: { name: "Lifetime VIP", price: "Gratis permanente" },
 };
+
+const INVITE_KEY = "mozona.redeemed_invite";
+
+function loadInvite(): InvitePayload | null {
+    try {
+        const raw = sessionStorage.getItem(INVITE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw) as InvitePayload;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearInvite() {
+    try { sessionStorage.removeItem(INVITE_KEY); } catch (e) { /* noop */ }
+}
 
 export function RegisterPage() {
     const auth = useAuth();
     const nav  = useNavigate();
     const [params] = useSearchParams();
-    const sessionId = (params.get("session_id") ?? "").trim();
+    const sessionId  = (params.get("session_id")  ?? "").trim();
+    const inviteCode = (params.get("invite_code") ?? "").trim();
+    const planParam  = (params.get("plan")        ?? "").trim() as
+                       "" | "plus_30" | "pro_50" | "lifetime_vip";
 
-    const [phase,   setPhase]   = useState<Phase>("verifying");
-    const [error,   setError]   = useState<string | null>(null);
-    const [session, setSession] = useState<CheckoutSessionInfo | null>(null);
+    const [phase,    setPhase]    = useState<Phase>("verifying");
+    const [error,    setError]    = useState<string | null>(null);
+    const [kind,     setKind]     = useState<EntryKind>("stripe");
+    const [session,  setSession]  = useState<CheckoutSessionInfo | null>(null);
+    const [invite,   setInvite]   = useState<InvitePayload | null>(null);
 
     const [restaurantName, setRestaurantName] = useState("");
     const [fullName,       setFullName]       = useState("");
@@ -54,53 +85,96 @@ export function RegisterPage() {
     const [submitError,    setSubmitError]    = useState<string | null>(null);
 
     // ---------------------------------------------------------------
-    // Verificar sesión de Stripe al montar
+    // Determinar entrypoint al montar
     // ---------------------------------------------------------------
     useEffect(() => {
         let cancelled = false;
 
         (async () => {
-            // 1) Si no hay session_id, error
-            if (!sessionId) {
-                setPhase("error");
-                setError("No se proporcionó ID de sesión.  Vuelve a la página de precios y completa el pago.");
-                return;
-            }
-            // 2) Si ya está autenticado, salimos a /app
+            // 1) Si ya está autenticado, salimos a /app
             if (auth.isReady && auth.user) {
                 nav("/app", { replace: true });
                 return;
             }
-            // 3) ¿Hay caché válido?
-            const cached = getCachedVerifiedSession();
-            if (cached && cached.session_id === sessionId) {
-                if (!cancelled) {
-                    setSession(cached);
-                    setEmail(cached.customer_email ?? "");
-                    setPhase("ready");
+
+            // 2) Modo INVITE: ?invite_code=XXX
+            if (inviteCode) {
+                // Cacheado en sessionStorage tras canjear
+                const cached = loadInvite();
+                if (cached && cached.code.toLowerCase() === inviteCode.toLowerCase()) {
+                    if (!cancelled) {
+                        setKind("invite");
+                        setInvite(cached);
+                        setPhase("ready");
+                    }
+                    return;
                 }
-                return;
-            }
-            // 4) Verificar contra Edge Function
-            const info = await verifyCheckoutSession(sessionId);
-            if (cancelled) return;
-            if (!info) {
+                // Sin cache: re-canjeamos en backend
+                if (auth.redeemInvite) {
+                    const result = await auth.redeemInvite(inviteCode);
+                    if (cancelled) return;
+                    if (!result.ok) {
+                        setPhase("error");
+                        setError(result.error ?? "Código de invitación no válido");
+                        return;
+                    }
+                    const payload: InvitePayload = {
+                        code: result.code ?? inviteCode,
+                        plan: (result.plan ?? planParam ?? "lifetime_vip") as InvitePayload["plan"],
+                        redeemedAt: new Date().toISOString(),
+                    };
+                    try { sessionStorage.setItem(INVITE_KEY, JSON.stringify(payload)); } catch (e) { /* noop */ }
+                    setKind("invite");
+                    setInvite(payload);
+                    setPhase("ready");
+                    return;
+                }
                 setPhase("error");
-                setError(
-                    "No se pudo verificar el pago.  " +
-                    "Asegúrate de que la Edge Function `verify-checkout-session` está desplegada " +
-                    "y de que la sesión de Stripe es válida y está pagada."
-                );
+                setError("Servicio de invitaciones no disponible");
                 return;
             }
-            cacheVerifiedSession(info);
-            setSession(info);
-            setEmail(info.customer_email ?? "");
-            setPhase("ready");
+
+            // 3) Modo STRIPE: ?session_id=cs_xxx
+            if (sessionId) {
+                const cached = getCachedVerifiedSession();
+                if (cached && cached.session_id === sessionId) {
+                    if (!cancelled) {
+                        setKind("stripe");
+                        setSession(cached);
+                        setEmail(cached.customer_email ?? "");
+                        setPhase("ready");
+                    }
+                    return;
+                }
+                const info = await verifyCheckoutSession(sessionId);
+                if (cancelled) return;
+                if (!info) {
+                    setPhase("error");
+                    setError(
+                        "No se pudo verificar el pago.  Asegúrate de que la Edge Function " +
+                        "`verify-checkout-session` está desplegada y de que la sesión de " +
+                        "Stripe es válida y está pagada."
+                    );
+                    return;
+                }
+                cacheVerifiedSession(info);
+                setKind("stripe");
+                setSession(info);
+                setEmail(info.customer_email ?? "");
+                setPhase("ready");
+                return;
+            }
+
+            // 4) Sin params → error
+            setPhase("error");
+            setError(
+                "No se proporcionó código de invitación ni ID de sesión de pago. " +
+                "Vuelve a la página de precios."
+            );
         })();
 
         return () => { cancelled = true; };
-    }, [sessionId, auth.isReady, auth.user, nav]);
+    }, [sessionId, inviteCode, planParam, auth, nav]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -130,8 +204,12 @@ export function RegisterPage() {
             setSubmitError("Debes aceptar los términos");
             return;
         }
-        if (!session) {
+        if (kind === "stripe" && !session) {
             setSubmitError("Sesión de pago no verificada.  Vuelve a la página de precios.");
+            return;
+        }
+        if (kind === "invite" && !invite) {
+            setSubmitError("Código de invitación no verificado.  Vuelve a la página de precios.");
             return;
         }
 
@@ -149,10 +227,18 @@ export function RegisterPage() {
             return;
         }
 
-        // 2) Crear tenant con plan "active" vinculado a la sesión
-        const tenant = await applyPaidSessionToTenant(
-            data.user.id, session, restaurantName.trim(),
-        );
+        // 2) Crear tenant según modo
+        let tenant: { id: string; plan: string } | null = null;
+        if (kind === "stripe" && session) {
+            tenant = await applyPaidSessionToTenant(
+                data.user.id, session, restaurantName.trim(),
+            );
+        } else if (kind === "invite" && invite) {
+            tenant = await createTenantFromInvite(
+                data.user.id, invite, restaurantName.trim(),
+            );
+        }
+
         if (!tenant) {
             setSubmitting(false);
             setSubmitError("Cuenta creada pero no se pudo vincular el restaurante.  Contacta con soporte.");
@@ -168,19 +254,17 @@ export function RegisterPage() {
             pin_code:    "1234",
         }, { onConflict: "tenant_id,user_id" });
 
-        // 4) Limpiar caché y refrescar auth
-        clearCachedVerifiedSession();
+        // 4) Limpiar cache y refrescar auth
+        if (kind === "stripe") clearCachedVerifiedSession();
+        if (kind === "invite") clearInvite();
         setPhase("signing");
-        // El signIn puede ser necesario si signUp no devolvió sesión
         if (!data.session) {
             const { error: signInErr } = await supabase.auth.signInWithPassword({
                 email: email.trim().toLowerCase(), password: pwd,
             });
             if (signInErr) {
                 setSubmitting(false);
-                setSubmitError(
-                    "Cuenta creada.  Confirma tu email antes de iniciar sesión.",
-                );
+                setSubmitError("Cuenta creada.  Confirma tu email antes de iniciar sesión.");
                 return;
             }
         }
@@ -196,16 +280,16 @@ export function RegisterPage() {
             <CenteredCard>
                 <Spinner />
                 <h1 className="mt-4 text-[15px] font-bold text-slate-900">
-                    Verificando tu pago…
+                    Verificando acceso…
                 </h1>
                 <p className="mt-1 text-[12.5px] text-slate-500">
-                    Estamos confirmando la transacción con Stripe.
+                    Estamos confirmando tu {kind === "invite" ? "código de invitación" : "pago"}.
                 </p>
             </CenteredCard>
         );
     }
 
-    if (phase === "error" || !session) {
+    if (phase === "error" || (kind === "stripe" && !session) || (kind === "invite" && !invite)) {
         return (
             <CenteredCard>
                 <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-rose-100 text-rose-600
@@ -213,7 +297,7 @@ export function RegisterPage() {
                     <IconShield size={26} strokeWidth={1.8} />
                 </div>
                 <h1 className="text-[18px] font-black text-slate-900">
-                    Pago no verificado
+                    Acceso no verificado
                 </h1>
                 <p className="mt-2 text-[12.5px] text-slate-500 max-w-xs mx-auto">
                     {error}
@@ -231,7 +315,17 @@ export function RegisterPage() {
         );
     }
 
-    const planInfo = PLAN_LABEL[session.plan] ?? { name: "Plan", price: "" };
+    // Banner según modo
+    const planName = kind === "invite" && invite
+        ? PLAN_LABEL[invite.plan]?.name ?? "Lifetime VIP"
+        : PLAN_LABEL[session?.plan ?? "plus_30"]?.name ?? "Plus";
+    const planPrice = kind === "invite" && invite
+        ? PLAN_LABEL[invite.plan]?.price ?? "Gratis"
+        : PLAN_LABEL[session?.plan ?? "plus_30"]?.price ?? "30€/mes";
+    const bannerColor = kind === "invite" ? "violet" : "emerald";
+    const bannerBg = kind === "invite" ? "bg-violet-50 border-violet-200/80 text-violet-900" : "bg-emerald-50 border-emerald-200/80 text-emerald-900";
+    const bannerBgSub = kind === "invite" ? "text-violet-700" : "text-emerald-700";
+    const BannerIcon = kind === "invite" ? IconSparkles : IconCheck;
 
     return (
         <div className="min-h-dvh bg-gradient-to-b from-slate-50 to-white flex items-start sm:items-center justify-center p-4 py-8">
@@ -250,16 +344,24 @@ export function RegisterPage() {
                 {/* Card */}
                 <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl p-7">
                     {/* Header de éxito */}
-                    <div className="flex items-center gap-3 p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-2xl mb-5">
-                        <div className="w-9 h-9 shrink-0 rounded-xl bg-emerald-500 text-white flex items-center justify-center">
-                            <IconCheck size={18} strokeWidth={2.4} />
+                    <div className={`flex items-center gap-3 p-3.5 ${bannerBg} rounded-2xl mb-5`}>
+                        <div className={`w-9 h-9 shrink-0 rounded-xl ${kind === "invite" ? "bg-violet-600" : "bg-emerald-500"}
+                                        text-white flex items-center justify-center`}>
+                            <BannerIcon size={18} strokeWidth={2.4} />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[12.5px] font-bold text-emerald-900">
-                                Pago confirmado · Plan {planInfo.name}
+                            <div className="text-[12.5px] font-bold">
+                                {kind === "invite" ? "Invitación canjeada" : "Pago confirmado"} ·
+                                Plan {planName}
                             </div>
-                            <div className="text-[11px] text-emerald-700">
-                                {planInfo.price} · Sesión <span className="font-mono">{session.session_id.slice(-8)}</span>
+                            <div className={`text-[11px] ${bannerBgSub}`}>
+                                {planPrice}
+                                {kind === "stripe" && session && (
+                                    <> · Sesión <span className="font-mono">{session.session_id.slice(-8)}</span></>
+                                )}
+                                {kind === "invite" && invite && (
+                                    <> · Código <span className="font-mono">{invite.code}</span></>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -396,7 +498,53 @@ export function RegisterPage() {
 }
 
 // ---------------------------------------------------------------------
-// Helpers
+// Crea tenant a partir de un código de invitación canjeado
+// ---------------------------------------------------------------------
+
+async function createTenantFromInvite(
+    userId: string,
+    invite: InvitePayload,
+    restaurantName: string,
+): Promise<{ id: string; plan: string } | null> {
+    if (!isSupabaseConfigured) return null;
+    try {
+        // Si ya existe tenant del user, actualizar con plan del invite
+        const existing = await supabase
+            .from("tenants")
+            .select("*")
+            .eq("owner_id", userId)
+            .maybeSingle();
+
+        if (existing.data) {
+            await supabase.from("tenants").update({
+                plan: invite.plan,
+                subscription_status: "active",
+                name: restaurantName || existing.data.name,
+            }).eq("id", existing.data.id);
+            return { id: existing.data.id, plan: invite.plan };
+        }
+
+        const ins = await supabase.from("tenants").insert({
+            owner_id:             userId,
+            name:                 restaurantName || "Mi Restaurante",
+            plan:                 invite.plan,
+            subscription_status:  "active",
+            onboarding_completed: false,
+        }).select().single();
+
+        if (ins.error) {
+            console.warn("[register] createTenantFromInvite error:", ins.error.message);
+            return null;
+        }
+        return { id: ins.data.id, plan: ins.data.plan };
+    } catch (e) {
+        console.warn("[register] createTenantFromInvite exception:", e);
+        return null;
+    }
+}
+
+// ---------------------------------------------------------------------
+// Helpers UI
 // ---------------------------------------------------------------------
 
 function Spinner() {

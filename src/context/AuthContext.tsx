@@ -41,7 +41,14 @@ export interface AuthContextValue {
     profile?:    any;
     refresh?:    () => Promise<void>;
     createTenant?: (...args: any[]) => Promise<any>;
-    redeemInvite?: (...args: any[]) => Promise<any>;
+    redeemInvite?: (code: string) => Promise<{
+        ok:        boolean;
+        error?:    string;
+        plan?:     "plus_30" | "pro_50" | "lifetime_vip";
+        code?:     string;
+        max_uses?: number | null;
+        remaining?: number | null;
+    }>;
     signInWithGoogle?: (...args: any[]) => Promise<any>;
 
     signIn:           (email: string, password: string) => Promise<{ user: AuthUser | null; error: string | null }>;
@@ -316,7 +323,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Stubs de compatibilidad
     // -----------------------------------------------------------------
     const createTenant = useCallback(async (..._args: any[]) => ({ error: "Use Stripe checkout" }), []);
-    const redeemInvite = useCallback(async (..._args: any[]) => ({ error: "Not implemented" }), []);
+
+    /**
+     * Canjea un código de invitación llamando a la RPC
+     * `redeem_invitation_token`.  Devuelve:
+     *   { ok: true, plan, code, max_uses, remaining }
+     *   { ok: false, error }
+     *   { ok: false, error }  si Supabase no está configurado
+     */
+    const redeemInvite = useCallback(async (code: string) => {
+        if (!isSupabaseConfigured) {
+            return { ok: false, error: "Supabase no configurado" };
+        }
+        if (!code || !code.trim()) {
+            return { ok: false, error: "Introduce un código de invitación" };
+        }
+        try {
+            const { data, error } = await supabase.rpc("redeem_invitation_token", {
+                p_code: code.trim(),
+            });
+            if (error) {
+                return { ok: false, error: error.message };
+            }
+            if (!data || data.ok !== true) {
+                return { ok: false, error: data?.error ?? "Código no válido" };
+            }
+            return {
+                ok:        true,
+                plan:      data.plan,
+                code:      data.code,
+                max_uses:  data.max_uses ?? null,
+                remaining: data.remaining ?? null,
+            };
+        } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+    }, []);
+
     const signInWithGoogle = useCallback(async () => {
         if (!isSupabaseConfigured) return { error: "Supabase no configurado" };
         try {
