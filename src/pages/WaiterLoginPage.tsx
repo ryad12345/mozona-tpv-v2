@@ -32,7 +32,7 @@ export function WaiterLoginPage() {
     const redirectTo = (params.get("redirect") ?? "/waiter").trim();
 
     const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
+    const [pin, setPin] = useState("");
     const [showPwd,  setShowPwd]  = useState(false);
     const [busy,     setBusy]     = useState(false);
     const [msg,      setMsg]      = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -62,8 +62,8 @@ export function WaiterLoginPage() {
                 text: `Demasiados intentos. Espera ${rate.remainingSeconds}s.` });
             return;
         }
-        if (!username.trim() || !password) {
-            setMsg({ kind: "err", text: "Usuario y contraseña son obligatorios" });
+        if (!username.trim() || !pin) {
+            setMsg({ kind: "err", text: "Usuario y PIN son obligatorios" });
             return;
         }
 
@@ -81,16 +81,16 @@ export function WaiterLoginPage() {
                 role?: string;
                 error?: string;
             }>("waiter-api", {
-                body: { action: "login", username: username.trim(), password },
+                body: { action: "login", username: username.trim(), pin: pin.trim() },
             });
 
             if (error) {
                 // Fallback: la Edge Function no está desplegada,
                 // intentar con la RPC directa
                 console.warn("[WaiterLogin] Edge function error, fallback RPC:", error);
-                const { data: rpcData, error: rpcErr } = await supabase.rpc("waiter_login", {
+                const { data: rpcData, error: rpcErr } = await supabase.rpc("verify_waiter_login", {
                     p_username: username.trim(),
-                    p_password: password,
+                    p_pin:      pin.trim(),
                 });
                 if (rpcErr) throw new Error(rpcErr.message);
                 const result = rpcData as WaiterLoginResult;
@@ -181,7 +181,7 @@ export function WaiterLoginPage() {
                     Acceso de Camarero
                 </h1>
                 <p className="text-[12.5px] text-slate-500 mt-1">
-                    Inicia sesión con tu usuario y contraseña
+                    Inicia sesión con tu usuario y PIN
                 </p>
             </div>
 
@@ -190,7 +190,7 @@ export function WaiterLoginPage() {
                     <input
                         type="text"
                         value={username}
-                        onChange={e => setUsername(e.target.value)}
+                        onChange={e => setUsername(e.target.value.toLowerCase())}
                         placeholder="Ej. luis23"
                         autoCapitalize="none"
                         autoCorrect="off"
@@ -200,15 +200,17 @@ export function WaiterLoginPage() {
                     />
                 </Field>
 
-                <Field label="Contraseña" required>
+                <Field label="PIN (4 caracteres)" required>
                     <div className="relative">
                         <input
                             type={showPwd ? "text" : "password"}
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            placeholder="••••••"
+                            value={pin}
+                            onChange={e => setPin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+                            placeholder="••••"
                             autoComplete="current-password"
-                            className="input pr-20"
+                            inputMode="text"
+                            maxLength={6}
+                            className="input pr-20 font-mono tracking-[0.3em] text-center text-[15px]"
                         />
                         <button
                             type="button"

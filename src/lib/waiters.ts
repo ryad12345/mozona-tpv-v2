@@ -1,12 +1,9 @@
 // =====================================================================
 // MOZONA TPV — waiters.ts: API CRUD de camareros contra Supabase
 // =====================================================================
-// Sistema actualizado: cada camarero tiene username + password (sin
-// email obligatorio).  El sistema genera automáticamente:
-//   - username: a partir del nombre + 2 dígitos
-//   - password: 6 caracteres alfanuméricos aleatorios
-// La contraseña se guarda hasheada con bcrypt en la BD vía la RPC
-// `set_waiter_credentials`.
+// Sistema actualizado: cada camarero tiene `username` + `waiter_pin`
+// (PIN de 4-6 caracteres, texto plano, validado server-side vía RPC
+// `verify_waiter_login` con SECURITY DEFINER para bypass RLS).
 // =====================================================================
 
 import { supabase } from "./supabase";
@@ -24,7 +21,8 @@ export interface Waiter {
     name:      string;
     email:     string | null;
     username?: string | null;
-    pin_code:  string | null;
+    waiter_pin?: string | null;
+    pin_code?: string | null;
     role:      WaiterRole;
     is_active: boolean;
     created_at: string;
@@ -36,10 +34,10 @@ export type { CachedWaiter } from "./offlineStorage";
 // Generadores de credenciales
 // ---------------------------------------------------------------------
 
-const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin 0/O/1/I/L
-
-/** Genera una contraseña aleatoria de 6 caracteres. */
-export function generatePassword(length = 6): string {
+/** Genera un PIN aleatorio de 4-6 caracteres alfanuméricos (sin ambigüedades). */
+export function generatePassword(length = 4): string {
+    // Sin 0/O, 1/I/L para evitar confusión al copiar a mano
+    const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     const arr = new Uint32Array(length);
     crypto.getRandomValues(arr);
     let out = "";
@@ -61,13 +59,6 @@ export function generateUsername(name: string, suffix?: string): string {
     return base + num.toString();
 }
 
-/** Genera un PIN de 4 dígitos (compatibilidad legacy). */
-export function generatePin(): string {
-    const arr = new Uint32Array(1);
-    crypto.getRandomValues(arr);
-    return String(arr[0] % 10000).padStart(4, "0");
-}
-
 // ---------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------
@@ -76,15 +67,16 @@ export function generatePin(): string {
 export async function listWaiters(tenantId: string): Promise<Waiter[]> {
     const { data, error } = await supabase
         .from("tenant_users")
-        .select("id, tenant_id, user_id, name, email, username, pin_code, role, is_active, created_at")
+        .select("id, tenant_id, user_id, name, email, username, waiter_pin, pin_code, role, is_active, created_at")
         .eq("tenant_id", tenantId)
         .order("name");
     if (error) throw error;
     return (data ?? []).map(w => ({
         ...w,
-        username: w.username ?? null,
-        pin_code: w.pin_code ?? null,
-        is_active: w.is_active ?? true,
+        username:   w.username ?? null,
+        waiter_pin: w.waiter_pin ?? null,
+        pin_code:   w.pin_code ?? null,
+        is_active:  w.is_active ?? true,
     } as Waiter));
 }
 
@@ -95,7 +87,7 @@ export async function syncWaiters(tenantId: string): Promise<Waiter[]> {
         tenant_id: w.tenant_id,
         user_id:   w.user_id,
         name:      w.name,
-        pin_code:  w.pin_code,
+        pin_code:  w.waiter_pin ?? w.pin_code ?? null,
         role:      w.role,
         is_active: w.is_active,
     })));
@@ -112,21 +104,21 @@ export async function findByPinCached(
     return findWaiterByPin(tenantId, pin);
 }
 
-/** Resultado de crear camarero: incluye las credenciales para mostrar al admin. */
+/** Resultado de crear camarero: incluye username + pin para mostrar al admin. */
 export interface CreateWaiterResult {
     waiter:   Waiter;
     username: string;
-    password: string;
+    pin:      string;
 }
 
-/** Crea un camarero con username y password autogenerados. */
+/** Crea un camarero con username y PIN autogenerados. */
 export async function createWaiter(input: {
     tenant_id: string;
     name:      string;
     role:      WaiterRole;
     email?:    string | null;
 }): Promise<CreateWaiterResult> {
-    // 1) Generar username único (3 intentos)
+    // 1) Generar username único (5 intentos)
     let username = generateUsername(input.name);
     let tries = 0;
     while (tries < 5) {
@@ -141,8 +133,8 @@ export async function createWaiter(input: {
         username = generateUsername(input.name);
     }
 
-    // 2) Generar password
-    const password = generatePassword(6);
+    // 2) Generar PIN de 4 caracteres
+    const pin = generatePassword(4);
 
     // 3) Crear fila base
     const { data, error } = await supabase
@@ -154,20 +146,19 @@ export async function createWaiter(input: {
             email:     input.email ?? null,
             user_id:   null,
             is_active: true,
-            pin_code:  generatePin(),
+            pin_code:  pin,
         })
         .select()
         .single();
     if (error) throw error;
 
-    // 4) Llamar a la RPC para hashear password y guardar username
+    // 4) Llamar a la RPC para asignar username + waiter_pin
     const { error: rpcErr } = await supabase.rpc("set_waiter_credentials", {
         p_tenant_user_id: data.id,
         p_username:       username,
-        p_password:       password,
+        p_password:       pin,
     });
     if (rpcErr) {
-        // Rollback: borrar la fila si falla
         await supabase.from("tenant_users").delete().eq("id", data.id);
         throw new Error(`Error creando credenciales: ${rpcErr.message}`);
     }
@@ -175,8 +166,9 @@ export async function createWaiter(input: {
     const waiter: Waiter = {
         ...(data as Waiter),
         username,
-        pin_code: data.pin_code ?? null,
-        is_active: data.is_active ?? true,
+        waiter_pin: pin,
+        pin_code:   pin,
+        is_active:  data.is_active ?? true,
     };
 
     await putWaiter({
@@ -184,17 +176,17 @@ export async function createWaiter(input: {
         tenant_id: waiter.tenant_id,
         user_id:   waiter.user_id,
         name:      waiter.name,
-        pin_code:  waiter.pin_code,
+        pin_code:  pin,
         role:      waiter.role,
         is_active: waiter.is_active,
     });
 
-    return { waiter, username, password };
+    return { waiter, username, pin };
 }
 
-/** Resetea la contraseña de un camarero (devuelve la nueva en claro). */
+/** Resetea el PIN de un camarero (devuelve el nuevo en claro). */
 export async function resetWaiterPassword(id: string): Promise<string> {
-    const newPassword = generatePassword(6);
+    const newPin = generatePassword(4);
     const { data: w } = await supabase
         .from("tenant_users")
         .select("username, tenant_id")
@@ -206,10 +198,10 @@ export async function resetWaiterPassword(id: string): Promise<string> {
     const { error } = await supabase.rpc("set_waiter_credentials", {
         p_tenant_user_id: id,
         p_username:       w.username,
-        p_password:       newPassword,
+        p_password:       newPin,
     });
     if (error) throw new Error(error.message);
-    return newPassword;
+    return newPin;
 }
 
 export async function updateWaiter(
@@ -228,7 +220,7 @@ export async function updateWaiter(
         tenant_id: data.tenant_id,
         user_id:   data.user_id,
         name:      data.name,
-        pin_code:  data.pin_code,
+        pin_code:  data.waiter_pin ?? data.pin_code,
         role:      data.role,
         is_active: data.is_active ?? true,
     });

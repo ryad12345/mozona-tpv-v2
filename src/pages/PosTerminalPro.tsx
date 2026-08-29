@@ -74,39 +74,82 @@ function buildPreBillHtml(params: {
 <meta charset="utf-8" />
 <title>Pre-cuenta</title>
 <style>
-  @page { size: 80mm auto; margin: 4mm; }
-  body  { font-family: ui-monospace, "Courier New", monospace; font-size: 11px; color: #000; width: 72mm; margin: 0; }
-  h1    { font-size: 14px; text-align: center; margin: 0 0 2px; }
+  /* Ocultar todo lo que no sea el ticket al imprimir */
+  @media print {
+    body * { visibility: hidden; }
+    #ticket-print-area, #ticket-print-area * { visibility: visible; }
+    #ticket-print-area {
+      position: absolute;
+      left: 0; top: 0;
+      width: 58mm;
+      margin: 0;
+      padding: 0 1mm;
+      color: #000000 !important;
+      background: #ffffff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      font-family: 'Courier New', Courier, monospace !important;
+      font-size: 13px !important;
+      font-weight: 800 !important;
+      line-height: 1.2 !important;
+      letter-spacing: -0.2px;
+      -webkit-font-smoothing: none !important;
+      text-rendering: geometricPrecision !important;
+    }
+    @page { size: auto; margin: 0; }
+  }
+  /* Vista en pantalla: para previsualizar en la nueva ventana */
+  body  { font-family: 'Courier New', Courier, monospace; background: #f5f5f5; margin: 0; padding: 12px; }
+  #ticket-print-area {
+    background: #ffffff;
+    color: #000000;
+    width: 80mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 8px 12px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  h1    { font-size: 15px; font-weight: 900; text-align: center; margin: 0 0 2px; letter-spacing: -0.5px; }
   .ctr  { text-align: center; }
-  hr    { border: none; border-top: 1px dashed #000; margin: 4px 0; }
+  .sep  { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; margin: 4px 0; white-space: pre; overflow: hidden; }
   table { width: 100%; border-collapse: collapse; }
-  td    { padding: 1px 0; }
-  .total{ font-weight: 900; font-size: 13px; }
-  .meta { font-size: 10px; color: #444; }
+  td    { padding: 1px 0; vertical-align: top; }
+  td.r  { text-align: right; }
+  .total{ font-weight: 900; font-size: 15px; }
+  .meta { font-size: 11px; font-weight: 700; }
+  .b    { font-weight: 900; }
 </style>
 </head>
 <body>
+<div id="ticket-print-area">
   <h1>${(restaurant?.business_name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
   <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
   <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
-  <hr />
-  ${table  ? `<div class="meta">Mesa: <b>${table.table_number}</b></div>` : ""}
-  ${waiter ? `<div class="meta">Camarero: <b>${waiter.name.replace(/</g, "&lt;")}</b></div>` : ""}
-  <hr />
+  <div class="sep">${"─".repeat(32)}</div>
+  ${table  ? `<div class="meta">Mesa: <span class="b">${table.table_number}</span></div>` : ""}
+  ${waiter ? `<div class="meta">Camarero: <span class="b">${waiter.name.replace(/</g, "&lt;")}</span></div>` : ""}
+  <div class="sep">${"─".repeat(32)}</div>
   <table>
     ${lines.map(l => {
         const line = l.qty > 1 ? `${l.name} x${l.qty}` : l.name;
         const pr   = fmt(l.qty * l.price);
-        return `<tr><td>${line.replace(/</g, "&lt;")}</td><td style="text-align:right">${pr}</td></tr>`
+        return `<tr><td>${line.replace(/</g, "&lt;")}</td><td class="r">${pr}</td></tr>`
              + (l.notes ? `<tr><td colspan="2" class="meta">&nbsp;&nbsp;&gt; ${l.notes.replace(/</g, "&lt;")}</td></tr>` : "");
     }).join("")}
   </table>
-  <hr />
+  <div class="sep">${"─".repeat(32)}</div>
   <table>${taxRows}</table>
-  <hr />
-  <table><tr class="total"><td>TOTAL</td><td style="text-align:right">${fmt(gross)}</td></tr></table>
-  <div class="ctr" style="margin-top:8px;">— PRE-CUENTA —</div>
-  <script>window.onload = () => setTimeout(() => { window.print(); }, 250);</script>
+  <div class="sep">${"═".repeat(32)}</div>
+  <table><tr class="total"><td>TOTAL</td><td class="r">${fmt(gross)}</td></tr></table>
+  <div class="sep">${"─".repeat(32)}</div>
+  <div class="ctr" style="margin-top:4px;font-weight:900;">— PRE-CUENTA —</div>
+  <div class="sep">${"─".repeat(32)}</div>
+</div>
+<script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>
 </body>
 </html>`;
 }

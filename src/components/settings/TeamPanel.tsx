@@ -92,7 +92,7 @@ export function TeamPanel() {
                     setCard({
                         name:     result.waiter.name,
                         username: result.username,
-                        password: result.password,
+                        password: result.pin,
                         role:     result.waiter.role,
                         waiterId: result.waiter.id,
                         issuedAt: new Date().toISOString(),
@@ -387,9 +387,9 @@ ${cardRef.current.outerHTML}
                                 </div>
                                 <div>
                                     <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider">
-                                        Contraseña
+                                        PIN (4 caracteres)
                                     </div>
-                                    <div className="text-[15px] font-black text-slate-900 font-mono tabular-nums">
+                                    <div className="text-[18px] font-black text-slate-900 font-mono tabular-nums tracking-[0.3em]">
                                         {card.password}
                                     </div>
                                 </div>

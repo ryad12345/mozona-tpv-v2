@@ -114,21 +114,25 @@ serve(async (req: Request) => {
         return jsonResponse({ ok: true, tenant_id: v.tenant_id, username: v.username });
     }
 
-    // 2) Login — recibe username/password, devuelve token
+    // 2) Login — recibe username/pin, devuelve token
     if (action === "login" && req.method === "POST") {
-        let body: { username?: string; password?: string };
+        let body: { username?: string; pin?: string; password?: string };
         try { body = await req.json(); } catch { return jsonResponse({ error: "invalid json" }, 400); }
-        if (!body.username || !body.password) {
-            return jsonResponse({ error: "username and password required" }, 400);
+        // Aceptar tanto `pin` (nuevo) como `password` (retrocompat)
+        const username = (body.username ?? "").trim();
+        const pin      = (body.pin ?? body.password ?? "").trim();
+        if (!username || !pin) {
+            return jsonResponse({ error: "username and pin required" }, 400);
         }
-        const { data, error } = await supabase.rpc("waiter_login", {
-            p_username: body.username,
-            p_password: body.password,
+        // Usar la nueva RPC verify_waiter_login (más limpia y devuelve JSON ok/error)
+        const { data, error } = await supabase.rpc("verify_waiter_login", {
+            p_username: username,
+            p_pin:      pin,
         });
         if (error || !data?.ok) {
             return jsonResponse({ ok: false, error: data?.error ?? error?.message }, 401);
         }
-        const token = await signToken(data.tenant_id, body.username);
+        const token = await signToken(data.tenant_id, username);
         return jsonResponse({
             ok:        true,
             token,
