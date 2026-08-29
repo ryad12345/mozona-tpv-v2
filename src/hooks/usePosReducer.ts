@@ -38,6 +38,7 @@ export type PosAction =
     | { type: "REMOVE_ITEM"; itemId: string }
     | { type: "UPDATE_NOTES"; itemId: string; notes: string }
     | { type: "CLEAR_ORDER" }
+    | { type: "RESTORE_DRAFTS"; drafts: Record<string, OrderItem[]> }
     | { type: "NUMPAD_KEY"; key: string }
     | { type: "SET_PAYMENT_METHOD"; method: PaymentMethod | null }
     | { type: "SET_PROCESSING"; processing: boolean }
@@ -135,6 +136,15 @@ function reducer(state: PosState, action: PosAction): PosState {
                 ...state, orderItems: [], draftsByTable, paymentAmount: "", paymentMethod: null,
                 verifactuStatus: "IDLE", verifactuResult: null, lastError: null,
             };
+        }
+        case "RESTORE_DRAFTS": {
+            // Fusionar borradores persistidos con los que ya estén en memoria
+            // y cargar el de la mesa actualmente seleccionada
+            const draftsByTable = { ...state.draftsByTable, ...action.drafts };
+            const orderItems = state.selectedTableId
+                ? (draftsByTable[state.selectedTableId] ?? state.orderItems)
+                : state.orderItems;
+            return { ...state, draftsByTable, orderItems };
         }
         case "NUMPAD_KEY": {
             const k = action.key;

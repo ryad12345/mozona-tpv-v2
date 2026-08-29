@@ -32,7 +32,11 @@ import { cn } from "../lib/cn";
 import { useLocalPrinter } from "../hooks/useLocalPrinter";
 import { useLocalIP } from "../hooks/useLocalIP";
 import { subscribeToOrders, listOpenOrders } from "../lib/orders";
+import { upsertDraft, clearDraft, listOpenDrafts, getOpenDraft, type OpenOrder } from "../lib/drafts";
+import { resolveRealTenantId } from "../lib/waiters";
 import { isVipOrAdmin } from "../lib/vip";
+import { supabase } from "../lib/supabase";
+import { round2 } from "../lib/format";
 import type { OrderItem, Product, PaymentMethod, TableStatus, Waiter, Restaurant, RestaurantTable } from "../lib/types";
 import type { OrderSentData, InvoicePaidData } from "../../shared/ws-events";
 
@@ -302,6 +306,38 @@ export function PosTerminalPro() {
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
+    // Restaurar borradores persistidos al cargar (F5)
+    // Carga open_orders del tenant y rellena el state.draftsByTable
+    // -----------------------------------------------------------------
+    useEffect(() => {
+        if (!restaurant?.id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const realId = await resolveRealTenantId(restaurant.id);
+                if (!realId || cancelled) return;
+                const drafts = await listOpenDrafts(realId);
+                if (cancelled || drafts.length === 0) return;
+                console.log("[PosTerminalPro] restaurando", drafts.length, "borradores");
+                const draftsByTable: Record<string, OrderItem[]> = {};
+                const tableStatusMap: Record<string, TableStatus> = {};
+                for (const d of drafts) {
+                    if (Array.isArray(d.items) && d.items.length > 0) {
+                        draftsByTable[d.table_id] = d.items as OrderItem[];
+                        tableStatusMap[d.table_id] = "OCCUPIED";
+                    }
+                }
+                // Inyectar drafts en el reducer
+                pos.dispatch({ type: "RESTORE_DRAFTS", drafts: draftsByTable });
+                setTableStatuses(prev => ({ ...prev, ...tableStatusMap }));
+            } catch (e) {
+                console.warn("[PosTerminalPro] restaurar drafts error:", e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [restaurant?.id]);
+
+    // -----------------------------------------------------------------
     // Cuando entra una comanda desde un WaiterPad
     // -----------------------------------------------------------------
     const handleOrderReceived = useCallback((d: OrderSentData) => {
@@ -374,6 +410,57 @@ export function PosTerminalPro() {
     }, [tables, pos]);
 
     // -----------------------------------------------------------------
+    // Persistencia automática de drafts (cada vez que cambia la comanda)
+    // -----------------------------------------------------------------
+    const persistDraft = useCallback(async (
+        tableId:     string,
+        tableNumber: string,
+        items:       OrderItem[],
+    ) => {
+        if (!restaurant?.id) return;
+        const waiterName = auth.activeWaiter?.name ?? null;
+        try {
+            if (items.length === 0) {
+                await clearDraft(restaurant.id, tableId);
+            } else {
+                await upsertDraft({
+                    tenantId:    restaurant.id,
+                    tableId,
+                    tableNumber,
+                    waiterName,
+                    items,
+                });
+            }
+        } catch (e) {
+            console.warn("[PosTerminalPro] persistDraft error:", e);
+        }
+    }, [restaurant?.id, auth.activeWaiter?.name]);
+
+    // -----------------------------------------------------------------
+    // Wrapper de dispatch que persiste en BD después de cada cambio
+    // -----------------------------------------------------------------
+    const dispatchAndPersist = useCallback((action: any) => {
+        pos.dispatch(action);
+        // Después del dispatch, si es una acción que modifica orderItems,
+        // persistir.  Usamos setTimeout 0 para que el state se haya actualizado.
+        setTimeout(() => {
+            const tid = pos.state.selectedTableId;
+            const tlabel = pos.state.selectedTableLabel;
+            if (!tid || !tlabel) return;
+            if (
+                action.type === "ADD_PRODUCT"     ||
+                action.type === "INCREMENT_ITEM"  ||
+                action.type === "DECREMENT_ITEM"  ||
+                action.type === "REMOVE_ITEM"     ||
+                action.type === "UPDATE_NOTES"    ||
+                action.type === "CLEAR_ORDER"
+            ) {
+                void persistDraft(tid, tlabel, pos.state.orderItems);
+            }
+        }, 0);
+    }, [pos, persistDraft]);
+
+    // -----------------------------------------------------------------
     // Selección de mesa desde el array real (sobrescribe estado en vivo)
     // -----------------------------------------------------------------
     const tablesWithStatus = useMemo(() => {
@@ -434,7 +521,38 @@ export function PosTerminalPro() {
             // 2) Difundir por WS
             ws.broadcastInvoicePaid(invoice);
 
-            // 3) UI: marcar mesa como sucia, limpiar pedido, sonido
+            // 3) Persistir en `orders` (ticket cerrado) + limpiar draft
+            try {
+                const realTenantId = await resolveRealTenantId(restaurant?.id);
+                if (realTenantId && supabase) {
+                    const items = pos.state.orderItems;
+                    const sub = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
+                    const tax = items.reduce((a, it) => {
+                        const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
+                        return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
+                    }, 0);
+                    await supabase.from("orders").insert({
+                        tenant_id:      realTenantId,
+                        table_id:       table.id,
+                        table_number:   table.table_number,
+                        waiter_name:    auth.activeWaiter?.name ?? null,
+                        items:          items as any,
+                        subtotal:       round2(sub - tax),
+                        tax_total:      round2(tax),
+                        total:          round2(sub),
+                        payment_method: method,
+                        payment_status: "paid",
+                        status:         "closed",
+                        series:         series,
+                    });
+                    await clearDraft(realTenantId, table.id);
+                    console.log("[PosTerminalPro] ticket persistido en orders");
+                }
+            } catch (e) {
+                console.warn("[PosTerminalPro] persistir orders error:", e);
+            }
+
+            // 4) UI: marcar mesa como sucia, limpiar pedido, sonido
             setTableStatuses(prev => ({ ...prev, [table.id]: "DIRTY" }));
             playChargeSuccess();
             pos.dispatch({ type: "CLEAR_ORDER" });

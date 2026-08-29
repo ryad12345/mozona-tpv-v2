@@ -11,6 +11,7 @@ import { TeamPanel } from '../components/settings/TeamPanel';
 import { LiveTicketPreview, type RestaurantForm } from '../components/settings/LiveTicketPreview';
 import { BillingPanel } from '../components/settings/BillingPanel';
 import { StoragePanel } from '../components/settings/StoragePanel';
+import { SalesPanel } from '../components/settings/SalesPanel';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 
@@ -21,6 +22,7 @@ type Tab =
     | 'mesas'
     | 'camareros'
     | 'ticket'
+    | 'ventas'
     | 'plan'
     | 'almacen';
 
@@ -31,6 +33,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
     { id: 'mesas',       label: 'Mesas',       icon: '🪑' },
     { id: 'camareros',   label: 'Camareros',   icon: '👥' },
     { id: 'ticket',      label: 'Ticket',      icon: '🧾' },
+    { id: 'ventas',      label: 'Ventas',      icon: '📊' },
     { id: 'plan',        label: 'Plan',        icon: '💳' },
     { id: 'almacen',     label: 'Almacén',     icon: '💾' },
 ];
@@ -311,6 +314,13 @@ export function SettingsPage() {
                         <h3 className="text-base font-bold text-slate-900 mb-2">Vista previa</h3>
                         <LiveTicketPreview form={ticketForm} bare />
                     </div>
+                </div>
+            )}
+
+            {/* ============ VENTAS ============ */}
+            {activeTab === 'ventas' && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                    <SalesPanel />
                 </div>
             )}
 
