@@ -12,10 +12,15 @@ export function CatalogPanel(props: any) {
   const [internalCategory, setInternalCategory] = useState<string>('all');
 
   useEffect(() => {
-    if (props.products && props.products.length > 0) {
+    // FORZAR repintar cuando llegan productos reales de Supabase
+    if (Array.isArray(props.products) && props.products.length > 0) {
       setProductsList(props.products);
+      console.log("[CatalogPanel] productos actualizados:", props.products.length);
+    } else if (Array.isArray(props.products) && props.products.length === 0) {
+      setProductsList([]);
     }
-  }, [props.products]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify((props.products || []).map((p: any) => p.id))]);
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
 

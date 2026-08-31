@@ -46,12 +46,12 @@ export async function listOpenDrafts(tenantId: string | null): Promise<OpenOrder
 }
 
 // ---------------------------------------------------------------------
-// Cargar borrador de una mesa concreta
+// Cargar borrador de una mesa concreta (por table_number)
 // ---------------------------------------------------------------------
 
 export async function getOpenDraft(
-    tenantId: string | null,
-    tableId:   string,
+    tenantId:     string | null,
+    tableNumber:  string | number,
 ): Promise<OpenOrder | null> {
     const realId = await resolveRealTenantId(tenantId);
     if (!realId || !supabase) return null;
@@ -59,7 +59,7 @@ export async function getOpenDraft(
         .from("open_orders")
         .select("*")
         .eq("tenant_id", realId)
-        .eq("table_id", tableId)
+        .eq("table_number", String(tableNumber))
         .maybeSingle();
     if (error) {
         console.warn("[drafts] get error:", error.message);
@@ -95,7 +95,7 @@ export async function upsertDraft(input: {
     };
     const { data, error } = await supabase
         .from("open_orders")
-        .upsert(row, { onConflict: "tenant_id,table_id" })
+        .upsert(row, { onConflict: "tenant_id,table_number" })
         .select()
         .single();
     if (error) {
@@ -116,7 +116,7 @@ export async function upsertDraft(input: {
 
 export async function clearDraft(
     tenantId: string | null,
-    tableId:  string,
+    tableNumber: string | number,
 ): Promise<void> {
     const realId = await resolveRealTenantId(tenantId);
     if (!realId || !supabase) return;
@@ -124,9 +124,8 @@ export async function clearDraft(
         .from("open_orders")
         .delete()
         .eq("tenant_id", realId)
-        .eq("table_id", tableId);
+        .eq("table_number", String(tableNumber));
     if (error) {
-        // Ignorar silenciosamente si la tabla no existe
         if (!/open_orders/.test(error.message) || !/not.*exist|schema cache/i.test(error.message)) {
             console.warn("[drafts] clear error:", error.message);
         }

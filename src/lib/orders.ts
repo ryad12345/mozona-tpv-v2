@@ -140,14 +140,15 @@ export async function createOrder(input: CreateOrderInput): Promise<{
 
         // 5) ★ CRÍTICO: Actualizar/crear el borrador en open_orders
         //    para que el TPV pueda mostrar las líneas al hacer click
-        //    en la mesa.  Si la mesa ya tenía líneas, se fusionan
-        //    (concatenando las nuevas).
+        //    en la mesa.  Clave: (tenant_id, table_number) — funciona
+        //    tanto si el camarero envía table_id="local-table-16"
+        //    como si el TPV tiene UUID de dining_tables.
         try {
             const { data: existing } = await supabase
                 .from("open_orders")
                 .select("id, items")
                 .eq("tenant_id", input.tenant_id)
-                .eq("table_id", input.table_id ?? "")
+                .eq("table_number", input.table_label)
                 .maybeSingle();
             const newItemsAsOrder = (items ?? []).map((it: any) => ({
                 id:          it.id,
@@ -169,11 +170,11 @@ export async function createOrder(input: CreateOrderInput): Promise<{
                     table_number: input.table_label,
                     waiter_name:  input.waiter_name,
                     items:        merged,
-                }, { onConflict: "tenant_id,table_id" });
+                }, { onConflict: "tenant_id,table_number" });
             if (draftErr) {
                 console.warn("[orders] upsert open_orders error:", draftErr.message);
             } else {
-                console.log("[orders] open_orders actualizado con", merged.length, "items");
+                console.log("[orders] open_orders actualizado con", merged.length, "items (mesa", input.table_label, ")");
             }
         } catch (e) {
             console.warn("[orders] open_orders upsert exception:", e);
