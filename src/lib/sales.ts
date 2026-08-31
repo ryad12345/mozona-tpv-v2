@@ -42,33 +42,56 @@ export interface SalesMetrics {
 // ---------------------------------------------------------------------
 
 export async function listMonthSales(tenantId: string | null): Promise<SaleRecord[]> {
+    return listSales(tenantId, "month");
+}
+
+/** Lista ventas filtradas por periodo.
+ *  periods: 'today' | 'month' | '30d' | 'all' */
+export async function listSales(
+    tenantId: string | null,
+    period: "today" | "month" | "30d" | "all" = "month",
+): Promise<SaleRecord[]> {
     const realId = await resolveRealTenantId(tenantId);
-    console.log("[listMonthSales] tenantId=", tenantId, "→ realId=", realId);
+    console.log("[listSales] tenantId=", tenantId, "→ realId=", realId, "period=", period);
     if (!realId || !supabase) {
-        console.warn("[listMonthSales] no realId, retornando []");
+        console.warn("[listSales] no realId, retornando []");
         return [];
     }
 
-    // ★ FIX: rango del mes en curso (startOfMonth a endOfMonth en ISO)
-    const now     = new Date();
-    const start   = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).toISOString();
-    const end     = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0).toISOString();
-    console.log("[listMonthSales] rango:", start, "→", end);
+    // ★ Calcular rango de fechas según periodo
+    const now = new Date();
+    let start: string | null = null;
+    if (period === "today") {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        start = d.toISOString();
+    } else if (period === "month") {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).toISOString();
+    } else if (period === "30d") {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 30);
+        start = d.toISOString();
+    } else {
+        // "all" → no filtro de fecha
+        start = null;
+    }
+    console.log("[listSales] start=", start ?? "(sin filtro)");
 
-    const { data, error } = await supabase
+    let query = supabase
         .from("orders")
         .select("*")
         .eq("tenant_id", realId)
-        .gte("created_at", start)
-        .lt("created_at", end)
         .order("created_at", { ascending: false })
         .limit(1000);
+    if (start) {
+        query = query.gte("created_at", start);
+    }
 
+    const { data, error } = await query;
     if (error) {
-        console.warn("[listMonthSales] error:", error.message, "(code", (error as any).code, ")");
+        console.warn("[listSales] error:", error.message, "(code", (error as any).code, ")");
         return [];
     }
-    console.log("[listMonthSales] cargados", data?.length ?? 0, "tickets");
+    console.log("[listSales] cargados", data?.length ?? 0, "tickets");
     return (data ?? []).map(normalizeSale);
 }
 

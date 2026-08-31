@@ -659,7 +659,8 @@ export function PosTerminalPro() {
                         subtotal:       round2(sub - tax),
                         tax_total:      round2(tax),
                         total:          round2(sub),
-                        payment_method: method,
+                        // ★ payment_method NUNCA null: mapear a 'cash' por defecto
+                        payment_method: method ?? "cash",
                         payment_status: "paid",
                         status:         "closed",
                         series:         series,

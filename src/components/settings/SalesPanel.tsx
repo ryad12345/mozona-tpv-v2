@@ -1,10 +1,10 @@
 // =====================================================================
-// MOZONA TPV — SalesPanel: pestaña de supervisión de ventas del mes
+// MOZONA TPV — SalesPanel: pestaña de supervisión de ventas
 // =====================================================================
 
 import { useEffect, useState } from "react";
 import { useAuth } from "../../lib/auth";
-import { listMonthSales, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
+import { listSales, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
 import { fmtEUR } from "../../lib/format";
 import { supabase } from "../../lib/supabase";
 
@@ -15,6 +15,7 @@ export function SalesPanel() {
     const [error,   setError]     = useState<string | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [filterPm, setFilterPm] = useState<string>("all");
+    const [period, setPeriod]     = useState<"today" | "month" | "30d" | "all">("month");
 
     const tenantId = auth.tenant?.id ?? null;
 
@@ -22,8 +23,8 @@ export function SalesPanel() {
         setLoading(true);
         setError(null);
         try {
-            console.log("[SalesPanel] cargando ventas del mes, tenantId=", tenantId);
-            const data = await listMonthSales(tenantId);
+            console.log("[SalesPanel] cargando ventas, tenantId=", tenantId, "period=", period);
+            const data = await listSales(tenantId, period);
             console.log("[SalesPanel] cargadas", data.length, "ventas");
             setRecords(data);
         } catch (e) {
@@ -40,7 +41,7 @@ export function SalesPanel() {
         const interval = setInterval(() => { void load(); }, 30_000);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tenantId]);
+    }, [tenantId, period]);
 
     // ★ Realtime: cuando se inserta un order en Supabase, refrescar
     //    FIX: nombre de canal único para evitar error en StrictMode
@@ -79,6 +80,12 @@ export function SalesPanel() {
         });
     };
 
+    const periodLabels: Record<typeof period, string> = {
+        today: "Hoy",
+        month: "Este mes",
+        "30d":  "Últimos 30 días",
+        all:    "Histórico",
+    };
     const monthName = new Date().toLocaleDateString("es-ES", { month: "long", year: "numeric" });
 
     return (
@@ -89,27 +96,46 @@ export function SalesPanel() {
                     build: <code className="text-slate-600">{import.meta.env.VITE_BUILD_HASH ?? "dev"}</code>
                 </span>
                 <span>
-                    mz-sales v1.1 (commit 476bbe8 = RPC + SECURITY DEFINER)
+                    mz-sales v1.2 (period filter + payment_method fixed)
                 </span>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                     <h3 className="text-base font-bold text-slate-900">
-                        📊 Ventas del mes — {monthName}
+                        📊 Ventas — {periodLabels[period]} {period === "month" ? `(${monthName})` : ""}
                     </h3>
                     <p className="text-[11px] text-slate-500">
                         Tickets cerrados y cobrados. Datos en tiempo real desde Supabase.
                     </p>
                 </div>
-                <button
-                    type="button"
+                <div className="flex items-center gap-2">
+                    {/* ★ Selector de periodo */}
+                    <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden">
+                        {(["today", "month", "30d", "all"] as const).map(p => (
+                            <button
+                                key={p}
+                                type="button"
+                                onClick={() => setPeriod(p)}
+                                className={`px-2.5 py-1.5 text-[10.5px] font-bold transition ${
+                                    period === p
+                                        ? "bg-blue-600 text-white"
+                                        : "text-slate-600 hover:bg-slate-50"
+                                }`}
+                            >
+                                {periodLabels[p]}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        type="button"
                     onClick={load}
                     disabled={loading}
                     className="h-9 px-4 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl shadow-sm hover:bg-slate-50 active:scale-95 transition"
                 >
                     {loading ? "Cargando…" : "🔄 Refrescar"}
                 </button>
+                </div>
             </div>
 
             {error && (
@@ -290,7 +316,9 @@ export function SalesPanel() {
             {/* Listado de tickets */}
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-[13px] font-bold text-slate-800">🧾 Tickets del mes</h4>
+                    <h4 className="text-[13px] font-bold text-slate-800">
+                        🧾 Tickets {period === "month" ? "del mes" : period === "today" ? "de hoy" : period === "30d" ? "últimos 30 días" : "histórico"}
+                    </h4>
                     <select
                         value={filterPm}
                         onChange={e => setFilterPm(e.target.value)}
