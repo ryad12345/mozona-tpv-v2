@@ -80,6 +80,10 @@ export default defineConfig({
                 cleanupOutdatedCaches: true,
                 // NO cachear el index.html (para que las actualizaciones lleguen)
                 navigateFallbackDenylist: [/^\/api\//],
+                // ★ Forzar skipWaiting para que el SW nuevo tome el control
+                //    sin esperar a cerrar todas las pestañas
+                skipWaiting: true,
+                clientsClaim: true,
 
                 runtimeCaching: [
                     // Google Fonts

@@ -347,6 +347,66 @@ export function PosTerminalPro() {
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
+    // ★ Realtime: suscripción a postgres_changes en open_orders
+    //    Cuando el camarero envía una comanda, la mesa cambia de
+    //    estado y se cargan los items sin requerir F5
+    // -----------------------------------------------------------------
+    useEffect(() => {
+        if (!restaurant?.id || !supabase) return;
+        let cancelled = false;
+        (async () => {
+            const realId = await resolveRealTenantId(restaurant.id);
+            if (!realId || cancelled) return;
+            const channel = supabase
+                .channel(`tpv-open-orders-${realId}`)
+                .on(
+                    "postgres_changes",
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "open_orders",
+                        filter: `tenant_id=eq.${realId}`,
+                    },
+                    (payload) => {
+                        if (cancelled) return;
+                        console.log("[PosTerminalPro] realtime open_orders:", payload.eventType);
+                        const draft = (payload.new ?? payload.old) as any;
+                        const tableNumber = draft?.table_number;
+                        if (!tableNumber) return;
+
+                        if (payload.eventType === "DELETE") {
+                            // Borrador eliminado: quitar marca de ocupada
+                            setTableStatuses(prev => {
+                                const next = { ...prev };
+                                delete next[draft.table_id];
+                                delete next[`local-table-${tableNumber}`];
+                                return next;
+                            });
+                        } else {
+                            // INSERT o UPDATE: refrescar drafts
+                            const items = Array.isArray(draft.items) ? draft.items : [];
+                            if (items.length > 0) {
+                                // Si la mesa seleccionada coincide, recargar el carrito
+                                if (pos.state.selectedTableLabel === tableNumber) {
+                                    pos.dispatch({ type: "RESTORE_DRAFTS", drafts: { [pos.state.selectedTableId!]: items as any } });
+                                }
+                                // Marcar como ocupada
+                                const tid = draft.table_id || `local-table-${tableNumber}`;
+                                setTableStatuses(prev => ({ ...prev, [tid]: "OCCUPIED" }));
+                                void playOrderDing();
+                            }
+                        }
+                    },
+                )
+                .subscribe();
+            return () => {
+                cancelled = true;
+                void supabase.removeChannel(channel);
+            };
+        })();
+    }, [restaurant?.id]);
+
+    // -----------------------------------------------------------------
     // Cuando entra una comanda desde un WaiterPad
     // -----------------------------------------------------------------
     const handleOrderReceived = useCallback((d: OrderSentData) => {

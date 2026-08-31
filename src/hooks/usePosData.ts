@@ -172,7 +172,8 @@ export function usePosData(): PosDataState {
                 }
             }
 
-            // 2) Fallback: caché IndexedDB (offline)
+            // 2) Fallback: caché IndexedDB SOLO si Supabase realmente falló
+            //    por red (no por RLS o tenant no encontrado)
             const [cachedCats, cachedProds, cachedTables, cachedRestaurant] = await Promise.all([
                 getAllCategories().catch(() => []),
                 getAllProducts().catch(() => []),
@@ -180,7 +181,9 @@ export function usePosData(): PosDataState {
                 getMeta<Restaurant>("mozona.current_restaurant").catch(() => null as Restaurant | null),
             ]);
             const hasCache = cachedProds.length > 0 || cachedCats.length > 0;
-            if (hasCache) {
+            // Solo usar cache si NO hay sesión online (modo offline puro)
+            if (hasCache && !auth.user) {
+                console.log("[usePosData] sin sesión, usando cache offline");
                 setRestaurant(cachedRestaurant ?? null);
                 setCategories(cachedCats);
                 setProducts(cachedProds);

@@ -43,23 +43,32 @@ export interface SalesMetrics {
 
 export async function listMonthSales(tenantId: string | null): Promise<SaleRecord[]> {
     const realId = await resolveRealTenantId(tenantId);
-    if (!realId || !supabase) return [];
+    console.log("[listMonthSales] tenantId=", tenantId, "→ realId=", realId);
+    if (!realId || !supabase) {
+        console.warn("[listMonthSales] no realId, retornando []");
+        return [];
+    }
 
-    const now   = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    // ★ FIX: rango del mes en curso (startOfMonth a endOfMonth en ISO)
+    const now     = new Date();
+    const start   = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).toISOString();
+    const end     = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0).toISOString();
+    console.log("[listMonthSales] rango:", start, "→", end);
 
     const { data, error } = await supabase
         .from("orders")
         .select("*")
         .eq("tenant_id", realId)
         .gte("created_at", start)
+        .lt("created_at", end)
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(1000);
 
     if (error) {
-        console.warn("[sales] list error:", error.message);
+        console.warn("[listMonthSales] error:", error.message, "(code", (error as any).code, ")");
         return [];
     }
+    console.log("[listMonthSales] cargados", data?.length ?? 0, "tickets");
     return (data ?? []).map(normalizeSale);
 }
 
