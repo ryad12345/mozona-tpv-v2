@@ -178,9 +178,9 @@ function buildPreBillHtml(params: {
 <body>
 <div id="ticket-print-area">
   ${(restaurant as any)?.ticket_header_msg ? `<div class="ctr meta b">${String((restaurant as any).ticket_header_msg).replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>` : ""}
-  <h1>${(restaurant?.business_name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
-  <div class="ctr meta">${(restaurant?.address ?? "").replace(/</g, "&lt;")}</div>
-  <div class="ctr meta">NIF/CIF: ${restaurant?.cif_nif ?? "—"}</div>
+  <h1>${((restaurant as any)?.business_name ?? (restaurant as any)?.name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
+  <div class="ctr meta">${((restaurant as any)?.address ?? "").replace(/</g, "&lt;")}</div>
+  <div class="ctr meta">NIF/CIF: ${(restaurant as any)?.cif_nif ?? (restaurant as any)?.nif ?? "—"}</div>
   ${restaurant?.phone ? `<div class="ctr meta">Tel: ${String(restaurant.phone).replace(/</g, "&lt;")}</div>` : ""}
   <div class="sep">${"─".repeat(32)}</div>
   ${table && table.table_number != null || (waiter && waiter.name)
@@ -194,7 +194,7 @@ function buildPreBillHtml(params: {
             const wn = waiter?.name ?? "";
             const isDemo = /demo/i.test(wn) && !wn.includes("Casablanca") && !wn.includes("MOZONA");
             const displayName = isDemo
-                ? (restaurant?.business_name ?? "MOZONA TPV")
+                ? ((restaurant as any)?.business_name ?? (restaurant as any)?.name ?? "MOZONA TPV")
                 : wn;
             return displayName
                 ? `<div class="kv"><span class="k">Camarero:</span><span class="v b">${String(displayName).replace(/</g, "&lt;")}</span></div>`
@@ -510,13 +510,15 @@ export function PosTerminalPro() {
         if (!restaurant?.id) return;
         const waiterName = auth.activeWaiter?.name ?? null;
         try {
+            // El clearDraft ahora toma tableNumber, no tableId
+            const tableNumberStr = String(tableNumber ?? "");
             if (items.length === 0) {
-                await clearDraft(restaurant.id, tableId);
+                await clearDraft(restaurant.id, tableNumberStr);
             } else {
                 await upsertDraft({
                     tenantId:    restaurant.id,
                     tableId,
-                    tableNumber,
+                    tableNumber: tableNumberStr,
                     waiterName,
                     items,
                 });

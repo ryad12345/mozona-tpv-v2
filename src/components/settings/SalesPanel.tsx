@@ -43,10 +43,12 @@ export function SalesPanel() {
     }, [tenantId]);
 
     // ★ Realtime: cuando se inserta un order en Supabase, refrescar
+    //    FIX: nombre de canal único para evitar error en StrictMode
     useEffect(() => {
         if (!supabase || !tenantId) return;
+        const channelName = `sales-orders-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         const channel = supabase
-            .channel("sales-orders-changes")
+            .channel(channelName)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "orders" },

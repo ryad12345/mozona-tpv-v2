@@ -227,38 +227,26 @@ export function WaiterPad() {
         });
 
         // 2) Persistir en Supabase (FUENTE DE VERDAD para el TPV)
-        //    Necesitamos el tenant_id: lo sacamos de la sesión del
-        //    camarero, del admin logueado, o del restaurante cargado.
-        let tenantId: string | null = restaurant?.id ?? null;
+        //    Usar resolveRealTenantId para bypasear vip-bypass y
+        //    cualquier tenant sintético
+        const { resolveRealTenantId } = await import("../lib/waiters");
+        let tenantId: string | null = await resolveRealTenantId(restaurant?.id ?? null);
         if (!tenantId) {
             // 2a) Sesión camarero (login por username+password)
             try {
                 const cached = localStorage.getItem("mozona.waiter_session");
                 if (cached) {
                     const parsed = JSON.parse(cached);
-                    if (parsed.tenant_id && parsed.tenant_id !== "vip-bypass") {
-                        tenantId = parsed.tenant_id;
+                    if (parsed.tenant_id) {
+                        tenantId = await resolveRealTenantId(parsed.tenant_id);
                     }
                 }
             } catch (e) { /* noop */ }
         }
         if (!tenantId && saasAuth.user) {
-            // 2b) Admin logueado: usar el tenant real
+            // 2b) Admin logueado: el helper ya lo resuelve vía RPC
             try {
-                const { supabase } = await import("../lib/supabase");
-                const { data: t } = await supabase.from("tenants")
-                    .select("id").eq("owner_id", saasAuth.user.id).maybeSingle();
-                if (t?.id) tenantId = t.id;
-            } catch (e) { /* noop */ }
-        }
-        if (!tenantId) {
-            // 2c) VIP: usar el primer tenant activo de la BD
-            try {
-                const { supabase } = await import("../lib/supabase");
-                const { data: t } = await supabase.from("tenants")
-                    .select("id").eq("subscription_status", "active")
-                    .order("created_at", { ascending: true }).limit(1).maybeSingle();
-                if (t?.id) tenantId = t.id;
+                tenantId = await resolveRealTenantId(saasAuth.user.id);
             } catch (e) { /* noop */ }
         }
 
