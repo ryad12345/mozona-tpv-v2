@@ -78,32 +78,18 @@
             }
         </script>
 
-        <!-- ★ Captura global de errores de arranque (visible en pantalla) -->
+        <!-- ★ Captura de errores de arranque: solo registra en consola -->
         <script>
             window.__mozona_start_errors__ = [];
             window.addEventListener('error', function(e) {
                 var msg = (e.error && e.error.stack) || (e.message + ' en ' + e.filename + ':' + e.lineno);
                 window.__mozona_start_errors__.push(msg);
-                var div = document.getElementById('__mozona_error_overlay__');
-                if (!div) {
-                    div = document.createElement('pre');
-                    div.id = '__mozona_error_overlay__';
-                    div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fee2e2;color:#991b1b;padding:16px;z-index:99999;font-size:11px;white-space:pre-wrap;font-family:monospace;border-bottom:2px solid #991b1b;max-height:50vh;overflow:auto;';
-                    document.body && document.body.appendChild(div);
-                }
-                div.textContent = '⚠️ Error de arranque:\n' + msg;
+                console.error('[MOZONA] error de arranque:', msg);
             });
             window.addEventListener('unhandledrejection', function(e) {
                 var msg = (e.reason && e.reason.stack) || String(e.reason);
                 window.__mozona_start_errors__.push('PROMISE: ' + msg);
-                var div = document.getElementById('__mozona_error_overlay__');
-                if (!div) {
-                    div = document.createElement('pre');
-                    div.id = '__mozona_error_overlay__';
-                    div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#92400e;padding:16px;z-index:99999;font-size:11px;white-space:pre-wrap;font-family:monospace;border-bottom:2px solid #92400e;max-height:50vh;overflow:auto;';
-                    document.body && document.body.appendChild(div);
-                }
-                div.textContent = '⚠️ Promise rechazada:\n' + msg;
+                console.error('[MOZONA] promise rechazada:', msg);
             });
         </script>
     </head>

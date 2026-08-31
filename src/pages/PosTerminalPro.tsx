@@ -348,17 +348,26 @@ export function PosTerminalPro() {
 
     // -----------------------------------------------------------------
     // ★ Realtime: suscripción a postgres_changes en open_orders
-    //    Cuando el camarero envía una comanda, la mesa cambia de
-    //    estado y se cargan los items sin requerir F5
+    //    FIX: nombre de canal ÚNICO (con Date.now() + random) para
+    //    evitar el error "cannot add 'postgres_changes' callbacks
+    //    after 'subscribe()'" cuando React StrictMode ejecuta el
+    //    useEffect dos veces.
+    //    También: encadenar .on() ANTES de .subscribe(), y cleanup
+    //    con removeChannel al desmontar.
     // -----------------------------------------------------------------
     useEffect(() => {
         if (!restaurant?.id || !supabase) return;
         let cancelled = false;
+        let channel: ReturnType<typeof supabase.channel> | null = null;
         (async () => {
             const realId = await resolveRealTenantId(restaurant.id);
             if (!realId || cancelled) return;
-            const channel = supabase
-                .channel(`tpv-open-orders-${realId}`)
+
+            const channelName = `tpv-open-orders-${realId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            console.log("[PosTerminalPro] creando canal realtime:", channelName);
+
+            channel = supabase
+                .channel(channelName)
                 .on(
                     "postgres_changes",
                     {
@@ -375,7 +384,6 @@ export function PosTerminalPro() {
                         if (!tableNumber) return;
 
                         if (payload.eventType === "DELETE") {
-                            // Borrador eliminado: quitar marca de ocupada
                             setTableStatuses(prev => {
                                 const next = { ...prev };
                                 delete next[draft.table_id];
@@ -383,27 +391,40 @@ export function PosTerminalPro() {
                                 return next;
                             });
                         } else {
-                            // INSERT o UPDATE: refrescar drafts
                             const items = Array.isArray(draft.items) ? draft.items : [];
                             if (items.length > 0) {
-                                // Si la mesa seleccionada coincide, recargar el carrito
-                                if (pos.state.selectedTableLabel === tableNumber) {
-                                    pos.dispatch({ type: "RESTORE_DRAFTS", drafts: { [pos.state.selectedTableId!]: items as any } });
+                                if (pos.state.selectedTableLabel === tableNumber && pos.state.selectedTableId) {
+                                    pos.dispatch({ type: "RESTORE_DRAFTS", drafts: { [pos.state.selectedTableId]: items as any } });
                                 }
-                                // Marcar como ocupada
                                 const tid = draft.table_id || `local-table-${tableNumber}`;
                                 setTableStatuses(prev => ({ ...prev, [tid]: "OCCUPIED" }));
                                 void playOrderDing();
                             }
                         }
                     },
-                )
-                .subscribe();
-            return () => {
-                cancelled = true;
-                void supabase.removeChannel(channel);
-            };
+                );
+
+            channel.subscribe((status) => {
+                if (cancelled) {
+                    if (channel) void supabase.removeChannel(channel);
+                    return;
+                }
+                console.log("[PosTerminalPro] realtime status:", status);
+                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                    console.warn("[PosTerminalPro] realtime error, reintentando en 3s");
+                    setTimeout(() => {
+                        if (!cancelled && channel) channel.subscribe();
+                    }, 3000);
+                }
+            });
         })();
+        return () => {
+            cancelled = true;
+            if (channel) {
+                console.log("[PosTerminalPro] removiendo canal realtime");
+                void supabase.removeChannel(channel);
+            }
+        };
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
