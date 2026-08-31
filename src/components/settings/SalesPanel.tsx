@@ -15,7 +15,7 @@ export function SalesPanel() {
     const [error,   setError]     = useState<string | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [filterPm, setFilterPm] = useState<string>("all");
-    const [period, setPeriod]     = useState<"today" | "month" | "30d" | "all">("month");
+    const [period, setPeriod]     = useState<"today" | "month" | "30d" | "all">("30d");
 
     const tenantId = auth.tenant?.id ?? null;
 
