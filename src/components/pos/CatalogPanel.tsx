@@ -43,14 +43,32 @@ export function CatalogPanel(props: any) {
     }
   };
 
-  const filtered = productsList.filter((product: any) => {
-    const isAll = !activeCategory || activeCategory === 'all' || activeCategory === 'Todo';
-    const productCat = (product.category || product.category_id || '').toString().toLowerCase();
-    const currentCat = activeCategory.toString().toLowerCase();
-    const matchesCategory = isAll || productCat === currentCat;
+  // Normaliza un string: minúsculas + sin tildes + trim
+  const norm = (s: any) =>
+    (s ?? "").toString().toLowerCase().trim()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    const searchQuery = (props.searchQuery || '').trim().toLowerCase();
-    const matchesSearch = !searchQuery || (product.name || '').toLowerCase().includes(searchQuery);
+  const filtered = productsList.filter((product: any) => {
+    const isAll = !activeCategory
+      || activeCategory === "all"
+      || norm(activeCategory) === "todo";
+
+    // Comparar por category (texto) o category_id (UUID) o category_name
+    const productCat = norm(product.category);
+    const productCatName = norm(product.category_name);
+    const productCatId  = (product.category_id ?? "").toString();
+    const currentCat    = norm(activeCategory);
+
+    // Match por texto normalizado (acepta "Carne" == "carne" == "Cárne")
+    // o por UUID de category_id
+    const matchesCategory = isAll
+      || productCat  === currentCat
+      || productCatName === currentCat
+      || (productCatId && productCatId === activeCategory);
+
+    const searchQuery = norm(props.searchQuery);
+    const matchesSearch = !searchQuery
+      || norm(product.name).includes(searchQuery);
 
     return matchesCategory && matchesSearch;
   });
