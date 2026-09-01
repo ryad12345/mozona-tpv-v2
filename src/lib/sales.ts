@@ -47,8 +47,12 @@ export async function listMonthSales(tenantId: string | null): Promise<SaleRecor
 /** ★★★ FUNCIÓN SIMPLIFICADA PARA EL PANEL DE VENTAS ★★★
  *  Lee TODOS los orders, filtra los cancelados, calcula total.
  *  Acepta cualquier status != 'cancelled'. */
-export async function loadSalesMetrics(period: "today" | "month" | "30d" | "all" = "30d") {
-    const records = await listSales(null, period);
+export async function loadSalesMetrics(
+    period: "today" | "month" | "30d" | "all" = "30d",
+    startDate?: Date | string,
+    endDate?: Date | string,
+) {
+    const records = await listSales(null, period, startDate, endDate);
     const valid = records.filter(r => r.status !== "cancelled");
     const totalRevenue = valid.reduce(
         (s, r) => s + Number(r.total ?? r.subtotal ?? 0),
@@ -72,6 +76,8 @@ export async function loadSalesMetrics(period: "today" | "month" | "30d" | "all"
 export async function listSales(
     tenantId: string | null,
     period: "today" | "month" | "30d" | "all" = "30d",
+    startDate?: Date | string,
+    endDate?: Date | string,
 ): Promise<SaleRecord[]> {
     console.log("[listSales] ★★ INICIO ★★ tenantId=", tenantId, "period=", period);
     if (!supabase) {
@@ -81,8 +87,12 @@ export async function listSales(
 
     // 1) Calcular rango de fechas según periodo
     const now = new Date();
+    // ★ Prioridad: startDate/endDate explícitos > period
     let start: string | null = null;
-    if (period === "today") {
+    let end:   string | null = null;
+    if (startDate) {
+        start = (startDate instanceof Date ? startDate : new Date(startDate)).toISOString();
+    } else if (period === "today") {
         const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         start = d.toISOString();
     } else if (period === "month") {
@@ -94,17 +104,19 @@ export async function listSales(
     } else {
         start = null;
     }
-    console.log("[listSales] start=", start ?? "(sin filtro)");
+    if (endDate) {
+        end = (endDate instanceof Date ? endDate : new Date(endDate)).toISOString();
+    }
+    console.log("[listSales] start=", start ?? "(sin filtro)", "end=", end ?? "(sin tope)");
 
     // 2) Query base ULTRA-DEFENSIVA
-    // ★ El esquema REAL de orders no lo conocemos. Probamos con
-    //   SELECT mínimo de columnas seguras. Si falla, fallback a select(*).
     let query = supabase
         .from("orders")
         .select("id, total, created_at")
         .order("created_at", { ascending: false })
         .limit(1000);
     if (start) query = query.gte("created_at", start);
+    if (end)   query = query.lte("created_at", end);
 
     // 3) ★ PRIMERA QUERY: con tenant_id resuelto (si lo hay)
     const realId = await resolveRealTenantId(tenantId);

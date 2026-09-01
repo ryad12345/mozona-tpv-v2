@@ -7,6 +7,7 @@ import { useAuth } from "../../lib/auth";
 import { listSales, loadSalesMetrics, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
 import { fmtEUR } from "../../lib/format";
 import { supabase } from "../../lib/supabase";
+import { SalesDateFilter, type DateRange, type DateRangePreset, rangeForPreset } from "./SalesDateFilter";
 
 export function SalesPanel() {
     const auth = useAuth();
@@ -15,7 +16,11 @@ export function SalesPanel() {
     const [error,   setError]     = useState<string | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [filterPm, setFilterPm] = useState<string>("all");
-    const [period, setPeriod]     = useState<"today" | "month" | "30d" | "all">("30d");
+
+    // ★ Filtro de fechas flexible
+    const initialRange = rangeForPreset("30d");
+    const [dateRange, setDateRange] = useState<DateRange>(initialRange);
+    const [preset, setPreset]       = useState<DateRangePreset>("30d");
 
     const tenantId = auth.tenant?.id ?? null;
 
@@ -23,9 +28,8 @@ export function SalesPanel() {
         setLoading(true);
         setError(null);
         try {
-            console.log("[SalesPanel] ★★ CARGA ★★ tenantId=", tenantId, "period=", period);
-            // ★ Usa loadSalesMetrics (función unificada del commit 2434c3c)
-            const metrics = await loadSalesMetrics(period);
+            console.log("[SalesPanel] ★★ CARGA ★* tenantId=", tenantId, "preset=", preset, "rango=", dateRange.start.toISOString(), "→", dateRange.end.toISOString());
+            const metrics = await loadSalesMetrics("30d", dateRange.start, dateRange.end);
             console.log("[SalesPanel] ★★ RESULTADO ★* totalRevenue=", metrics.totalRevenue.toFixed(2), "count=", metrics.count);
             setRecords(metrics.sales);
         } catch (e) {
@@ -36,17 +40,18 @@ export function SalesPanel() {
         setLoading(false);
     };
 
-    // Auto-refresco cada 30s mientras el panel está visible
-    // ★ FIX BUCLE: eliminado el useEffect local de realtime (causaba bucle
-    //   removeChannel porque tenantId cambiaba en cada render).
-    //   El singleton subscribeToPosChannels() ya refresca en /app, y
-    //   aquí el setInterval(30s) es suficiente.
+    // ★ Refresco reactivo al cambiar rango
     useEffect(() => {
         void load();
         const interval = setInterval(() => { void load(); }, 30_000);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tenantId, period]);
+    }, [tenantId, dateRange.start.getTime(), dateRange.end.getTime()]);
+
+    const handleDateChange = (range: DateRange, p: DateRangePreset) => {
+        setDateRange(range);
+        setPreset(p);
+    };
 
     // ★ Métricas: contar cualquier ticket que NO sea 'cancelled'
     //    Acepta status: 'closed', 'paid', 'completed', null, undefined, ''
@@ -74,12 +79,6 @@ export function SalesPanel() {
         });
     };
 
-    const periodLabels: Record<typeof period, string> = {
-        today: "Hoy",
-        month: "Este mes",
-        "30d":  "Últimos 30 días",
-        all:    "Histórico",
-    };
     const monthName = new Date().toLocaleDateString("es-ES", { month: "long", year: "numeric" });
 
     return (
@@ -97,30 +96,19 @@ export function SalesPanel() {
             <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                     <h3 className="text-base font-bold text-slate-900">
-                        📊 Ventas — {periodLabels[period]} {period === "month" ? `(${monthName})` : ""}
+                        📊 Ventas
                     </h3>
                     <p className="text-[11px] text-slate-500">
                         Tickets cerrados y cobrados. Datos en tiempo real desde Supabase.
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    {/* ★ Selector de periodo */}
-                    <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden">
-                        {(["today", "month", "30d", "all"] as const).map(p => (
-                            <button
-                                key={p}
-                                type="button"
-                                onClick={() => setPeriod(p)}
-                                className={`px-2.5 py-1.5 text-[10.5px] font-bold transition ${
-                                    period === p
-                                        ? "bg-blue-600 text-white"
-                                        : "text-slate-600 hover:bg-slate-50"
-                                }`}
-                            >
-                                {periodLabels[p]}
-                            </button>
-                        ))}
-                    </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {/* ★ Calendario + presets (nuevo) */}
+                    <SalesDateFilter
+                        value={dateRange}
+                        preset={preset}
+                        onChange={handleDateChange}
+                    />
                     <button
                         type="button"
                     onClick={load}
@@ -311,7 +299,7 @@ export function SalesPanel() {
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-3">
                     <h4 className="text-[13px] font-bold text-slate-800">
-                        🧾 Tickets {period === "month" ? "del mes" : period === "today" ? "de hoy" : period === "30d" ? "últimos 30 días" : "histórico"}
+                        🧾 Tickets {preset === "month" ? "del mes" : preset === "today" ? "de hoy" : preset === "30d" ? "últimos 30 días" : "del rango seleccionado"}
                     </h4>
                     <select
                         value={filterPm}
