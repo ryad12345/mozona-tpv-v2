@@ -26,6 +26,18 @@ export function SalesPanel() {
             console.log("[SalesPanel] cargando ventas, tenantId=", tenantId, "period=", period);
             const data = await listSales(tenantId, period);
             console.log("[SalesPanel] cargadas", data.length, "ventas");
+            if (data.length > 0) {
+                const totalSuma = data.reduce((a, r) => a + (r.total ?? 0), 0);
+                console.log("[SalesPanel] total facturado:", totalSuma.toFixed(2), "€");
+                console.log("[SalesPanel] primer ticket:", {
+                    id: data[0].id,
+                    total: data[0].total,
+                    subtotal: data[0].subtotal,
+                    tax_total: data[0].tax_total,
+                    payment_method: data[0].payment_method,
+                    created_at: data[0].created_at,
+                });
+            }
             setRecords(data);
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -367,7 +379,7 @@ export function SalesPanel() {
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                             <span className="font-mono font-bold text-[12.5px] text-slate-900">
-                                                {fmtEUR(r.total)}
+                                                {fmtEUR(r.total ?? r.subtotal ?? 0)}
                                             </span>
                                             <span className="text-slate-400 text-[10px]">
                                                 {isOpen ? "▲" : "▼"}

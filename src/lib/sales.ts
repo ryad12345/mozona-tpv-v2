@@ -49,7 +49,7 @@ export async function listMonthSales(tenantId: string | null): Promise<SaleRecor
  *  periods: 'today' | 'month' | '30d' | 'all' */
 export async function listSales(
     tenantId: string | null,
-    period: "today" | "month" | "30d" | "all" = "month",
+    period: "today" | "month" | "30d" | "all" = "30d",
 ): Promise<SaleRecord[]> {
     const realId = await resolveRealTenantId(tenantId);
     console.log("[listSales] tenantId=", tenantId, "→ realId=", realId, "period=", period);
@@ -76,9 +76,10 @@ export async function listSales(
     }
     console.log("[listSales] start=", start ?? "(sin filtro)");
 
+    // ★ Columnas EXPLÍCITAS para confirmar que la BD las tiene
     let query = supabase
         .from("orders")
-        .select("*")
+        .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at")
         .eq("tenant_id", realId)
         .order("created_at", { ascending: false })
         .limit(1000);
@@ -92,18 +93,35 @@ export async function listSales(
         return [];
     }
     console.log("[listSales] cargados", data?.length ?? 0, "tickets");
+    if (data && data.length > 0) {
+        console.log("[listSales] primer ticket:", {
+            id: data[0].id,
+            total: data[0].total,
+            subtotal: data[0].subtotal,
+            tax_total: data[0].tax_total,
+            payment_method: data[0].payment_method,
+            created_at: data[0].created_at,
+        });
+    }
     return (data ?? []).map(normalizeSale);
 }
 
 function normalizeSale(row: any): SaleRecord {
+    // Mapeo defensivo: total, subtotal, tax_total pueden ser string (NUMERIC de PG)
+    const toNum = (v: any) => {
+        if (v == null) return 0;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+    };
     return {
         id:              row.id,
-        table_number:    row.table_number ?? null,
+        table_number:    row.table_number != null ? String(row.table_number) : null,
         waiter_name:     row.waiter_name ?? null,
         items:           Array.isArray(row.items) ? row.items : [],
-        subtotal:        Number(row.subtotal   ?? 0),
-        tax_total:       Number(row.tax_total  ?? 0),
-        total:           Number(row.total      ?? 0),
+        subtotal:        toNum(row.subtotal),
+        tax_total:       toNum(row.tax_total),
+        // total puede llegar como 'total' o 'total_amount' (defensivo)
+        total:           toNum(row.total ?? row.total_amount ?? row.amount),
         payment_method:  row.payment_method ?? null,
         payment_status:  row.payment_status ?? "paid",
         status:          row.status         ?? "closed",
