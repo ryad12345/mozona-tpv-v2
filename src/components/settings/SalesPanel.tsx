@@ -2,7 +2,7 @@
 // MOZONA TPV — SalesPanel: pestaña de supervisión de ventas
 // =====================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../lib/auth";
 import { listSales, loadSalesMetrics, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
 import { fmtEUR } from "../../lib/format";
@@ -37,6 +37,10 @@ export function SalesPanel() {
     };
 
     // Auto-refresco cada 30s mientras el panel está visible
+    // ★ FIX BUCLE: eliminado el useEffect local de realtime (causaba bucle
+    //   removeChannel porque tenantId cambiaba en cada render).
+    //   El singleton subscribeToPosChannels() ya refresca en /app, y
+    //   aquí el setInterval(30s) es suficiente.
     useEffect(() => {
         void load();
         const interval = setInterval(() => { void load(); }, 30_000);
@@ -44,42 +48,18 @@ export function SalesPanel() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tenantId, period]);
 
-    // ★ Realtime: cuando se inserta un order en Supabase, refrescar
-    //    FIX: nombre de canal único para evitar error en StrictMode
-    useEffect(() => {
-        if (!supabase || !tenantId) return;
-        const channelName = `sales-orders-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const channel = supabase
-            .channel(channelName)
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "orders" },
-                (payload) => {
-                    console.log("[SalesPanel] realtime order change:", payload.eventType);
-                    void load();
-                },
-            )
-            .subscribe();
-        return () => {
-            void supabase.removeChannel(channel);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tenantId]);
-
     // ★ Métricas: contar cualquier ticket que NO sea 'cancelled'
     //    Acepta status: 'closed', 'paid', 'completed', null, undefined, ''
-    const activeRecords = records.filter(r => {
-        if (r.status === "cancelled") return false;
-        return true;
-    });
-    const totalRevenue = activeRecords.reduce((s, r) => s + Number(r.total ?? r.subtotal ?? 0), 0);
-    const metrics = computeMetrics(activeRecords);
-    console.log("[SalesPanel] ★★ UI MÉTRICAS ★*", {
-        totalRecords: records.length,
-        activeRecords: activeRecords.length,
-        cancelledRecords: records.length - activeRecords.length,
-        totalRevenue: totalRevenue.toFixed(2) + " €",
-    });
+    // ★ useMemo para estabilizar y evitar re-renders innecesarios
+    const { activeRecords, totalRevenue, metrics } = useMemo(() => {
+        const active = records.filter(r => r.status !== "cancelled");
+        const total = active.reduce((s, r) => s + Number(r.total ?? r.subtotal ?? 0), 0);
+        const m = computeMetrics(active);
+        return { activeRecords: active, totalRevenue: total, metrics: m };
+    }, [records]);
+    // console.log único por cambio de records, no por cada render
+    // (comentado para producción: descomentar para debug)
+    // console.log("[SalesPanel] ★★ UI MÉTRICAS ★*", { ... });
 
     const filteredRecords = filterPm === "all"
         ? records
