@@ -101,7 +101,7 @@ export async function listSales(
     // Solo pedimos columnas que sabemos que existen.
     let query = supabase
         .from("orders")
-        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, table_number, items, created_at, updated_at, tenant_id")
+        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, items, created_at, updated_at, tenant_id, series")
         .order("created_at", { ascending: false })
         .limit(1000);
     if (start) query = query.gte("created_at", start);
@@ -155,6 +155,18 @@ export async function listSales(
     return allData.map(normalizeSale);
 }
 
+function extractTableNumber(row: any): string | null {
+    // 1) columna directa
+    if (row.table_number != null) return String(row.table_number);
+    // 2) desde items[0].tableNumber o items[0].table_number
+    if (Array.isArray(row.items) && row.items.length > 0) {
+        const it = row.items[0];
+        const tn = it?.tableNumber ?? it?.table_number;
+        if (tn != null) return String(tn);
+    }
+    return null;
+}
+
 function normalizeSale(row: any): SaleRecord {
     // Mapeo defensivo: total, subtotal, tax_total pueden ser string (NUMERIC de PG)
     const toNum = (v: any) => {
@@ -164,7 +176,9 @@ function normalizeSale(row: any): SaleRecord {
     };
     return {
         id:              row.id,
-        table_number:    row.table_number != null ? String(row.table_number) : null,
+        // ★ FIX: table_number NO existe en la tabla real.
+        // Lo extraemos de items[].tableNumber (cada item guarda su mesa).
+        table_number:    extractTableNumber(row),
         waiter_name:     row.waiter_name ?? null,
         items:           Array.isArray(row.items) ? row.items : [],
         subtotal:        toNum(row.subtotal),

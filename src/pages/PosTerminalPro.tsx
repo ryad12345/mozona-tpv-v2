@@ -318,13 +318,49 @@ export function PosTerminalPro() {
     // ★ Suscripción GLOBAL a Supabase Realtime (singleton, sin bucle)
     //    Dependencias VACÍAS: solo se monta al cargar el componente.
     //    El cleanup se hace correctamente porque subscribeToPosChannels
-    //    ahora tiene guard anti-bucle (commit siguiente).
+    //    ahora tiene guard anti-bucle.
     useEffect(() => {
         const off = subscribeToPosChannels((payload) => {
             console.log("[PosTerminalPro] realtime:", payload.table, payload.eventType);
-            // Solo refrescar productos cuando hay cambio de products
+            const row = payload.new ?? payload.old;
             if (payload.table === "products") {
                 posDataRefresh();
+            } else if (payload.table === "dining_tables" && row) {
+                const mapStatus = (s: string | null | undefined): "FREE" | "OCCUPIED" | "DIRTY" | "BILL_REQUESTED" | "RESERVED" => {
+                    const sn = (s ?? "").toLowerCase();
+                    if (sn === "free" || sn === "available") return "FREE";
+                    if (sn === "occupied") return "OCCUPIED";
+                    if (sn === "dirty") return "DIRTY";
+                    if (sn === "bill_requested" || sn === "billed") return "BILL_REQUESTED";
+                    if (sn === "reserved") return "RESERVED";
+                    return "FREE";
+                };
+                const mapped = mapStatus(row.status);
+                const tid = row.id;
+                const tnumber = String(row.table_number ?? "");
+                if (tid) setTableStatuses(prev => ({ ...prev, [tid]: mapped }));
+                if (tnumber) setTableStatuses(prev => ({ ...prev, [`local-table-${tnumber}`]: mapped }));
+            } else if (payload.table === "open_orders" && row) {
+                const tableNumber = row.table_number;
+                if (!tableNumber) return;
+                if (payload.eventType === "DELETE") {
+                    setTableStatuses(prev => {
+                        const next = { ...prev };
+                        delete next[row.table_id];
+                        delete next[`local-table-${tableNumber}`];
+                        return next;
+                    });
+                } else {
+                    const items = Array.isArray(row.items) ? row.items : [];
+                    if (items.length > 0) {
+                        if (pos.state.selectedTableLabel === tableNumber && pos.state.selectedTableId) {
+                            pos.dispatch({ type: "RESTORE_DRAFTS", drafts: { [pos.state.selectedTableId]: items as any } });
+                        }
+                        const tid = row.table_id || `local-table-${tableNumber}`;
+                        setTableStatuses(prev => ({ ...prev, [tid]: "OCCUPIED" }));
+                        void playOrderDing();
+                    }
+                }
             }
         });
         return off;
@@ -380,182 +416,10 @@ export function PosTerminalPro() {
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
-    // ★ Realtime: suscripción a postgres_changes en PRODUCTOS
-    //    Si el admin crea/edita/elimina productos en /settings,
-    //    el TPV recarga automáticamente sin F5
+    // ★ Realtime: los 3 canales (products, dining_tables, open_orders)
+    //   se manejan ahora en el SINGLETON subscribeToPosChannels() arriba.
+    //   No duplicamos canales aquí para evitar bucle removeChannel.
     // -----------------------------------------------------------------
-    useEffect(() => {
-        if (!restaurant?.id || !supabase) return;
-        let cancelled = false;
-        let channel: ReturnType<typeof supabase.channel> | null = null;
-        (async () => {
-            const realId = await resolveRealTenantId(restaurant.id);
-            if (!realId || cancelled) return;
-            // ★ Canal GLOBAL: sin filtro de tenant_id para no perder
-            //   eventos cuando hay discrepancia entre el tenant del
-            //   INSERT y el que la caja esperaba.
-            const channelName = `realtime-products-global-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            console.log("[PosTerminalPro] realtime products canal (sin filtro tenant):", channelName);
-            channel = supabase
-                .channel(channelName)
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "products",
-                        // ★ SIN FILTRO: cualquier INSERT/UPDATE/DELETE
-                        //   de products nos llega, independientemente del tenant_id
-                    },
-                    (payload) => {
-                        if (cancelled) return;
-                        console.log("[PosTerminalPro] realtime products (global):", payload.eventType, "tenant_id=", (payload.new as any)?.tenant_id);
-                        // Forzar recarga inmediata
-                        posDataRefresh();
-                    },
-                );
-            channel.subscribe((status) => {
-                console.log("[PosTerminalPro] products realtime status:", status);
-            });
-        })();
-        return () => {
-            cancelled = true;
-            if (channel) {
-                void supabase.removeChannel(channel);
-            }
-        };
-    }, [restaurant?.id]);
-
-    // ★ Realtime: suscripción a dining_tables
-    //    Si otro dispositivo (camarero/admin) cambia el estado de
-    //    una mesa, lo reflejamos al instante
-    useEffect(() => {
-        if (!restaurant?.id || !supabase) return;
-        let cancelled = false;
-        let channel: ReturnType<typeof supabase.channel> | null = null;
-        (async () => {
-            const realId = await resolveRealTenantId(restaurant.id);
-            if (!realId || cancelled) return;
-            const channelName = `tpv-tables-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            console.log("[PosTerminalPro] realtime tables canal:", channelName);
-            channel = supabase
-                .channel(channelName)
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "dining_tables",
-                    },
-                    (payload) => {
-                        if (cancelled) return;
-                        const tbl = (payload.new ?? payload.old) as any;
-                        console.log("[PosTerminalPro] realtime dining_tables:", payload.eventType, "id=", tbl?.id, "table_number=", tbl?.table_number, "status=", tbl?.status);
-                        // Mapear status de Supabase a TableStatus
-                        const mapStatus = (s: string | null | undefined): "FREE" | "OCCUPIED" | "DIRTY" | "BILL_REQUESTED" | "RESERVED" => {
-                            const sn = (s ?? "").toLowerCase();
-                            if (sn === "free" || sn === "available") return "FREE";
-                            if (sn === "occupied") return "OCCUPIED";
-                            if (sn === "dirty") return "DIRTY";
-                            if (sn === "bill_requested" || sn === "billed") return "BILL_REQUESTED";
-                            if (sn === "reserved") return "RESERVED";
-                            return "FREE";
-                        };
-                        const mapped = mapStatus(tbl?.status);
-                        const tid = tbl?.id;
-                        const tnumber = String(tbl?.table_number ?? "");
-                        if (tid) {
-                            setTableStatuses(prev => ({ ...prev, [tid]: mapped }));
-                        }
-                        if (tnumber) {
-                            setTableStatuses(prev => ({ ...prev, [`local-table-${tnumber}`]: mapped }));
-                        }
-                    },
-                );
-            channel.subscribe((status) => {
-                console.log("[PosTerminalPro] tables realtime status:", status);
-            });
-        })();
-        return () => {
-            cancelled = true;
-            if (channel) {
-                void supabase.removeChannel(channel);
-            }
-        };
-    }, [restaurant?.id]);
-
-    // ★ Realtime: suscripción a postgres_changes en open_orders
-    useEffect(() => {
-        if (!restaurant?.id || !supabase) return;
-        let cancelled = false;
-        let channel: ReturnType<typeof supabase.channel> | null = null;
-        (async () => {
-            const realId = await resolveRealTenantId(restaurant.id);
-            if (!realId || cancelled) return;
-
-            const channelName = `tpv-open-orders-${realId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            console.log("[PosTerminalPro] creando canal realtime:", channelName);
-
-            channel = supabase
-                .channel(channelName)
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "open_orders",
-                        filter: `tenant_id=eq.${realId}`,
-                    },
-                    (payload) => {
-                        if (cancelled) return;
-                        console.log("[PosTerminalPro] realtime open_orders:", payload.eventType);
-                        const draft = (payload.new ?? payload.old) as any;
-                        const tableNumber = draft?.table_number;
-                        if (!tableNumber) return;
-
-                        if (payload.eventType === "DELETE") {
-                            setTableStatuses(prev => {
-                                const next = { ...prev };
-                                delete next[draft.table_id];
-                                delete next[`local-table-${tableNumber}`];
-                                return next;
-                            });
-                        } else {
-                            const items = Array.isArray(draft.items) ? draft.items : [];
-                            if (items.length > 0) {
-                                if (pos.state.selectedTableLabel === tableNumber && pos.state.selectedTableId) {
-                                    pos.dispatch({ type: "RESTORE_DRAFTS", drafts: { [pos.state.selectedTableId]: items as any } });
-                                }
-                                const tid = draft.table_id || `local-table-${tableNumber}`;
-                                setTableStatuses(prev => ({ ...prev, [tid]: "OCCUPIED" }));
-                                void playOrderDing();
-                            }
-                        }
-                    },
-                );
-
-            channel.subscribe((status) => {
-                if (cancelled) {
-                    if (channel) void supabase.removeChannel(channel);
-                    return;
-                }
-                console.log("[PosTerminalPro] realtime status:", status);
-                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                    console.warn("[PosTerminalPro] realtime error, reintentando en 3s");
-                    setTimeout(() => {
-                        if (!cancelled && channel) channel.subscribe();
-                    }, 3000);
-                }
-            });
-        })();
-        return () => {
-            cancelled = true;
-            if (channel) {
-                console.log("[PosTerminalPro] removiendo canal realtime");
-                void supabase.removeChannel(channel);
-            }
-        };
-    }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
     // Cuando entra una comanda desde un WaiterPad

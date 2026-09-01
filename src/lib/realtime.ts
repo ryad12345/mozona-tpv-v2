@@ -72,23 +72,29 @@ export function subscribeToPosChannels(
     }
 
     return () => {
-        // ★ Cleanup seguro
+        // ★ Cleanup seguro con queueMicrotask para evitar recursión
+        // (el bug era: leave() se llama dentro de trigger() que es
+        //  llamado por callback de leave() => bucle)
         isUnsubscribing = true;
         refCount--;
         console.log("[realtime] cleanup, refCount=", refCount);
 
-        // Solo eliminar el canal cuando TODOS los consumidores han hecho cleanup
-        if (refCount <= 0 && globalChannel && !isUnsubscribing) {
+        if (refCount <= 0 && globalChannel) {
             const ch = globalChannel;
             globalChannel = null;
-            try {
-                void supabase.removeChannel(ch);
-            } catch (e) {
-                console.warn("[realtime] removeChannel error:", e);
-            }
+            // ★ queueMicrotask saca el removeChannel del stack actual
+            queueMicrotask(() => {
+                try {
+                    void supabase.removeChannel(ch);
+                } catch (e) {
+                    console.warn("[realtime] removeChannel error:", e);
+                }
+                setTimeout(() => { isUnsubscribing = false; }, 100);
+            });
+        } else {
+            // Pequeño delay antes de resetear el flag
+            setTimeout(() => { isUnsubscribing = false; }, 100);
         }
-        // Pequeño delay antes de resetear el flag
-        setTimeout(() => { isUnsubscribing = false; }, 100);
     };
 }
 
