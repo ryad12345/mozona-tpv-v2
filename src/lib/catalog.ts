@@ -116,10 +116,11 @@ export async function fetchCategories(tenantId?: string | null): Promise<PosCate
     console.log("[fetchCategories] 📡 Consultando Supabase EN VIVO... tenantId=", tenantId);
 
     const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
+    // ★ v1.9.2: NO filtrar por is_active (puede no existir en la tabla)
     let query = supabase
         .from("categories")
-        .select("id, name, sort_order, is_active, tenant_id")
-        .eq("is_active", true);
+        .select("id, name, sort_order, tenant_id")
+        .order("sort_order", { ascending: true });
     if (useTenant) {
         query = query.eq("tenant_id", tenantId);
     }
@@ -130,13 +131,13 @@ export async function fetchCategories(tenantId?: string | null): Promise<PosCate
         return [];
     }
 
-    // FALLBACK: si 0 con tenant, leer todas
+    // FALLBACK: si 0 con tenant, leer todas (sin filtro)
     if (!data || data.length === 0) {
-        console.warn("[fetchCategories] 0 categorías con tenant, leyendo TODAS...");
+        console.warn("[fetchCategories] 0 con tenant, leyendo TODAS...");
         const fb = await supabase
             .from("categories")
-            .select("id, name, sort_order, is_active, tenant_id")
-            .eq("is_active", true);
+            .select("id, name, sort_order, tenant_id")
+            .order("sort_order", { ascending: true });
         if (fb.error || !fb.data) return [];
         data = fb.data;
     }
@@ -258,13 +259,15 @@ export interface CategoryInput {
 
 export async function saveCategory(input: CategoryInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    // ★ 'description' no existe en la tabla real
+    // ★ v1.9.2: 'description' e 'is_active' no existen en tabla real
     const payload: any = {
         name:        input.name,
         sort_order:  Number(input.sort_order ?? 0),
-        is_active:   input.is_active ?? true,
-        image_url:   input.image_url ?? null,
     };
+    // Solo añadir image_url si viene definido
+    if (input.image_url) {
+        payload.image_url = input.image_url;
+    }
     try {
         if (input.id) {
             const { data, error } = await supabase

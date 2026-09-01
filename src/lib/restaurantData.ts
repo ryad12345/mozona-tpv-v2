@@ -96,6 +96,7 @@ async function getFirstActiveTenant(): Promise<string | null> {
 
 export async function loadCategories(tenantId: string): Promise<Category[]> {
     if (!isSupabaseConfigured) return [];
+    // ★ v1.9.2: NO usar is_active (puede no existir)
     // 1) Con tenant
     const { data, error } = await supabase
         .from("categories")
@@ -110,7 +111,7 @@ export async function loadCategories(tenantId: string): Promise<Category[]> {
         console.log("[loadCategories] ✓", data.length, "con tenant");
         return data as Category[];
     }
-    // 2) FALLBACK: leer TODAS las categorías activas
+    // 2) FALLBACK: leer TODAS las categorías
     console.warn("[loadCategories] 0 con tenant, leyendo todas...");
     const { data: allData } = await supabase
         .from("categories")
