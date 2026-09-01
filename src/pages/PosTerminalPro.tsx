@@ -615,6 +615,11 @@ export function PosTerminalPro() {
     // -----------------------------------------------------------------
     const tablesWithStatus = useMemo(() => {
         const real = tables.map(t => ({ ...t, status: tableStatuses[t.id] ?? t.status }));
+        console.log("[PosTerminalPro] tablesWithStatus:", {
+            totalMesas: real.length,
+            conStatusOcupado: real.filter(t => t.status === "OCCUPIED").length,
+            ids: real.map(t => ({ id: t.id, number: t.table_number, status: t.status })),
+        });
         // Si hay menos de 16 mesas, rellenamos con mesas dummy 1..16
         if (real.length >= 16) return real;
         const seen = new Set(real.map(t => String(t.table_number)));

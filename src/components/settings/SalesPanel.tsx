@@ -23,20 +23,31 @@ export function SalesPanel() {
         setLoading(true);
         setError(null);
         try {
-            console.log("[SalesPanel] cargando ventas, tenantId=", tenantId, "period=", period);
+            console.log("[SalesPanel] ★★ CARGA ★★ tenantId=", tenantId, "period=", period);
             const data = await listSales(tenantId, period);
-            console.log("[SalesPanel] cargadas", data.length, "ventas");
+            console.log("[SalesPanel] ★★ RESULTADO ★* cargados", data.length, "tickets");
             if (data.length > 0) {
                 const totalSuma = data.reduce((a, r) => a + (r.total ?? 0), 0);
-                console.log("[SalesPanel] total facturado:", totalSuma.toFixed(2), "€");
+                const totalConCancelados = data.reduce((a, r) => a + (r.total ?? 0), 0);
+                const cancelados = data.filter(r => r.status === "cancelled").length;
+                console.log("[SalesPanel] ★★ MÉTRICAS ★*", {
+                    totalTickets: data.length,
+                    cancelados,
+                    activos: data.length - cancelados,
+                    totalFacturado: totalSuma.toFixed(2) + " €",
+                });
                 console.log("[SalesPanel] primer ticket:", {
                     id: data[0].id,
                     total: data[0].total,
                     subtotal: data[0].subtotal,
                     tax_total: data[0].tax_total,
                     payment_method: data[0].payment_method,
+                    payment_status: data[0].payment_status,
+                    status: data[0].status,
                     created_at: data[0].created_at,
                 });
+            } else {
+                console.warn("[SalesPanel] ★★ 0 TICKETS ★* — verifica la BD");
             }
             setRecords(data);
         } catch (e) {
