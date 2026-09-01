@@ -237,7 +237,7 @@ export function PosTerminalPro() {
     const nav  = useNavigate();
     const printer = useLocalPrinter();
     const localIp = useLocalIP(3000);
-    const { categories, products, tables, connection, loading, restaurant } = usePosData();
+    const { categories, products, tables, connection, loading, restaurant, refresh: posDataRefresh } = usePosData();
     const pos  = usePosReducer();
 
     const [showAuth, setShowAuth]     = useState(false);
@@ -347,14 +347,49 @@ export function PosTerminalPro() {
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
-    // ★ Realtime: suscripción a postgres_changes en open_orders
-    //    FIX: nombre de canal ÚNICO (con Date.now() + random) para
-    //    evitar el error "cannot add 'postgres_changes' callbacks
-    //    after 'subscribe()'" cuando React StrictMode ejecuta el
-    //    useEffect dos veces.
-    //    También: encadenar .on() ANTES de .subscribe(), y cleanup
-    //    con removeChannel al desmontar.
+    // ★ Realtime: suscripción a postgres_changes en PRODUCTOS
+    //    Si el admin crea/edita/elimina productos en /settings,
+    //    el TPV recarga automáticamente sin F5
     // -----------------------------------------------------------------
+    useEffect(() => {
+        if (!restaurant?.id || !supabase) return;
+        let cancelled = false;
+        let channel: ReturnType<typeof supabase.channel> | null = null;
+        (async () => {
+            const realId = await resolveRealTenantId(restaurant.id);
+            if (!realId || cancelled) return;
+            const channelName = `tpv-products-${realId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            console.log("[PosTerminalPro] realtime products canal:", channelName);
+            channel = supabase
+                .channel(channelName)
+                .on(
+                    "postgres_changes",
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "products",
+                        filter: `tenant_id=eq.${realId}`,
+                    },
+                    (payload) => {
+                        if (cancelled) return;
+                        console.log("[PosTerminalPro] realtime products:", payload.eventType);
+                        // Llamar refresh de usePosData para recargar el catálogo
+                        posDataRefresh();
+                    },
+                );
+            channel.subscribe((status) => {
+                console.log("[PosTerminalPro] products realtime status:", status);
+            });
+        })();
+        return () => {
+            cancelled = true;
+            if (channel) {
+                void supabase.removeChannel(channel);
+            }
+        };
+    }, [restaurant?.id]);
+
+    // ★ Realtime: suscripción a postgres_changes en open_orders
     useEffect(() => {
         if (!restaurant?.id || !supabase) return;
         let cancelled = false;
