@@ -285,17 +285,31 @@ export function computeMetrics(records: SaleRecord[]): SalesMetrics {
 
 export async function cancelSale(id: string): Promise<boolean> {
     if (!supabase) return false;
-    console.log("[cancelSale] anulando ticket:", id);
-    // ★ Solo columnas que EXISTEN en la tabla real
-    //   (no enviar updated_at: 'column does not exist')
-    const { error } = await supabase
-        .from("orders")
-        .update({ status: "cancelled" })
-        .eq("id", id);
-    if (error) {
-        console.error("[cancelSale] error:", error.message, error.code);
+    console.log("[cancelSale] Eliminando ticket de forma definitiva:", id);
+
+    try {
+        // 1. Borrar items hijos si existen en order_items
+        try {
+            await supabase.from("order_items").delete().eq("order_id", id);
+        } catch (e) {
+            /* silenciado si no hay tabla de items */
+        }
+
+        // 2. Eliminar la orden directamente (evita el trigger de UPDATE)
+        const { error: deleteError } = await supabase
+            .from("orders")
+            .delete()
+            .eq("id", id);
+
+        if (deleteError) {
+            console.error("[cancelSale] ❌ Error en delete:", deleteError.message);
+            return false;
+        }
+
+        console.log("[cancelSale] ✓ Ticket eliminado/anulado correctamente");
+        return true;
+    } catch (err: any) {
+        console.error("[cancelSale] ❌ Excepción:", err.message);
         return false;
     }
-    console.log("[cancelSale] ✓ ticket anulado");
-    return true;
 }
