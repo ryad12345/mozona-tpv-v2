@@ -58,7 +58,6 @@ export interface RealtimeOrder {
     tax_total: number;
     total: number;
     payment_method: string | null;
-    payment_status: string;
     status: string;
     items: any[];
     created_at: string;

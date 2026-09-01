@@ -77,7 +77,7 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
             tax_total: input.taxTotal,
             total: input.total,
             payment_method: input.paymentMethod || "cash",
-            payment_status: "paid",
+            // ★ FIX: payment_status NO existe en la tabla orders real
             status: "closed",
             series: input.series || "T26",
         },

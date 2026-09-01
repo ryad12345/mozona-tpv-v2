@@ -19,7 +19,6 @@ export interface SaleRecord {
     tax_total:       number;
     total:           number;
     payment_method:  string | null;
-    payment_status:  string;
     status:          string;
     series:          string | null;
     verifactu_qr:    string | null;
@@ -98,9 +97,11 @@ export async function listSales(
     console.log("[listSales] start=", start ?? "(sin filtro)");
 
     // 2) Query base sin filtro de tenant
+    // ★ FIX: quitar 'payment_status' que NO EXISTE en la tabla orders real.
+    // Solo pedimos columnas que sabemos que existen.
     let query = supabase
         .from("orders")
-        .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at, tenant_id")
+        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, table_number, items, created_at, updated_at, tenant_id")
         .order("created_at", { ascending: false })
         .limit(1000);
     if (start) query = query.gte("created_at", start);
@@ -171,7 +172,6 @@ function normalizeSale(row: any): SaleRecord {
         // total puede llegar como 'total' o 'total_amount' (defensivo)
         total:           toNum(row.total ?? row.total_amount ?? row.amount),
         payment_method:  row.payment_method ?? null,
-        payment_status:  row.payment_status ?? "paid",
         status:          row.status         ?? "closed",
         series:          row.series         ?? null,
         verifactu_qr:    row.verifactu_qr   ?? null,
@@ -193,7 +193,8 @@ export function computeMetrics(records: SaleRecord[]): SalesMetrics {
     let paidCount    = 0;
     for (const r of records) {
         if (r.status === "cancelled") continue;
-        if (r.payment_status === "paid") paidCount++;
+        // ★ FIX: status "closed" o "paid" cuentan como pagados
+        if (r.status === "closed" || r.status === "paid") paidCount++;
         totalRevenue += r.total;
 
         // Por método de pago
@@ -247,9 +248,10 @@ export function computeMetrics(records: SaleRecord[]): SalesMetrics {
 
 export async function cancelSale(id: string): Promise<boolean> {
     if (!supabase) return false;
+    // ★ FIX: solo actualizamos 'status' (payment_status no existe en la tabla)
     const { error } = await supabase
         .from("orders")
-        .update({ status: "cancelled", payment_status: "cancelled" })
+        .update({ status: "cancelled" })
         .eq("id", id);
     if (error) {
         console.warn("[sales] cancel error:", error.message);
