@@ -433,15 +433,19 @@ export function WaiterPad() {
                         >
                             Todo
                         </CategoryPill>
-                        {categories.map(c => (
-                            <CategoryPill
-                                key={c.id}
-                                active={categoryId === c.id}
-                                onClick={() => setCategoryId(c.id)}
-                            >
-                                {c.name}
-                            </CategoryPill>
-                        ))}
+                        {categories.map(c => {
+                            // ★ Matching robusto por id O name
+                            const cid = c.id ?? c.name;
+                            return (
+                                <CategoryPill
+                                    key={cid}
+                                    active={categoryId === cid}
+                                    onClick={() => setCategoryId(cid)}
+                                >
+                                    {c.name}
+                                </CategoryPill>
+                            );
+                        })}
                     </div>
 
                     {/* Buscador */}

@@ -37,31 +37,45 @@ export async function getMyTenant(): Promise<Restaurant | null> {
             return null;
         }
 
-        // 1) Por owner_id
-        const { data: byOwner } = await supabase
-            .from("tenants")
-            .select("*")
-            .eq("owner_id", user.id)
-            .maybeSingle();
-        if (byOwner) return byOwner as Restaurant;
+        // 1) Por owner_id (silenciado si la columna no existe)
+        try {
+            const { data: byOwner, error: err1 } = await supabase
+                .from("tenants")
+                .select("*")
+                .eq("owner_id", user.id)
+                .maybeSingle();
+            if (err1) console.warn("[getMyTenant] owner_id no disponible:", err1.message);
+            if (byOwner) return byOwner as Restaurant;
+        } catch (e) {
+            console.warn("[getMyTenant] owner_id lookup error:", e);
+        }
 
-        // 2) Por tenant_users (camarero, manager, etc.)
-        const { data: tu } = await supabase
-            .from("tenant_users")
-            .select("tenant_id, tenants(*)")
-            .eq("user_id", user.id)
-            .maybeSingle();
-        if (tu?.tenants) return tu.tenants as unknown as Restaurant;
+        // 2) Por tenant_users (silenciado si user_id no existe)
+        try {
+            const { data: tu, error: err2 } = await supabase
+                .from("tenant_users")
+                .select("tenant_id, tenants(*)")
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (err2) console.warn("[getMyTenant] tenant_users error:", err2.message);
+            if (tu?.tenants) return tu.tenants as unknown as Restaurant;
+        } catch (e) {
+            console.warn("[getMyTenant] tenant_users lookup error:", e);
+        }
 
         // 3) VIP / SuperAdmin: no es owner pero debe ver el primer tenant activo
-        const firstActive = await getFirstActiveTenant();
-        if (firstActive) {
-            const { data } = await supabase
-                .from("tenants").select("*").eq("id", firstActive).maybeSingle();
-            if (data) {
-                console.log("[getMyTenant] VIP bypass → primer tenant activo:", firstActive);
-                return data as Restaurant;
+        try {
+            const firstActive = await getFirstActiveTenant();
+            if (firstActive) {
+                const { data } = await supabase
+                    .from("tenants").select("*").eq("id", firstActive).maybeSingle();
+                if (data) {
+                    console.log("[getMyTenant] VIP bypass → primer tenant activo:", firstActive);
+                    return data as Restaurant;
+                }
             }
+        } catch (e) {
+            console.warn("[getMyTenant] VIP fallback error:", e);
         }
 
         return null;

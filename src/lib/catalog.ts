@@ -118,7 +118,7 @@ export async function fetchCategories(tenantId?: string | null): Promise<PosCate
     const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
     let query = supabase
         .from("categories")
-        .select("id, name, description, image_url, sort_order, is_active, tenant_id")
+        .select("id, name, sort_order, is_active, tenant_id")
         .eq("is_active", true);
     if (useTenant) {
         query = query.eq("tenant_id", tenantId);
@@ -135,7 +135,7 @@ export async function fetchCategories(tenantId?: string | null): Promise<PosCate
         console.warn("[fetchCategories] 0 categorías con tenant, leyendo TODAS...");
         const fb = await supabase
             .from("categories")
-            .select("id, name, description, image_url, sort_order, is_active, tenant_id")
+            .select("id, name, sort_order, is_active, tenant_id")
             .eq("is_active", true);
         if (fb.error || !fb.data) return [];
         data = fb.data;
@@ -258,13 +258,12 @@ export interface CategoryInput {
 
 export async function saveCategory(input: CategoryInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    // ★ 'description' no existe en la tabla real
     const payload: any = {
         name:        input.name,
-        description: input.description ?? null,
-        image_url:   input.image_url ?? null,
         sort_order:  Number(input.sort_order ?? 0),
         is_active:   input.is_active ?? true,
-        updated_at:  new Date().toISOString(),
+        image_url:   input.image_url ?? null,
     };
     try {
         if (input.id) {
