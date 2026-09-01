@@ -481,13 +481,26 @@ export function ItemsPanel() {
       return;
     }
 
-    const row = {
+    // ★ Payload para CREATE (incluye tenant_id)
+    const insertRow = {
       tenant_id:    realId,
       name:         formData.name.trim(),
       price:        parseFloat(formData.price),
       category:     formData.category,
       image_url:    formData.image,
-      is_available: true,
+      is_active:    true,
+      tax_rate:     10,
+    };
+
+    // ★ Payload para UPDATE (NO incluye tenant_id, no se debe modificar)
+    const updateRow = {
+      name:         formData.name.trim(),
+      price:        parseFloat(formData.price),
+      category:     formData.category,
+      image_url:    formData.image,
+      is_active:    true,
+      tax_rate:     10,
+      updated_at:   new Date().toISOString(),
     };
 
     try {
@@ -496,53 +509,69 @@ export function ItemsPanel() {
         // Si es "prod_*" o "ent_*" (seed), INSERT
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingItem.id);
         if (isUuid) {
-          const { error: updErr } = await supabase
+          console.log("[ItemsPanel] UPDATE producto:", editingItem.id, updateRow);
+          const { data: updated, error: updErr } = await supabase
             .from("products")
-            .update(row)
+            .update(updateRow)
             .eq("id", editingItem.id)
-            .eq("tenant_id", realId);
-          if (updErr) throw updErr;
-          console.log("[ItemsPanel] producto actualizado:", editingItem.id);
-        } else {
-          // Seed item: INSERT
-          const { data: ins, error: insErr } = await supabase
-            .from("products")
-            .insert(row)
             .select()
             .single();
-          if (insErr) throw insErr;
+          if (updErr) {
+            console.error("[ItemsPanel] UPDATE error:", updErr);
+            throw new Error(`UPDATE falló: ${updErr.message} (code ${updErr.code})`);
+          }
+          console.log("[ItemsPanel] ✓ producto actualizado:", updated?.id);
+          // Actualizar state local con los datos frescos
+          setItems(prev => prev.map(it => it.id === editingItem.id ? {
+            ...it,
+            name: updated?.name ?? formData.name.trim(),
+            price: updated?.price ?? parseFloat(formData.price),
+            category: updated?.category ?? formData.category,
+            image: updated?.image_url ?? formData.image,
+          } : it));
+        } else {
+          // Seed item: INSERT (insertRow incluye tenant_id)
+          console.log("[ItemsPanel] INSERT seed migrado a BD:", insertRow);
+          const { data: ins, error: insErr } = await supabase
+            .from("products")
+            .insert(insertRow)
+            .select()
+            .single();
+          if (insErr) {
+            console.error("[ItemsPanel] INSERT error:", insErr);
+            throw new Error(`INSERT falló: ${insErr.message} (code ${insErr.code})`);
+          }
           // Reemplazar el seed con el nuevo UUID
           setItems(prev => prev.map(it => it.id === editingItem.id ? {
-            ...it, id: ins.id, name: row.name, price: row.price,
-            category: row.category, image: row.image_url,
+            ...it, id: ins.id, name: ins.name, price: Number(ins.price),
+            category: ins.category, image: ins.image_url,
           } : it));
-          console.log("[ItemsPanel] seed migrado a BD:", ins.id);
+          console.log("[ItemsPanel] ✓ seed migrado a BD:", ins.id);
           setIsModalOpen(false);
           setSaving(false);
           return;
         }
       } else {
-        // CREATE nuevo
+        // CREATE nuevo (insertRow incluye tenant_id)
+        console.log("[ItemsPanel] INSERT nuevo producto:", insertRow);
         const { data: ins, error: insErr } = await supabase
           .from("products")
-          .insert(row)
+          .insert(insertRow)
           .select()
           .single();
-        if (insErr) throw insErr;
+        if (insErr) {
+          console.error("[ItemsPanel] INSERT error:", insErr);
+          throw new Error(`INSERT falló: ${insErr.message} (code ${insErr.code})`);
+        }
         const newItem: CustomProduct = {
-          id: ins.id, name: row.name, price: row.price,
-          category: row.category, image: row.image_url,
+          id: ins.id, name: ins.name, price: Number(ins.price),
+          category: ins.category, image: ins.image_url,
         };
         setItems(prev => [newItem, ...prev]);
         console.log("[ItemsPanel] producto creado:", ins.id);
       }
-      // Si era edición de un item de BD, actualizar el state
-      if (editingItem) {
-        setItems(prev => prev.map(it => it.id === editingItem.id ? {
-          ...it, name: row.name, price: row.price,
-          category: row.category, image: row.image_url,
-        } : it));
-      }
+      // Si era edición de un item de BD, actualizar el state con datos frescos
+      // (no se hace aquí porque ya se hizo en el bloque del UPDATE con .select().single())
       setIsModalOpen(false);
     } catch (e) {
       console.error("[ItemsPanel] save error:", e);
