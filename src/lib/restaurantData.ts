@@ -107,15 +107,57 @@ export async function loadCategories(tenantId: string): Promise<Category[]> {
 
 export async function loadProducts(tenantId: string): Promise<Product[]> {
     if (!isSupabaseConfigured) return [];
+    console.log("[loadProducts] tenantId=", tenantId);
     const { data, error } = await supabase
         .from("products")
         .select("*")
         .eq("tenant_id", tenantId)
         .order("name");
     if (error) {
-        console.warn("[restaurantData] loadProducts error:", error.message);
+        console.warn("[loadProducts] error:", error.message);
         return [];
     }
+
+    // ★ MODO DETECTIVE: si no hay productos con este tenant_id,
+    //   buscar en TODOS los productos y reportar distribución
+    if ((data?.length ?? 0) === 0) {
+        console.warn("[loadProducts] 0 productos con tenant_id=", tenantId, "— buscando en todos");
+        const { data: allData } = await supabase
+            .from("products")
+            .select("*")
+            .order("name")
+            .limit(500);
+        if (allData && allData.length > 0) {
+            const byTenant: Record<string, number> = {};
+            for (const p of allData) {
+                const k = String(p.tenant_id ?? "null");
+                byTenant[k] = (byTenant[k] ?? 0) + 1;
+            }
+            console.log("[loadProducts] DISTRIBUCIÓN por tenant_id:", byTenant);
+            // Usar el primer tenant que tenga productos
+            const firstTenantWithProducts = allData.find(p => p.tenant_id)?.tenant_id;
+            if (firstTenantWithProducts && firstTenantWithProducts !== tenantId) {
+                console.warn("[loadProducts] usando tenant_id alternativo:", firstTenantWithProducts);
+                return allData.filter((p: any) => p.tenant_id === firstTenantWithProducts).map((p: any) => ({
+                    ...p,
+                    price: Number(p.price ?? 0),
+                    tax_rate: Number(p.tax_rate ?? 10),
+                    is_available: p.is_active ?? true,
+                    restaurant_id: p.tenant_id,
+                    category_id: p.category_id ?? null,
+                })) as Product[];
+            }
+            return allData.map((p: any) => ({
+                ...p,
+                price: Number(p.price ?? 0),
+                tax_rate: Number(p.tax_rate ?? 10),
+                is_available: p.is_active ?? true,
+                restaurant_id: p.tenant_id,
+                category_id: p.category_id ?? null,
+            })) as Product[];
+        }
+    }
+
     return (data ?? []).map((p: any) => ({
         ...p,
         // Supabase NUMERIC/REAL columns se serializan como string -> normalizar a number

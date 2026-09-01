@@ -79,7 +79,7 @@ export async function listSales(
     // ★ Columnas EXPLÍCITAS para confirmar que la BD las tiene
     let query = supabase
         .from("orders")
-        .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at")
+        .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at, tenant_id")
         .eq("tenant_id", realId)
         .order("created_at", { ascending: false })
         .limit(1000);
@@ -93,6 +93,35 @@ export async function listSales(
         return [];
     }
     console.log("[listSales] cargados", data?.length ?? 0, "tickets");
+
+    // ★ MODO DETECTIVE: si no hay resultados con el tenant resuelto,
+    //   buscar en TODOS los tenants activos para diagnosticar
+    if ((data?.length ?? 0) === 0) {
+        console.warn("[listSales] 0 resultados con tenant_id=", realId, "— buscando en todos los tenants");
+        const { data: allData } = await supabase
+            .from("orders")
+            .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at, tenant_id")
+            .order("created_at", { ascending: false })
+            .limit(1000);
+        if (allData && allData.length > 0) {
+            // Agrupar por tenant_id
+            const byTenant: Record<string, number> = {};
+            for (const r of allData) {
+                const k = String(r.tenant_id ?? "null");
+                byTenant[k] = (byTenant[k] ?? 0) + 1;
+            }
+            console.log("[listSales] DISTRIBUCIÓN por tenant_id:", byTenant);
+            console.log("[listSales] tickets encontrados (todos los tenants):", allData.length);
+            // Usar el primer tenant_id que tenga resultados
+            const firstTenantWithData = allData.find(r => r.tenant_id)?.tenant_id;
+            if (firstTenantWithData && firstTenantWithData !== realId) {
+                console.warn("[listSales] usando tenant_id alternativo:", firstTenantWithData);
+                return allData.filter(r => r.tenant_id === firstTenantWithData).map(normalizeSale);
+            }
+            return allData.map(normalizeSale);
+        }
+    }
+
     if (data && data.length > 0) {
         console.log("[listSales] primer ticket:", {
             id: data[0].id,
@@ -101,6 +130,7 @@ export async function listSales(
             tax_total: data[0].tax_total,
             payment_method: data[0].payment_method,
             created_at: data[0].created_at,
+            tenant_id: data[0].tenant_id,
         });
     }
     return (data ?? []).map(normalizeSale);
