@@ -99,9 +99,12 @@ export async function listSales(
     // 2) Query base sin filtro de tenant
     // ★ FIX: quitar 'payment_status' que NO EXISTE en la tabla orders real.
     // Solo pedimos columnas que sabemos que existen.
+    // ★ FIX BUG REAL: tabla orders NO tiene 'items', ni 'series', ni 'verifactu_qr'.
+    // Solo columnas planas. items[] está en la tabla relacionada order_items
+    // (que no necesitamos para el panel de ventas).
     let query = supabase
         .from("orders")
-        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, items, created_at, updated_at, tenant_id, series")
+        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, created_at, updated_at, tenant_id")
         .order("created_at", { ascending: false })
         .limit(1000);
     if (start) query = query.gte("created_at", start);
@@ -156,14 +159,8 @@ export async function listSales(
 }
 
 function extractTableNumber(row: any): string | null {
-    // 1) columna directa
-    if (row.table_number != null) return String(row.table_number);
-    // 2) desde items[0].tableNumber o items[0].table_number
-    if (Array.isArray(row.items) && row.items.length > 0) {
-        const it = row.items[0];
-        const tn = it?.tableNumber ?? it?.table_number;
-        if (tn != null) return String(tn);
-    }
+    // La tabla orders REAL no tiene 'table_number' ni 'items'.
+    // Devolvemos null para que la UI muestre "—" en lugar de crashear.
     return null;
 }
 
