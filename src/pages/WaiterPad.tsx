@@ -405,8 +405,17 @@ export function WaiterPad() {
                     {loading ? (
                         <Skeleton />
                     ) : tables.length === 0 ? (
-                        <div className="py-6 text-center text-[12px] text-slate-400">
-                            No hay mesas configuradas
+                        <div className="py-6 text-center space-y-2">
+                            <div className="text-[12px] text-slate-400">
+                                No hay mesas configuradas
+                            </div>
+                            <button
+                                type="button"
+                                onClick={posDataRefresh}
+                                className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
+                            >
+                                ↻ Reintentar
+                            </button>
                         </div>
                     ) : (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">

@@ -188,15 +188,16 @@ export function CatalogPanel(props: any) {
             onClick={() => props.onAddProduct?.(product)}
             className="w-full rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1.5 flex flex-col justify-between shadow-sm hover:border-blue-400 transition cursor-pointer select-none active:scale-95"
           >
-            <div className="relative w-full h-20 shrink-0 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700">
+            <div className="relative w-full shrink-0 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700" style={{ aspectRatio: '1 / 1' }}>
               <img
                 src={product.image_url || product.image || FALLBACK_IMG}
                 alt={product.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transition-opacity"
                 loading="lazy"
                 onError={(e: any) => {
                   e.target.onerror = null;
                   e.target.src = FALLBACK_IMG;
+                  e.target.classList.add("opacity-50");
                 }}
               />
               <span className="absolute bottom-1 left-1 bg-slate-900/90 text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow">
