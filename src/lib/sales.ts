@@ -286,13 +286,11 @@ export function computeMetrics(records: SaleRecord[]): SalesMetrics {
 export async function cancelSale(id: string): Promise<boolean> {
     if (!supabase) return false;
     console.log("[cancelSale] anulando ticket:", id);
-    // ★ Solo columnas que SÍ existen en la tabla real
+    // ★ Solo columnas que EXISTEN en la tabla real
+    //   (no enviar updated_at: 'column does not exist')
     const { error } = await supabase
         .from("orders")
-        .update({
-            status: "cancelled",
-            updated_at: new Date().toISOString(),
-        })
+        .update({ status: "cancelled" })
         .eq("id", id);
     if (error) {
         console.error("[cancelSale] error:", error.message, error.code);

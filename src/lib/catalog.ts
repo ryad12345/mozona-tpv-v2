@@ -8,7 +8,7 @@
 import { supabase } from "./supabase";
 import { resolveRealTenantId } from "./waiters";
 
-const FALLBACK_TENANT_ID = "651ce807-f124-4c55-86c5-5ded54e9e6b1";
+const FALLBACK_TENANT_ID = "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
 
 export interface PosProduct {
     id:            string;
@@ -187,47 +187,40 @@ export interface ProductInput {
 
 export async function saveProduct(input: ProductInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    // ★ v1.9.4: resolver tenant_id SIEMPRE
+    // ★ v1.9.11: payload MINIMO solo con columnas que EXISTEN
+    //   La tabla real NO tiene: created_at, updated_at, description, image_url, tax_rate
     const realTenantId = (await resolveRealTenantId(null)) || FALLBACK_TENANT_ID;
     const payload: any = {
-        name:          input.name,
-        price:         Number(input.price),
-        category:      input.category ?? null,
-        category_id:   input.category_id ?? null,
-        description:   input.description ?? null,
-        image_url:     input.image_url ?? null,
-        is_active:     input.is_active ?? true,
-        tax_rate:      Number(input.tax_rate ?? 10),
-        tenant_id:     realTenantId,
-        updated_at:    new Date().toISOString(),
+        name:         String(input.name).trim(),
+        price:        Number(input.price),
+        category_id:  input.category_id ?? null,
+        category:     input.category ?? null,
+        is_active:    input.is_active ?? true,
+        tenant_id:    realTenantId,
     };
-    if (!input.id) {
-        payload.created_at = new Date().toISOString();
-    }
+    console.log("[saveProduct] payload:", payload);
     try {
         if (input.id) {
             const { data, error } = await supabase
                 .from("products")
                 .update(payload)
                 .eq("id", input.id)
-                .select()
-                .single();
+                .select();
             if (error) {
-                console.error("[saveProduct] UPDATE error:", error.message);
+                console.error("[saveProduct] UPDATE error:", error.code, error.message);
                 return { ok: false, error: error.message };
             }
-            return { ok: true, id: (data as any)?.id };
+            return { ok: true, id: (data as any)?.[0]?.id };
         } else {
             const { data, error } = await supabase
                 .from("products")
                 .insert([payload])
-                .select()
-                .single();
+                .select();
             if (error) {
-                console.error("[saveProduct] INSERT error:", error.message);
+                console.error("[saveProduct] INSERT error:", error.code, error.message);
                 return { ok: false, error: error.message };
             }
-            return { ok: true, id: (data as any)?.id };
+            return { ok: true, id: (data as any)?.[0]?.id };
         }
     } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
