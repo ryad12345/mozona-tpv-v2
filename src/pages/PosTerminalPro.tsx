@@ -601,129 +601,124 @@ export function PosTerminalPro() {
         method: PaymentMethod,
         withVeriFactu: boolean
     ) => {
-        if (!pos.state.selectedTableId || pos.total <= 0 || pos.state.isProcessing) return;
+        console.log("★", "★", "★ ¡¡COBRANDO!! ★", "★", "★", new Date().toISOString());
+        console.log("[performCharge] inicio, selectedTableId=", pos.state.selectedTableId, "total=", pos.total);
+
+        if (!pos.state.selectedTableId || pos.total <= 0 || pos.state.isProcessing) {
+            console.warn("[performCharge] cancelado: sin mesa, sin total, o ya procesando");
+            return;
+        }
 
         pos.dispatch({ type: "SET_PROCESSING", processing: true });
+
+        // ★★★ PASO 0: CAPTURAR MESA Y TOTALES ANTES DE NADA ★★★
+        const tableIdSelected = pos.state.selectedTableId;
+        const table = tables.find(t => t.id === tableIdSelected);
+        if (!table) {
+            console.error("[performCharge] mesa no encontrada en tables[]");
+            setToast({ kind: "err", msg: "Mesa no encontrada" });
+            pos.dispatch({ type: "SET_PROCESSING", processing: false });
+            return;
+        }
+        const tableNum = String(table.table_number ?? "");
+        const items    = pos.state.orderItems;
+        const sub      = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
+        const tax      = items.reduce((a, it) => {
+            const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
+            return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
+        }, 0);
+
+        console.log("[performCharge] mesa=", tableNum, "items=", items.length, "subtotal=", round2(sub - tax), "iva=", round2(tax), "total=", round2(sub));
+
+        const invoiceId = `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const series    = "T26";
+        const number    = Math.floor(Math.random() * 99999) + 1;
+        const invoice: InvoicePaidData = {
+            invoiceId,
+            orderId:      tableIdSelected,
+            series,
+            number,
+            total:        pos.total,
+            paymentMethod: method,
+            tableId:      table.id,
+            tableNumber:  table.table_number,
+            qrUrl:        `https://www2.agenciatributaria.gob.es/wlpl/inwinvoc/...?nif=B12345678&numserie=${series}${String(number).padStart(8,"0")}&fecha=26-08-2026&importe=${pos.total.toFixed(2)}`,
+            verifactuHash:"0".repeat(64),
+        };
+
+        // ★★★ PASO 1: LIBERAR MESA LOCALMENTE PRIMERO (SIEMPRE) ★★★
+        //    Independientemente de si el INSERT funciona, la mesa
+        //    se libera localmente para que el usuario pueda continuar.
+        console.log("[performCharge] ★ paso 1: LIBERAR MESA LOCALMENTE ★");
+        setTableStatuses(prev => {
+            const next = { ...prev };
+            next[table.id]               = "FREE";
+            next[`local-table-${tableNum}`] = "FREE";
+            next[tableNum]               = "FREE";
+            return next;
+        });
+        pos.dispatch({ type: "CLEAR_ORDER" });
+        pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
+        pos.dispatch({ type: "NUMPAD_RESET" });
+        playChargeSuccess();
+        console.log("[performCharge] ✓ mesa liberada y carrito vaciado");
+
+        // ★★★ PASO 2: WS broadcast (no bloquea) ★★★
+        try { ws.broadcastInvoicePaid(invoice); } catch {}
+
+        // ★★★ PASO 3: PERSISTIR EN BD (3 estrategias) ★★★
+        let persistOk = false;
+        let orderIdCreated: string | null = null;
+        let persistError: string | null = null;
         try {
-            // 1) En producción: invoke('verifactu_issue_invoice', { ... })
-            //    Por simplicidad aquí simulamos la respuesta.
-            await new Promise(r => setTimeout(r, 600));
-
-            const table = tables.find(t => t.id === pos.state.selectedTableId);
-            if (!table) throw new Error("Mesa no encontrada");
-
-            const invoiceId = `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const series    = "T26";
-            const number    = Math.floor(Math.random() * 99999) + 1;
-            const invoice: InvoicePaidData = {
-                invoiceId,
-                orderId:      pos.state.selectedTableId,
-                series,
-                number,
-                total:        pos.total,
-                paymentMethod: method,
-                tableId:      table.id,
-                tableNumber:  table.table_number,
-                qrUrl:        `https://www2.agenciatributaria.gob.es/wlpl/inwinvoc/...?nif=B12345678&numserie=${series}${String(number).padStart(8,"0")}&fecha=26-08-2026&importe=${pos.total.toFixed(2)}`,
-                verifactuHash:"0".repeat(64),
-            };
-
-            // 2) Difundir por WS
-            ws.broadcastInvoicePaid(invoice);
-
-            // 3) ★★★ CICLO DE COBRO ATÓMICO ★★★
-            //    Usa executeCheckout que hace todo en un solo flujo:
-            //    INSERT orders + DELETE open_orders + UPDATE dining_tables
-            let persistError: string | null = null;
-            let persistOk = false;
-            let orderIdCreated: string | null = null;
-            try {
-                const items = pos.state.orderItems;
-                const sub = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
-                const tax = items.reduce((a, it) => {
-                    const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
-                    return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
-                }, 0);
-                const { executeCheckout } = await import("../lib/checkout");
-                const result = await executeCheckout({
-                    tenantId:      restaurant?.id ?? null,
-                    tableId:       table.id,
-                    tableNumber:   table.table_number,
-                    items:         items,
-                    subtotal:      round2(sub - tax),
-                    taxTotal:      round2(tax),
-                    total:         round2(sub),
-                    paymentMethod: method ?? "cash",
-                    waiterName:    auth.activeWaiter?.name ?? null,
-                    series:        series,
-                });
-                if (result.ok) {
-                    persistOk = true;
-                    orderIdCreated = result.orderId ?? null;
-                    console.log("[PosTerminalPro] executeCheckout OK, orderId=", orderIdCreated);
-                } else {
-                    persistError = `${result.error}${result.errorCode ? ` (code ${result.errorCode})` : ""} [step: ${result.step}]`;
-                    console.error("[PosTerminalPro] executeCheckout FAILED:", persistError);
-                }
-            } catch (e) {
-                console.error("[PosTerminalPro] executeCheckout exception:", e);
-                persistError = e instanceof Error ? e.message : String(e);
-            }
-
-            // 4) UI: LIBERAR la mesa inmediatamente (FREE)
-            //    (antes era DIRTY, pero el usuario espera ver la mesa
-            //     libre tras cobrar para poder abrir otra comanda)
-            setTableStatuses(prev => {
-                const next = { ...prev };
-                // ★★★ LIMPIEZA TOTAL: garantizar que la mesa queda interactiva ★★★
-                //    Borrar TODAS las claves relacionadas con esta mesa
-                const tnum = String(table.table_number ?? "");
-                const keysToDelete: string[] = [
-                    table.id,
-                    `local-table-${tnum}`,
-                    tnum,
-                ];
-                for (const k of keysToDelete) {
-                    next[k] = "FREE";
-                }
-                return next;
+            const { executeCheckout } = await import("../lib/checkout");
+            const result = await executeCheckout({
+                tenantId:      restaurant?.id ?? null,
+                tableId:       table.id,
+                tableNumber:   table.table_number,
+                items:         items,
+                subtotal:      round2(sub - tax),
+                taxTotal:      round2(tax),
+                total:         round2(sub),
+                paymentMethod: method ?? "cash",
+                waiterName:    auth.activeWaiter?.name ?? null,
+                series:        series,
             });
-            console.log("[PosTerminalPro] mesa liberada:", table.id, "table_number=", table.table_number);
-            playChargeSuccess();
-            // ★★★ RESET TOTAL DEL CARRITO Y MESA ★★★
-            pos.dispatch({ type: "CLEAR_ORDER" });                  // lines = []
-            pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null }); // mesa deseleccionada
-            pos.dispatch({ type: "NUMPAD_RESET" });                  // numpad a 0
-            console.log("[PosTerminalPro] carrito reseteado y mesa deseleccionada");
-
-            // (El UPDATE de dining_tables ya lo hace executeCheckout en el paso 3)
-
-            const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
-            const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;
-            if (persistOk) {
-                setToast({
-                    kind: "ok",
-                    msg: `${verb} · Mesa ${table.table_number} · ${seriesStr} · Guardado en BD`,
-                });
-            } else if (persistError) {
-                setToast({
-                    kind: "err",
-                    msg: `${verb} PERO NO se guardó en ventas: ${persistError}.  ` +
-                         `Ve a Settings → Ventas y comprueba que la tabla 'orders' existe (database/12_open_orders.sql).`,
-                });
+            if (result.ok) {
+                persistOk = true;
+                orderIdCreated = result.orderId ?? null;
+                console.log("[performCharge] ✓ executeCheckout OK, orderId=", orderIdCreated);
             } else {
-                setToast({
-                    kind: "ok",
-                    msg: `${verb} · Mesa ${table.table_number} · ${seriesStr} (sin persistir: VIP sin tenant)`,
-                });
+                persistError = `${result.error}${result.errorCode ? ` (code ${result.errorCode})` : ""} [step: ${result.step}]`;
+                console.error("[performCharge] ✗ executeCheckout FAILED:", persistError);
             }
         } catch (e) {
-            playError();
-            setToast({ kind: "err", msg: e instanceof Error ? e.message : "Error al cobrar" });
-        } finally {
-            pos.dispatch({ type: "SET_PROCESSING", processing: false });
+            console.error("[performCharge] ✗ executeCheckout exception:", e);
+            persistError = e instanceof Error ? e.message : String(e);
         }
-    }, [pos, tables, ws]);
+
+        // ★★★ PASO 4: TOAST FINAL ★★★
+        const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
+        const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;
+        if (persistOk) {
+            setToast({
+                kind: "ok",
+                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · Guardado en BD`,
+            });
+        } else if (persistError) {
+            setToast({
+                kind: "err",
+                msg: `⚠ ${verb} · Mesa ${tableNum} · ${round2(sub)} € · NO guardado en BD: ${persistError.slice(0, 80)}`,
+            });
+        } else {
+            setToast({
+                kind: "ok",
+                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · (sin tenant: solo local)`,
+            });
+        }
+        console.log("[performCharge] FIN. persistOk=", persistOk, "orderId=", orderIdCreated);
+        pos.dispatch({ type: "SET_PROCESSING", processing: false });
+    }, [pos, tables, ws, restaurant, auth]);
 
     // -----------------------------------------------------------------
     // Acciones del numpad
