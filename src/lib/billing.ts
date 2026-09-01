@@ -92,12 +92,19 @@ export async function applyPaidSessionToTenant(
     if (!isSupabaseConfigured) return null;
 
     try {
-        // 1) buscar tenant existente del usuario
-        const existing = await supabase
-            .from("tenants")
-            .select("*")
-            .eq("owner_id", userId)
-            .maybeSingle();
+        // 1) buscar tenant existente del usuario (silenciado si owner_id no existe)
+        let existing: any = { data: null };
+        try {
+            const r = await supabase
+                .from("tenants")
+                .select("*")
+                .eq("owner_id", userId)
+                .maybeSingle();
+            existing = r;
+            if (r.error) console.warn("[billing] owner_id lookup falló:", r.error.message);
+        } catch (e) {
+            console.warn("[billing] owner_id exception:", e);
+        }
 
         const plan = info.plan;
         const stripeCustomer = info.customer_id ?? null;
@@ -114,15 +121,33 @@ export async function applyPaidSessionToTenant(
             return { id: existing.data.id, plan };
         }
 
-        const ins = await supabase.from("tenants").insert({
-            owner_id:             userId,
-            name:                 restaurantName || "Mi Restaurante",
-            plan,
-            subscription_status:  "active",
-            stripe_customer_id:   stripeCustomer,
-            stripe_subscription_id: stripeSub,
-            onboarding_completed: false,
-        }).select().single();
+        // INSERT con fallback si owner_id no existe
+        let ins: any = { data: null, error: null };
+        try {
+            ins = await supabase.from("tenants").insert({
+                owner_id:             userId,
+                name:                 restaurantName || "Mi Restaurante",
+                plan,
+                subscription_status:  "active",
+                stripe_customer_id:   stripeCustomer,
+                stripe_subscription_id: stripeSub,
+                onboarding_completed: false,
+            }).select().single();
+            if (ins.error && /owner_id|column.*does not exist/i.test(ins.error.message)) {
+                // Fallback: insertar sin owner_id
+                console.warn("[billing] owner_id no existe, insertando sin él");
+                ins = await supabase.from("tenants").insert({
+                    name:                 restaurantName || "Mi Restaurante",
+                    plan,
+                    subscription_status:  "active",
+                    stripe_customer_id:   stripeCustomer,
+                    stripe_subscription_id: stripeSub,
+                    onboarding_completed: false,
+                }).select().single();
+            }
+        } catch (e) {
+            ins.error = e instanceof Error ? e : new Error(String(e));
+        }
 
         if (ins.error) {
             console.warn("[billing] applyPaidSessionToTenant insert error:", ins.error.message);
