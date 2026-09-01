@@ -393,6 +393,64 @@ export function PosTerminalPro() {
         };
     }, [restaurant?.id]);
 
+    // ★ Realtime: suscripción a dining_tables
+    //    Si otro dispositivo (camarero/admin) cambia el estado de
+    //    una mesa, lo reflejamos al instante
+    useEffect(() => {
+        if (!restaurant?.id || !supabase) return;
+        let cancelled = false;
+        let channel: ReturnType<typeof supabase.channel> | null = null;
+        (async () => {
+            const realId = await resolveRealTenantId(restaurant.id);
+            if (!realId || cancelled) return;
+            const channelName = `tpv-tables-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            console.log("[PosTerminalPro] realtime tables canal:", channelName);
+            channel = supabase
+                .channel(channelName)
+                .on(
+                    "postgres_changes",
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "dining_tables",
+                    },
+                    (payload) => {
+                        if (cancelled) return;
+                        const tbl = (payload.new ?? payload.old) as any;
+                        console.log("[PosTerminalPro] realtime dining_tables:", payload.eventType, "id=", tbl?.id, "table_number=", tbl?.table_number, "status=", tbl?.status);
+                        // Mapear status de Supabase a TableStatus
+                        const mapStatus = (s: string | null | undefined): "FREE" | "OCCUPIED" | "DIRTY" | "BILL_REQUESTED" | "RESERVED" => {
+                            const sn = (s ?? "").toLowerCase();
+                            if (sn === "free" || sn === "available") return "FREE";
+                            if (sn === "occupied") return "OCCUPIED";
+                            if (sn === "dirty") return "DIRTY";
+                            if (sn === "bill_requested" || sn === "billed") return "BILL_REQUESTED";
+                            if (sn === "reserved") return "RESERVED";
+                            return "FREE";
+                        };
+                        const mapped = mapStatus(tbl?.status);
+                        const tid = tbl?.id;
+                        const tnumber = String(tbl?.table_number ?? "");
+                        if (tid) {
+                            setTableStatuses(prev => ({ ...prev, [tid]: mapped }));
+                        }
+                        if (tnumber) {
+                            setTableStatuses(prev => ({ ...prev, [`local-table-${tnumber}`]: mapped }));
+                        }
+                    },
+                );
+            channel.subscribe((status) => {
+                console.log("[PosTerminalPro] tables realtime status:", status);
+            });
+        })();
+        return () => {
+            cancelled = true;
+            if (channel) {
+                void supabase.removeChannel(channel);
+            }
+        };
+    }, [restaurant?.id]);
+
     // ★ Realtime: suscripción a postgres_changes en open_orders
     useEffect(() => {
         if (!restaurant?.id || !supabase) return;
