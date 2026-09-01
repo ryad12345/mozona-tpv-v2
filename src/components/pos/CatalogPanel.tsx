@@ -73,19 +73,35 @@ export function CatalogPanel(props: any) {
     return matchesCategory && matchesSearch;
   });
 
-  // ★ Categorías DINÁMICAS: derivar de los productos cargados
-  //    (antes había un array hardcodeado que no incluía 'Sándwichs')
-  const dynamicCategories = Array.from(
-    new Set(
-      productsList
-        .map((p: any) => (p.category ?? "").toString().trim())
-        .filter(Boolean)
-    )
-  ).sort();
-  const categoryList = [
-    { id: 'all', name: 'Todo' },
-    ...dynamicCategories.map(c => ({ id: c, name: c })),
-  ];
+  // ★ Categorías 100% DINÁMICAS desde Supabase
+  //    Prioridad: props.categories (de usePosData → fetchCategories)
+  //    Fallback: derivar de productos (solo si no hay categorías)
+  const propsCats = Array.isArray(props.categories) ? props.categories : [];
+  const categoryList = (() => {
+    if (propsCats.length > 0) {
+      return [
+        { id: 'all', name: 'Todo' },
+        ...propsCats
+          .filter((c: any) => c && (c.name ?? '').toString().trim() !== '')
+          .map((c: any) => ({
+            id: c.id ?? c.name,
+            name: c.name,
+          })),
+      ];
+    }
+    // Fallback: derivar de productos
+    const dynamicCategories = Array.from(
+      new Set(
+        productsList
+          .map((p: any) => (p.category ?? "").toString().trim())
+          .filter(Boolean)
+      )
+    ).sort();
+    return [
+      { id: 'all', name: 'Todo' },
+      ...dynamicCategories.map(c => ({ id: c, name: c })),
+    ];
+  })();
 
   return (
     <div className="relative w-full h-full flex flex-col p-2 bg-slate-50/50 dark:bg-slate-900/50 rounded-xl overflow-hidden">

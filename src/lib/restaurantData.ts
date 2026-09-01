@@ -89,6 +89,7 @@ async function getFirstActiveTenant(): Promise<string | null> {
 
 export async function loadCategories(tenantId: string): Promise<Category[]> {
     if (!isSupabaseConfigured) return [];
+    // 1) Con tenant
     const { data, error } = await supabase
         .from("categories")
         .select("*")
@@ -98,7 +99,28 @@ export async function loadCategories(tenantId: string): Promise<Category[]> {
         console.warn("[restaurantData] loadCategories error:", error.message);
         return [];
     }
-    return (data ?? []) as Category[];
+    if (data && data.length > 0) {
+        console.log("[loadCategories] ✓", data.length, "con tenant");
+        return data as Category[];
+    }
+    // 2) FALLBACK: leer TODAS las categorías activas
+    console.warn("[loadCategories] 0 con tenant, leyendo todas...");
+    const { data: allData } = await supabase
+        .from("categories")
+        .select("*")
+        .order("sort_order");
+    if (!allData) return [];
+    // Tenant dominante
+    const byTenant: Record<string, number> = {};
+    for (const c of allData) {
+        const k = String(c.tenant_id ?? "null");
+        byTenant[k] = (byTenant[k] ?? 0) + 1;
+    }
+    const dominant = Object.entries(byTenant).sort(([, a], [, b]) => b - a)[0]?.[0];
+    if (dominant && dominant !== "null") {
+        return allData.filter(c => String(c.tenant_id) === dominant) as Category[];
+    }
+    return allData as Category[];
 }
 
 // ---------------------------------------------------------------------
