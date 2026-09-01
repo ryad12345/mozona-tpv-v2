@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
+import { saveProduct, deleteProduct, type ProductInput } from '../../lib/catalog';
 import { resolveRealTenantId } from '../../lib/waiters';
 
 export interface CustomProduct {
@@ -360,7 +361,8 @@ export function ItemsPanel() {
     name: '',
     price: '',
     category: 'Entrantes',
-    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500'
+    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500',
+    description: '',
   });
 
   const STORAGE_KEY = `pos_custom_products_${TARGET_USER_EMAIL}`;
@@ -430,7 +432,8 @@ export function ItemsPanel() {
       name: '',
       price: '',
       category: 'Entrantes',
-      image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500'
+      image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500',
+      description: '',
     });
     setIsModalOpen(true);
   };
@@ -441,7 +444,8 @@ export function ItemsPanel() {
       name: item.name,
       price: item.price.toString(),
       category: item.category,
-      image: item.image
+      image: item.image,
+      description: item.description ?? '',
     });
     setIsModalOpen(true);
   };
@@ -458,7 +462,7 @@ export function ItemsPanel() {
   };
 
   // -------------------------------------------------------------------
-  // Guardar producto (CREATE o UPDATE) en Supabase
+  // Guardar producto (CREATE o UPDATE) en Supabase vía saveProduct
   // -------------------------------------------------------------------
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -467,112 +471,51 @@ export function ItemsPanel() {
     setSaving(true);
     setError(null);
 
-    const realId = await resolveRealTenantId(auth.tenant?.id);
-    if (!supabase) {
-      setError("Supabase no está configurado");
-      setSaving(false);
-      return;
-    }
-    // realId siempre retorna string (resolveRealTenantId tiene 5 fallbacks)
-    // Si fuera el zero UUID, significa que la BD está vacía → mostrar error
-    if (!realId || realId === "00000000-0000-0000-0000-000000000000") {
-      setError("No se pudo resolver el tenant_id.  Verifica que existe al menos un tenant en la BD.");
-      setSaving(false);
-      return;
-    }
-
-    // ★ Payload para CREATE (incluye tenant_id)
-    const insertRow = {
-      tenant_id:    realId,
-      name:         formData.name.trim(),
-      price:        parseFloat(formData.price),
-      category:     formData.category,
-      image_url:    formData.image,
-      is_active:    true,
-      tax_rate:     10,
-    };
-
-    // ★ Payload para UPDATE (NO incluye tenant_id, no se debe modificar)
-    const updateRow = {
-      name:         formData.name.trim(),
-      price:        parseFloat(formData.price),
-      category:     formData.category,
-      image_url:    formData.image,
-      is_active:    true,
-      tax_rate:     10,
-      updated_at:   new Date().toISOString(),
-    };
-
     try {
       const isEditing = !!editingItem;
       const isUuid = isEditing && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingItem!.id);
 
-      console.log("[DEBUG ItemsPanel] Intentando guardar:", {
-        isEditing,
-        isUuid,
-        isSeed: isEditing && !isUuid,
-        payload: isEditing
-          ? (isUuid ? updateRow : insertRow)
-          : insertRow,
-        editingId: editingItem?.id,
-      });
+      const payload: ProductInput = {
+        id:          isUuid ? editingItem!.id : undefined,
+        name:        formData.name.trim(),
+        price:       parseFloat(formData.price),
+        category:    formData.category,
+        description: formData.description ?? null,
+        image_url:   formData.image || null,
+        is_active:   true,
+        tax_rate:    10,
+      };
 
-      let result;
-      if (isEditing && isUuid) {
-        // UPDATE en BD
-        result = await supabase
-          .from("products")
-          .update(updateRow)
-          .eq("id", editingItem!.id)
-          .select();
-      } else if (isEditing && !isUuid) {
-        // Seed item: INSERT para crear fila en BD
-        result = await supabase
-          .from("products")
-          .insert([insertRow])
-          .select();
-      } else {
-        // CREATE nuevo
-        result = await supabase
-          .from("products")
-          .insert([insertRow])
-          .select();
-      }
+      console.log("[DEBUG ItemsPanel] saveProduct payload:", payload);
 
-      const { data, error } = result;
+      const result = await saveProduct(payload);
 
-      if (error) {
-        console.error("[DEBUG ItemsPanel] ERROR SUPABASE:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setError(`Error Supabase [${error.code}]: ${error.message}`);
+      if (!result.ok) {
+        console.error("[DEBUG ItemsPanel] saveProduct error:", result.error);
+        setError(`Error al guardar: ${result.error}`);
         return;
       }
 
-      console.log("[DEBUG ItemsPanel] Guardado exitoso en Supabase:", data);
+      console.log("[DEBUG ItemsPanel] Guardado exitoso en Supabase, id:", result.id);
 
-      // Actualizar state local con los datos frescos del servidor
-      if (data && data.length > 0) {
-        const fresh = data[0];
+      // Actualizar state local con los datos frescos
+      if (result.id) {
         if (isEditing) {
           setItems(prev => prev.map(it => it.id === editingItem!.id ? {
             ...it,
-            id: fresh.id,
-            name: fresh.name,
-            price: Number(fresh.price),
-            category: fresh.category,
-            image: fresh.image_url ?? it.image,
+            id: result.id!,
+            name: payload.name,
+            price: Number(payload.price),
+            category: payload.category ?? it.category ?? "—",
+            image: payload.image_url ?? it.image,
           } : it));
         } else {
           const newItem: CustomProduct = {
-            id: fresh.id,
-            name: fresh.name,
-            price: Number(fresh.price),
-            category: fresh.category,
-            image: fresh.image_url,
+            id: result.id,
+            name: payload.name,
+            price: Number(payload.price),
+            category: payload.category ?? "—",
+            image: payload.image_url ?? "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500",
           };
           setItems(prev => [newItem, ...prev]);
         }
@@ -587,23 +530,18 @@ export function ItemsPanel() {
   };
 
   // -------------------------------------------------------------------
-  // Eliminar producto de Supabase
+  // Eliminar producto de Supabase vía deleteProduct
   // -------------------------------------------------------------------
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este producto?  Se borrará de Supabase.")) return;
     try {
-      const realId = await resolveRealTenantId(auth.tenant?.id);
-      if (realId && supabase) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        if (isUuid) {
-          const { error: delErr } = await supabase
-            .from("products")
-            .delete()
-            .eq("id", id)
-            .eq("tenant_id", realId);
-          if (delErr) throw delErr;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      if (isUuid) {
+        const result = await deleteProduct(id, true);
+        if (!result.ok) {
+          setError(`Error al eliminar: ${result.error}`);
+          return;
         }
-        // Si NO es UUID, es un item seed: solo lo quitamos del state
       }
       setItems(prev => prev.filter(it => it.id !== id));
       console.log("[ItemsPanel] producto eliminado:", id);
