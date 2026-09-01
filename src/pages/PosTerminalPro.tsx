@@ -824,6 +824,7 @@ export function PosTerminalPro() {
                     role: auth.activeWaiter?.role ?? "—",
                 }}
                 onOpenSettings={() => nav("/settings")}
+                onOpenCashRegister={() => nav("/cash-register")}
                 onOpenCustomerDisplay={() => setToast({ kind: "ok", msg: "Pantalla cliente: pendiente de implementar" })}
                 onOpenMenuScanner={() => setToast({ kind: "ok", msg: "Escáner IA: pendiente de implementar" })}
                 onShowQR={() => setShowQR(true)}

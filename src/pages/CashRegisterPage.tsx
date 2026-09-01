@@ -17,9 +17,12 @@ export function CashRegisterPage() {
     const navigate = useNavigate();
     const [summary, setSummary] = useState<CashSummary | null>(null);
     const [loading, setLoading] = useState(false);
-    const [saved, setSaved]   = useState<{ ok: boolean; id?: string } | null>(null);
+    const [saved, setSaved]   = useState<{ ok: boolean; id?: string; diff?: number } | null>(null);
     const [notes, setNotes]   = useState("");
     const [error, setError]   = useState<string | null>(null);
+    // ★ Inputs de cuadre (arqueo)
+    const [initialCash, setInitialCash] = useState<string>("0");
+    const [countedCash, setCountedCash] = useState<string>("");
 
     const tenantId = auth.tenant?.id ?? null;
     const closedBy = auth.user?.email ?? "—";
@@ -30,6 +33,12 @@ export function CashRegisterPage() {
         try {
             const s = await getDailySummary(tenantId);
             setSummary(s);
+            // Auto-rellenar countedCash con el esperado como ayuda
+            const cashSales = s.byPayment["cash"]?.total ?? 0;
+            const expected = (parseFloat(initialCash) || 0) + cashSales;
+            if (!countedCash) {
+                setCountedCash(expected.toFixed(2));
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         }
@@ -38,15 +47,27 @@ export function CashRegisterPage() {
 
     useEffect(() => { void load(); }, [tenantId]);
 
+    // ★ Cálculo en tiempo real de la diferencia
+    const cashSales = summary?.byPayment["cash"]?.total ?? 0;
+    const initialN = parseFloat(initialCash) || 0;
+    const countedN = parseFloat(countedCash) || 0;
+    const expectedN = +(initialN + cashSales).toFixed(2);
+    const diffN     = +(countedN - expectedN).toFixed(2);
+
     const handleClose = async () => {
         if (!summary) return;
         if (!confirm("¿Confirmar cierre de caja? Esta acción no se puede deshacer.")) return;
         setLoading(true);
-        const result = await saveCashClosure(summary, closedBy, notes);
-        setSaved({ ok: result.ok, id: result.id });
+        const result = await saveCashClosure({
+            summary,
+            closedBy,
+            notes,
+            initialCash: initialN,
+            countedCash: countedN,
+        });
+        setSaved({ ok: result.ok, id: result.id, diff: result.diff });
         setLoading(false);
         if (result.ok) {
-            // Recargar para que muestre el estado "cerrado"
             await load();
         }
     };
@@ -135,6 +156,77 @@ export function CashRegisterPage() {
                         </table>
                     </section>
                 )}
+
+                {/* ★ ARQUEO DE CAJA (inputs de cuadre) ★ */}
+                <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+                    <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                        Arqueo de caja
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                Fondo inicial
+                            </label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={initialCash}
+                                onChange={e => setInitialCash(e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-lg p-2 text-sm font-bold"
+                                placeholder="0,00"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                Recuento real (efectivo)
+                            </label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={countedCash}
+                                onChange={e => setCountedCash(e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-lg p-2 text-sm font-bold"
+                                placeholder="0,00"
+                            />
+                        </div>
+                    </div>
+
+                    {/* ★ Diferencia en tiempo real */}
+                    <div className={`
+                        mt-3 p-3 rounded-xl border-2
+                        ${Math.abs(diffN) < 0.01
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                            : diffN > 0
+                                ? "bg-amber-50 border-amber-300 text-amber-800"
+                                : "bg-rose-50 border-rose-300 text-rose-800"}
+                    `}>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                                <div className="text-[10px] font-bold uppercase opacity-70">Esperado</div>
+                                <div className="text-base font-black mt-0.5">{fmtEUR(expectedN)}</div>
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold uppercase opacity-70">Contado</div>
+                                <div className="text-base font-black mt-0.5">{fmtEUR(countedN)}</div>
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold uppercase opacity-70">Diferencia</div>
+                                <div className="text-lg font-black mt-0.5">
+                                    {diffN > 0 ? "+" : ""}{fmtEUR(diffN)}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-2 text-[11px] text-center font-bold">
+                            {Math.abs(diffN) < 0.01
+                                ? "✓ Cuadra perfectamente"
+                                : diffN > 0
+                                    ? `⚠ Sobran ${fmtEUR(diffN)}`
+                                    : `✗ Faltan ${fmtEUR(Math.abs(diffN))}`}
+                        </div>
+                    </div>
+                </section>
 
                 {/* Notas */}
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">

@@ -5,7 +5,7 @@
 import type { Restaurant, ConnectionStatus } from "../lib/types";
 import {
     IconStore, IconShield, IconUsb, IconWifi, IconSettings,
-    IconUser, IconBell, IconLock, IconPrint, IconQr,
+    IconUser, IconBell, IconLock, IconPrint, IconQr, IconCash,
 } from "./icons";
 import { cn } from "../lib/cn";
 
@@ -29,6 +29,7 @@ export interface PosTopBarProps {
     onOpenMenuScanner?:    () => void;
     onShowQR?:            () => void;
     onLogout?:            () => void;
+    onOpenCashRegister?:  () => void;   // ★ Acceso directo al arqueo
     pendingAlerts?: number;
 }
 
@@ -39,7 +40,7 @@ export interface PosTopBarProps {
 export function PosTopBar({
     restaurant, connection, lanEndpoint, localIp, version = "0.1.0",
     cashier = { name: "Cajero 01", role: "Camarero" },
-    onOpenSettings, onOpenCustomerDisplay, onOpenMenuScanner, onShowQR, onLogout,
+    onOpenSettings, onOpenCustomerDisplay, onOpenMenuScanner, onShowQR, onLogout, onOpenCashRegister,
     pendingAlerts = 0,
 }: PosTopBarProps) {
     const initial = restaurant?.business_name?.[0] ?? "M";
@@ -175,6 +176,15 @@ export function PosTopBar({
                 <IconButton onClick={onOpenSettings} title="Ajustes">
                     <IconSettings size={18} strokeWidth={1.8} />
                 </IconButton>
+                {onOpenCashRegister && (
+                    <IconButton
+                        onClick={onOpenCashRegister}
+                        title="Cierre de caja / Arqueo"
+                        className="hidden sm:inline-flex"
+                    >
+                        <IconCash size={18} strokeWidth={1.8} />
+                    </IconButton>
+                )}
                 {onLogout && (
                     <IconButton onClick={onLogout} title="Cerrar sesión">
                         <IconUser size={18} strokeWidth={1.8} />

@@ -6,20 +6,25 @@ import { supabase } from "./supabase";
 import { resolveRealTenantId } from "./waiters";
 
 export interface CashClosure {
-    id?:              string;
-    tenant_id:        string;
-    closed_by:        string;
-    closed_at:        string;
-    period_start:     string;
-    period_end:       string;
-    ticket_count:     number;
-    total_revenue:    number;
-    total_tax:        number;
-    total_subtotal:   number;
-    by_payment:       Record<string, { count: number; total: number }>;
-    cancelled_count:  number;
-    cancelled_total:  number;
-    notes?:           string | null;
+    id?:                string;
+    tenant_id:          string;
+    closed_by:          string;
+    closed_at:          string;
+    period_start:       string;
+    period_end:         string;
+    ticket_count:       number;
+    total_revenue:      number;
+    total_tax:          number;
+    total_subtotal:     number;
+    by_payment:         Record<string, { count: number; total: number }>;
+    cancelled_count:    number;
+    cancelled_total:    number;
+    // ★ Control de descuadre (inputs del cajero al cerrar)
+    initial_cash:       number;   // Fondo inicial de caja
+    counted_cash:       number;   // Recuento real en efectivo
+    expected_cash:      number;   // initial + ventas_efectivo
+    cash_difference:    number;   // counted - expected (+ sobra, - falta)
+    notes?:             string | null;
 }
 
 export interface CashSummary {
@@ -130,31 +135,47 @@ function endOfDay(): string {
  * Si la tabla no existe, devuelve { ok: true, local: true } y
  * solo guarda en localStorage.
  */
+export interface SaveCashClosureInput {
+    summary:        CashSummary;
+    closedBy:       string;
+    notes?:         string;
+    initialCash:    number;   // ★ Fondo inicial
+    countedCash:    number;   // ★ Recuento real
+}
+
 export async function saveCashClosure(
-    summary: CashSummary,
-    closedBy: string,
-    notes?: string,
-): Promise<{ ok: boolean; id?: string; error?: string }> {
+    input: SaveCashClosureInput,
+): Promise<{ ok: boolean; id?: string; error?: string; diff?: number }> {
+    const { summary, closedBy, notes, initialCash, countedCash } = input;
     const tenantId = await resolveRealTenantId(null);
+    // ★ Calcular diferencia (sobra / falta)
+    const cashSales = summary.byPayment["cash"]?.total ?? 0;
+    const expectedCash = +(initialCash + cashSales).toFixed(2);
+    const diff = +(countedCash - expectedCash).toFixed(2);
+
     if (!supabase || !tenantId) {
         // Fallback a localStorage
-        saveLocalClosure(summary, closedBy, notes);
-        return { ok: true, id: "local" };
+        saveLocalClosure({ ...input, expectedCash, diff });
+        return { ok: true, id: "local", diff };
     }
     const closure: CashClosure = {
-        tenant_id:        tenantId,
-        closed_by:        closedBy,
-        closed_at:        new Date().toISOString(),
-        period_start:     summary.periodStart,
-        period_end:       summary.periodEnd,
-        ticket_count:     summary.ticketCount,
-        total_revenue:    summary.totalRevenue,
-        total_tax:        summary.totalTax,
-        total_subtotal:   summary.totalSubtotal,
-        by_payment:       summary.byPayment,
-        cancelled_count:  summary.cancelledCount,
-        cancelled_total:  summary.cancelledTotal,
-        notes:            notes ?? null,
+        tenant_id:         tenantId,
+        closed_by:         closedBy,
+        closed_at:         new Date().toISOString(),
+        period_start:      summary.periodStart,
+        period_end:        summary.periodEnd,
+        ticket_count:      summary.ticketCount,
+        total_revenue:     summary.totalRevenue,
+        total_tax:         summary.totalTax,
+        total_subtotal:    summary.totalSubtotal,
+        by_payment:        summary.byPayment,
+        cancelled_count:   summary.cancelledCount,
+        cancelled_total:   summary.cancelledTotal,
+        initial_cash:      initialCash,
+        counted_cash:      countedCash,
+        expected_cash:     expectedCash,
+        cash_difference:   diff,
+        notes:             notes ?? null,
     };
     try {
         const { data, error } = await supabase
@@ -164,22 +185,31 @@ export async function saveCashClosure(
             .single();
         if (error) {
             console.warn("[saveCashClosure] BD error:", error.message);
-            saveLocalClosure(summary, closedBy, notes);
-            return { ok: true, id: "local" };
+            saveLocalClosure({ ...input, expectedCash, diff });
+            return { ok: true, id: "local", diff };
         }
-        return { ok: true, id: (data as any)?.id ?? "local" };
+        return { ok: true, id: (data as any)?.id ?? "local", diff };
     } catch (e) {
         console.warn("[saveCashClosure] exception:", e);
-        saveLocalClosure(summary, closedBy, notes);
-        return { ok: true, id: "local" };
+        saveLocalClosure({ ...input, expectedCash, diff });
+        return { ok: true, id: "local", diff };
     }
 }
 
-function saveLocalClosure(summary: CashSummary, closedBy: string, notes?: string) {
+function saveLocalClosure(input: SaveCashClosureInput & { expectedCash: number; diff: number }) {
     if (typeof localStorage === "undefined") return;
     try {
         const local = JSON.parse(localStorage.getItem("mozona.cash_closures") ?? "[]");
-        local.push({ ...summary, closedBy, notes, savedAt: new Date().toISOString() });
+        local.push({
+            ...input.summary,
+            closedBy: input.closedBy,
+            notes:    input.notes,
+            initial_cash:   input.initialCash,
+            counted_cash:   input.countedCash,
+            expected_cash:  input.expectedCash,
+            cash_difference: input.diff,
+            savedAt: new Date().toISOString(),
+        });
         localStorage.setItem("mozona.cash_closures", JSON.stringify(local.slice(-50)));
     } catch (e) {
         console.warn("[saveLocalClosure] error:", e);
