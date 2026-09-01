@@ -258,17 +258,19 @@ export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
 }
 
 /** Mapea una fila de dining_tables a RestaurantTable.
- *  Extrae el número de mesa del campo 'name' (ej: "S-1" → 1). */
+ *  Numeración correlativa (1..N) según el índice en la lista,
+ *  evitando duplicados al extraer números del campo 'name'
+ *  (ej: "S-1", "B-1" ambos extraerían "1").
+ *  El `id` original se preserva para que las comandas se guarden
+ *  correctamente en la base de datos.
+ */
 function mapTableRow(t: any, i: number): RestaurantTable {
-    const nameStr = String(t.name ?? "");
-    const m = nameStr.match(/(\d+)/);
-    const num = m ? m[1] : String(i + 1);
     return {
-        id: t.id,
+        id: t.id,                                  // ★ id original
         restaurant_id: t.tenant_id,
         zone_id: null,
         zone: t.zone ?? null,
-        table_number: num,                         // ★ Extraído del name
+        table_number: String(i + 1),               // ★ 1..N correlativo
         status: t.status === "occupied" ? "OCCUPIED"
               : t.status === "billed"   ? "BILL_REQUESTED"
               : t.status === "reserved" ? "RESERVED"
