@@ -8,7 +8,7 @@
 import { supabase } from "./supabase";
 import { resolveRealTenantId } from "./waiters";
 
-const FALLBACK_TENANT_ID = "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
+const FALLBACK_TENANT_ID = "651ce807-f124-4c55-86c5-5ded54e9e6b1";
 
 export interface PosProduct {
     id:            string;
