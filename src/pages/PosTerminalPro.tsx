@@ -734,75 +734,42 @@ export function PosTerminalPro() {
             // 2) Difundir por WS
             ws.broadcastInvoicePaid(invoice);
 
-            // 3) Persistir en `orders` (ticket cerrado) + limpiar draft
-            // FIX: usamos RPC insert_order_with_tenant (SECURITY DEFINER) que
-            // bypasea RLS — útil cuando el VIP no es owner del tenant.
+            // 3) ★★★ CICLO DE COBRO ATÓMICO ★★★
+            //    Usa executeCheckout que hace todo en un solo flujo:
+            //    INSERT orders + DELETE open_orders + UPDATE dining_tables
             let persistError: string | null = null;
             let persistOk = false;
+            let orderIdCreated: string | null = null;
             try {
-                const realTenantId = await resolveRealTenantId(restaurant?.id);
-                if (!realTenantId) {
-                    persistError = "No se pudo resolver tenant_id (BD vacía o sesión inválida)";
-                } else if (!supabase) {
-                    persistError = "Supabase no está configurado";
+                const items = pos.state.orderItems;
+                const sub = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
+                const tax = items.reduce((a, it) => {
+                    const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
+                    return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
+                }, 0);
+                const { executeCheckout } = await import("../lib/checkout");
+                const result = await executeCheckout({
+                    tenantId:      restaurant?.id ?? null,
+                    tableId:       table.id,
+                    tableNumber:   table.table_number,
+                    items:         items,
+                    subtotal:      round2(sub - tax),
+                    taxTotal:      round2(tax),
+                    total:         round2(sub),
+                    paymentMethod: method ?? "cash",
+                    waiterName:    auth.activeWaiter?.name ?? null,
+                    series:        series,
+                });
+                if (result.ok) {
+                    persistOk = true;
+                    orderIdCreated = result.orderId ?? null;
+                    console.log("[PosTerminalPro] executeCheckout OK, orderId=", orderIdCreated);
                 } else {
-                    const items = pos.state.orderItems;
-                    const sub = items.reduce((a, it) => a + Number(it.unit_price ?? 0) * Number(it.quantity ?? 0), 0);
-                    const tax = items.reduce((a, it) => {
-                        const lineSub = Number(it.unit_price ?? 0) * Number(it.quantity ?? 0);
-                        return a + (lineSub - lineSub / (1 + Number(it.tax_rate ?? 10) / 100));
-                    }, 0);
-                    const orderPayload = {
-                        tenant_id:      realTenantId,
-                        table_id:       table.id,
-                        table_number:   table.table_number,
-                        waiter_name:    auth.activeWaiter?.name ?? null,
-                        items:          items,
-                        subtotal:       round2(sub - tax),
-                        tax_total:      round2(tax),
-                        total:          round2(sub),
-                        // ★ payment_method NUNCA null: mapear a 'cash' por defecto
-                        payment_method: method ?? "cash",
-                        payment_status: "paid",
-                        status:         "closed",
-                        series:         series,
-                    };
-                    console.log("[PosTerminalPro] intentando INSERT en orders");
-                    console.log("[PosTerminalPro]   tenant_id =", realTenantId);
-                    console.log("[PosTerminalPro]   total    =", round2(sub));
-                    console.log("[PosTerminalPro]   items    =", items.length);
-
-                    // Estrategia 1: RPC insert_order_with_tenant (SECURITY DEFINER, bypasea RLS)
-                    const { data: rpcData, error: rpcErr } = await supabase.rpc(
-                        "insert_order_with_tenant",
-                        { p_order: orderPayload as any },
-                    );
-                    if (!rpcErr && rpcData && (rpcData as any).ok) {
-                        console.log("[PosTerminalPro] ticket persistido vía RPC:", (rpcData as any).id);
-                        await clearDraft(realTenantId, table.id);
-                        persistOk = true;
-                    } else {
-                        // Estrategia 2: INSERT directo (puede fallar por RLS)
-                        const rpcMsg = rpcErr?.message ?? (rpcData as any)?.error ?? "unknown";
-                        console.warn("[PosTerminalPro] RPC falló:", rpcMsg, "— intentando INSERT directo");
-                        const { data: orderRow, error: orderErr } = await supabase
-                            .from("orders")
-                            .insert(orderPayload)
-                            .select()
-                            .single();
-                        if (orderErr) {
-                            console.error("[PosTerminalPro] INSERT orders error:", orderErr);
-                            persistError = `BD: ${orderErr.message} (code ${orderErr.code}). ` +
-                                          `Si es 42501, ejecuta database/14_insert_order_rpc.sql.`;
-                        } else {
-                            console.log("[PosTerminalPro] ticket persistido en orders:", orderRow?.id);
-                            await clearDraft(realTenantId, table.id);
-                            persistOk = true;
-                        }
-                    }
+                    persistError = `${result.error}${result.errorCode ? ` (code ${result.errorCode})` : ""} [step: ${result.step}]`;
+                    console.error("[PosTerminalPro] executeCheckout FAILED:", persistError);
                 }
             } catch (e) {
-                console.error("[PosTerminalPro] persistir orders exception:", e);
+                console.error("[PosTerminalPro] executeCheckout exception:", e);
                 persistError = e instanceof Error ? e.message : String(e);
             }
 
@@ -828,29 +795,7 @@ export function PosTerminalPro() {
             pos.dispatch({ type: "CLEAR_ORDER" });
             pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
 
-            // 5) ★ UPDATE best-effort en Supabase dining_tables
-            //    Si el id es local-table-N (sintético), usar table_number
-            if (supabase) {
-                try {
-                    const isLocal = String(table.id).startsWith("local-");
-                    const tableNumber = String(table.table_number ?? "");
-                    if (isLocal && tableNumber) {
-                        await supabase
-                            .from("dining_tables")
-                            .update({ status: "free" })
-                            .eq("table_number", tableNumber);
-                        console.log("[PosTerminalPro] UPDATE dining_tables by table_number=", tableNumber);
-                    } else if (!isLocal) {
-                        await supabase
-                            .from("dining_tables")
-                            .update({ status: "free" })
-                            .eq("id", table.id);
-                        console.log("[PosTerminalPro] UPDATE dining_tables by id=", table.id);
-                    }
-                } catch (e) {
-                    console.warn("[PosTerminalPro] dining_tables UPDATE error:", e);
-                }
-            }
+            // (El UPDATE de dining_tables ya lo hace executeCheckout en el paso 3)
 
             const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
             const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;
