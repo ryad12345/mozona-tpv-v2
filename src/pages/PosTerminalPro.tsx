@@ -358,8 +358,11 @@ export function PosTerminalPro() {
         (async () => {
             const realId = await resolveRealTenantId(restaurant.id);
             if (!realId || cancelled) return;
-            const channelName = `tpv-products-${realId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            console.log("[PosTerminalPro] realtime products canal:", channelName);
+            // ★ Canal GLOBAL: sin filtro de tenant_id para no perder
+            //   eventos cuando hay discrepancia entre el tenant del
+            //   INSERT y el que la caja esperaba.
+            const channelName = `realtime-products-global-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            console.log("[PosTerminalPro] realtime products canal (sin filtro tenant):", channelName);
             channel = supabase
                 .channel(channelName)
                 .on(
@@ -368,12 +371,13 @@ export function PosTerminalPro() {
                         event: "*",
                         schema: "public",
                         table: "products",
-                        filter: `tenant_id=eq.${realId}`,
+                        // ★ SIN FILTRO: cualquier INSERT/UPDATE/DELETE
+                        //   de products nos llega, independientemente del tenant_id
                     },
                     (payload) => {
                         if (cancelled) return;
-                        console.log("[PosTerminalPro] realtime products:", payload.eventType);
-                        // Llamar refresh de usePosData para recargar el catálogo
+                        console.log("[PosTerminalPro] realtime products (global):", payload.eventType, "tenant_id=", (payload.new as any)?.tenant_id);
+                        // Forzar recarga inmediata
                         posDataRefresh();
                     },
                 );
