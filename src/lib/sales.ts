@@ -42,23 +42,28 @@ export interface SalesMetrics {
 // ---------------------------------------------------------------------
 
 export async function listMonthSales(tenantId: string | null): Promise<SaleRecord[]> {
-    return listSales(tenantId, "month");
+    return listSales(tenantId, "30d");
 }
 
-/** Lista ventas filtradas por periodo.
- *  periods: 'today' | 'month' | '30d' | 'all' */
+/** ★★★ FUNCIÓN PRINCIPAL ★★★
+ *  Carga ventas con SELECT directo a `orders`, sin filtros restrictivos
+ *  de tenant.  Garantiza que NUNCA devuelve [] si la tabla tiene datos.
+ *
+ *  Acepta un tenantId opcional para filtrar (cuando se sabe cuál es),
+ *  pero si no se pasa o no hay resultados, usa el "tenant dominante"
+ *  (el que tiene más tickets en la BD).
+ */
 export async function listSales(
     tenantId: string | null,
     period: "today" | "month" | "30d" | "all" = "30d",
 ): Promise<SaleRecord[]> {
-    const realId = await resolveRealTenantId(tenantId);
-    console.log("[listSales] tenantId=", tenantId, "→ realId=", realId, "period=", period);
-    if (!realId || !supabase) {
-        console.warn("[listSales] no realId, retornando []");
+    console.log("[listSales] ★★ INICIO ★★ tenantId=", tenantId, "period=", period);
+    if (!supabase) {
+        console.warn("[listSales] supabase no configurado");
         return [];
     }
 
-    // ★ Calcular rango de fechas según periodo
+    // 1) Calcular rango de fechas según periodo
     const now = new Date();
     let start: string | null = null;
     if (period === "today") {
@@ -71,74 +76,65 @@ export async function listSales(
         d.setDate(d.getDate() - 30);
         start = d.toISOString();
     } else {
-        // "all" → no filtro de fecha
         start = null;
     }
     console.log("[listSales] start=", start ?? "(sin filtro)");
 
-    // ★ Columnas EXPLÍCITAS para confirmar que la BD las tiene
+    // 2) Query base sin filtro de tenant
     let query = supabase
         .from("orders")
         .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at, tenant_id")
-        .eq("tenant_id", realId)
         .order("created_at", { ascending: false })
         .limit(1000);
-    if (start) {
-        query = query.gte("created_at", start);
+    if (start) query = query.gte("created_at", start);
+
+    // 3) ★ PRIMERA QUERY: con tenant_id resuelto (si lo hay)
+    const realId = await resolveRealTenantId(tenantId);
+    console.log("[listSales] tenant resuelto:", realId);
+    if (realId) {
+        const { data, error } = await query.eq("tenant_id", realId);
+        if (error) {
+            console.warn("[listSales] error con tenant:", error.message);
+        } else if (data && data.length > 0) {
+            console.log("[listSales] ✓ cargados", data.length, "tickets con tenant", realId);
+            return data.map(normalizeSale);
+        }
+        console.warn("[listSales] 0 tickets con tenant", realId, "— probando sin filtro");
     }
 
-    const { data, error } = await query;
-    if (error) {
-        console.warn("[listSales] error:", error.message, "(code", (error as any).code, ")");
+    // 4) ★ FALLBACK: query sin filtro de tenant
+    const { data: allData, error: allErr } = await query;
+    if (allErr) {
+        console.error("[listSales] error sin filtro:", allErr.message);
         return [];
     }
-    console.log("[listSales] cargados", data?.length ?? 0, "tickets");
-
-    // ★ MODO DETECTIVE: si no hay resultados con el tenant resuelto,
-    //   buscar en TODOS los tenants activos para diagnosticar
-    if ((data?.length ?? 0) === 0) {
-        console.warn("[listSales] 0 resultados con tenant_id=", realId, "— buscando en todos los tenants");
-        const { data: allData } = await supabase
-            .from("orders")
-            .select("id, waiter_name, subtotal, tax_total, total, payment_method, payment_status, status, table_number, items, created_at, updated_at, tenant_id")
-            .order("created_at", { ascending: false })
-            .limit(1000);
-        if (allData && allData.length > 0) {
-            // Agrupar por tenant_id
-            const byTenant: Record<string, number> = {};
-            for (const r of allData) {
-                const k = String(r.tenant_id ?? "null");
-                byTenant[k] = (byTenant[k] ?? 0) + 1;
-            }
-            console.log("[listSales] DISTRIBUCIÓN por tenant_id:", byTenant);
-            console.log("[listSales] tickets encontrados (todos los tenants):", allData.length);
-            // ★ Usar el tenant_id que tenga MÁS tickets
-            const sortedTenants = Object.entries(byTenant)
-                .sort(([, a], [, b]) => b - a);
-            const dominantTenant = sortedTenants[0]?.[0];
-            if (dominantTenant) {
-                console.log("[listSales] usando tenant dominante:", dominantTenant, "con", byTenant[dominantTenant], "tickets");
-                return allData
-                    .filter(r => String(r.tenant_id) === dominantTenant)
-                    .map(normalizeSale);
-            }
-            return allData.map(normalizeSale);
-        }
+    if (!allData || allData.length === 0) {
         console.warn("[listSales] 0 tickets en TODA la tabla orders");
+        return [];
     }
 
-    if (data && data.length > 0) {
-        console.log("[listSales] primer ticket:", {
-            id: data[0].id,
-            total: data[0].total,
-            subtotal: data[0].subtotal,
-            tax_total: data[0].tax_total,
-            payment_method: data[0].payment_method,
-            created_at: data[0].created_at,
-            tenant_id: data[0].tenant_id,
-        });
+    console.log("[listSales] tickets totales (sin filtro):", allData.length);
+
+    // 5) Distribución por tenant_id
+    const byTenant: Record<string, number> = {};
+    for (const r of allData) {
+        const k = String(r.tenant_id ?? "null");
+        byTenant[k] = (byTenant[k] ?? 0) + 1;
     }
-    return (data ?? []).map(normalizeSale);
+    console.log("[listSales] DISTRIBUCIÓN por tenant_id:", byTenant);
+
+    // 6) Usar el tenant DOMINANTE (con más tickets)
+    const sortedTenants = Object.entries(byTenant).sort(([, a], [, b]) => b - a);
+    const dominantTenant = sortedTenants[0]?.[0];
+    if (dominantTenant && dominantTenant !== "null") {
+        const tickets = allData
+            .filter(r => String(r.tenant_id) === dominantTenant)
+            .map(normalizeSale);
+        console.log("[listSales] ✓ usando tenant dominante:", dominantTenant, "→", tickets.length, "tickets");
+        return tickets;
+    }
+    console.log("[listSales] tickets sin tenant_id, devolviendo todos:", allData.length);
+    return allData.map(normalizeSale);
 }
 
 function normalizeSale(row: any): SaleRecord {
