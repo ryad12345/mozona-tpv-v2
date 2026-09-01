@@ -10,11 +10,15 @@ import "./styles/globals.css";
 
 const BUILD_HASH = import.meta.env.VITE_BUILD_HASH ?? "dev";
 console.log(
-    "%cMOZONA TPV%c build: %c" + BUILD_HASH,
+    "%cMOZONA TPV v1.8.0 - fix-checkout%c build: %c" + BUILD_HASH + "%c  ⚠️ SI VES ESTE LOG, ESTÁS EN LA VERSIÓN NUEVA",
     "background:#0F2942;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold",
     "color:#64748b",
     "color:#10b981;font-weight:bold",
+    "background:#fbbf24;color:#000;padding:2px 6px;border-radius:3px;font-weight:bold",
 );
+
+// ★ Timestamp de cuando se cargó
+console.log("[v1.8] cargado en", new Date().toISOString());
 
 // ★ Forzar al Service Worker a actualizarse inmediatamente
 if ("serviceWorker" in navigator) {

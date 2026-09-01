@@ -6,6 +6,7 @@
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
         <meta name="theme-color" content="#0F2942" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="MOZONA TPV" />
@@ -91,6 +92,50 @@
                 window.__mozona_start_errors__.push('PROMISE: ' + msg);
                 console.error('[MOZONA] promise rechazada:', msg);
             });
+        </script>
+        <!-- ★ v1.8.0 - AUTO LIMPIEZA DE CACHÉ v1.7 -->
+        <script>
+        (function() {
+            try {
+                var CURRENT = 'v1.8.0-fix-checkout';
+                var stored = localStorage.getItem('mozona.build_version');
+                if (stored !== CURRENT) {
+                    console.log('[v1.8] build changed:', stored, '→', CURRENT, '— LIMPIANDO TODO');
+                    // Limpiar localStorage de versiones anteriores
+                    Object.keys(localStorage).forEach(function(k) {
+                        if (k.indexOf('mozona.') === 0 && k !== 'mozona.build_version') {
+                            // Mantener solo los datos críticos
+                            if (k !== 'mozona.cash_closures') {
+                                localStorage.removeItem(k);
+                            }
+                        }
+                    });
+                    // Desregistrar TODAS las SW
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(function(regs) {
+                            regs.forEach(function(r) { r.unregister(); });
+                            console.log('[v1.8] SW desregistrados:', regs.length);
+                        });
+                    }
+                    // Limpiar caches
+                    if ('caches' in window) {
+                        caches.keys().then(function(keys) {
+                            keys.forEach(function(k) {
+                                caches.delete(k);
+                                console.log('[v1.8] cache borrada:', k);
+                            });
+                        });
+                    }
+                    localStorage.setItem('mozona.build_version', CURRENT);
+                    console.log('[v1.8] ✓ versión nueva registrada, recargando en 1.5s...');
+                    setTimeout(function() { location.reload(true); }, 1500);
+                } else {
+                    console.log('[v1.8] ya en versión correcta');
+                }
+            } catch (e) {
+                console.error('[v1.8] error en auto-limpieza:', e);
+            }
+        })();
         </script>
     </head>
     <body>
