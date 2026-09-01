@@ -675,22 +675,26 @@ export function PosTerminalPro() {
             //     libre tras cobrar para poder abrir otra comanda)
             setTableStatuses(prev => {
                 const next = { ...prev };
-                // Limpiar el id real y el id local sintético
-                next[table.id] = "FREE";
-                if (String(table.id).startsWith("local-table-")) {
-                    const num = String(table.id).replace("local-table-", "");
-                    next[`local-table-${num}`] = "FREE";
-                }
-                // También limpiar el table_number por si está en el map
-                if (table.table_number) {
-                    next[`local-table-${table.table_number}`] = "FREE";
+                // ★★★ LIMPIEZA TOTAL: garantizar que la mesa queda interactiva ★★★
+                //    Borrar TODAS las claves relacionadas con esta mesa
+                const tnum = String(table.table_number ?? "");
+                const keysToDelete: string[] = [
+                    table.id,
+                    `local-table-${tnum}`,
+                    tnum,
+                ];
+                for (const k of keysToDelete) {
+                    next[k] = "FREE";
                 }
                 return next;
             });
             console.log("[PosTerminalPro] mesa liberada:", table.id, "table_number=", table.table_number);
             playChargeSuccess();
-            pos.dispatch({ type: "CLEAR_ORDER" });
-            pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
+            // ★★★ RESET TOTAL DEL CARRITO Y MESA ★★★
+            pos.dispatch({ type: "CLEAR_ORDER" });                  // lines = []
+            pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null }); // mesa deseleccionada
+            pos.dispatch({ type: "NUMPAD_RESET" });                  // numpad a 0
+            console.log("[PosTerminalPro] carrito reseteado y mesa deseleccionada");
 
             // (El UPDATE de dining_tables ya lo hace executeCheckout en el paso 3)
 

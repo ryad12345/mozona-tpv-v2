@@ -66,18 +66,25 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
 
     // 1) INSERT en orders (vía RPC SECURITY DEFINER bypasa RLS)
     console.log("[executeCheckout] paso 1: INSERT orders");
+    // ★ Inyectar la referencia a la mesa en el SNAPSHOT de cada item
+    //    para que el panel de Ventas pueda mostrarla aunque la tabla
+    //    orders no tenga columna table_number.
+    const itemsWithTable = (input.items ?? []).map((it: any) => ({
+        ...it,
+        tableNumber: input.tableNumber ?? null,
+        tableId:     input.tableId     ?? null,
+    }));
     const { data: order, error: orderErr } = await supabase.rpc("insert_order_with_tenant", {
         p_order: {
             tenant_id: realId,
             table_id: input.tableId || null,
             table_number: input.tableNumber || null,
             waiter_name: input.waiterName || "Caja",
-            items: input.items,
+            items: itemsWithTable,
             subtotal: input.subtotal,
             tax_total: input.taxTotal,
             total: input.total,
             payment_method: input.paymentMethod || "cash",
-            // ★ FIX: payment_status NO existe en la tabla orders real
             status: "closed",
             series: input.series || "T26",
         },

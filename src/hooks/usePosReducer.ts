@@ -40,6 +40,7 @@ export type PosAction =
     | { type: "CLEAR_ORDER" }
     | { type: "RESTORE_DRAFTS"; drafts: Record<string, OrderItem[]> }
     | { type: "NUMPAD_KEY"; key: string }
+    | { type: "NUMPAD_RESET" }
     | { type: "SET_PAYMENT_METHOD"; method: PaymentMethod | null }
     | { type: "SET_PROCESSING"; processing: boolean }
     | { type: "SET_VERIFACTU_STATUS"; status: VeriFactuStatus; result?: VeriFactuResult | null; error?: string | null }
@@ -159,6 +160,9 @@ function reducer(state: PosState, action: PosAction): PosState {
                 if (parts[1] && parts[1].length > 2) amount = parts[0] + "," + parts[1].slice(0, 2);
             }
             return { ...state, paymentAmount: amount };
+        }
+        case "NUMPAD_RESET": {
+            return { ...state, paymentAmount: "" };
         }
         case "SET_PAYMENT_METHOD": return { ...state, paymentMethod: action.method };
         case "SET_PROCESSING": return { ...state, isProcessing: action.processing };
