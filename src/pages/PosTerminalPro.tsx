@@ -315,17 +315,21 @@ export function PosTerminalPro() {
         });
         return off;
 
-    // ★ Suscripción GLOBAL a Supabase Realtime (commit 2434c3c)
-    //    Escucha cambios en products, dining_tables, open_orders, orders
-    //    y recarga el estado local SIN necesidad de F5
+    // ★ Suscripción GLOBAL a Supabase Realtime (singleton, sin bucle)
+    //    Dependencias VACÍAS: solo se monta al cargar el componente.
+    //    El cleanup se hace correctamente porque subscribeToPosChannels
+    //    ahora tiene guard anti-bucle (commit siguiente).
     useEffect(() => {
-        if (!restaurant?.id) return;
-        const off = subscribeToPosChannels(() => {
-            console.log("[PosTerminalPro] realtime global → refresh");
-            posDataRefresh();
+        const off = subscribeToPosChannels((payload) => {
+            console.log("[PosTerminalPro] realtime:", payload.table, payload.eventType);
+            // Solo refrescar productos cuando hay cambio de products
+            if (payload.table === "products") {
+                posDataRefresh();
+            }
         });
         return off;
-    }, [restaurant?.id]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ★ FALLBACK: si usePosData no carga productos, usar fetchCatalog
     //    que tiene 3 niveles de fallback (tenant → is_active → tenant dominante)
