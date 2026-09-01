@@ -213,6 +213,30 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
 
 export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
     if (!isSupabaseConfigured) return [];
+    // ★ v1.9.6: Estrategia 0 - RPC get_waiter_tables (SECURITY DEFINER)
+    //   bypasa RLS para que camareros y anon puedan ver las mesas
+    try {
+        const { data: rpcData, error: rpcErr } = await supabase
+            .rpc("get_waiter_tables", { p_tenant_id: tenantId });
+        if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+            console.log("[loadTables] ✓ via RPC", rpcData.length, "mesas");
+            return (rpcData as any[]).map((t, i) => ({
+                id: t.id,
+                restaurant_id: t.tenant_id,
+                zone_id: null,
+                zone: t.zone,
+                table_number: String(i + 1),
+                name: t.name ?? `Mesa ${i + 1}`,
+                seats: t.seats ?? 4,
+                status: t.status ?? "free",
+                current_order_id: t.current_order_id ?? null,
+                created_at: t.created_at ?? new Date().toISOString(),
+            }));
+        }
+    } catch (e) {
+        console.warn("[loadTables] RPC no disponible:", e);
+    }
+
     // ★ v1.9.3: order por 'number' (NO por 'name' que puede no existir)
     // 1) Con tenant
     let { data, error } = await supabase
