@@ -748,11 +748,51 @@ export function PosTerminalPro() {
                 persistError = e instanceof Error ? e.message : String(e);
             }
 
-            // 4) UI: marcar mesa como sucia, limpiar pedido, sonido
-            setTableStatuses(prev => ({ ...prev, [table.id]: "DIRTY" }));
+            // 4) UI: LIBERAR la mesa inmediatamente (FREE)
+            //    (antes era DIRTY, pero el usuario espera ver la mesa
+            //     libre tras cobrar para poder abrir otra comanda)
+            setTableStatuses(prev => {
+                const next = { ...prev };
+                // Limpiar el id real y el id local sintético
+                next[table.id] = "FREE";
+                if (String(table.id).startsWith("local-table-")) {
+                    const num = String(table.id).replace("local-table-", "");
+                    next[`local-table-${num}`] = "FREE";
+                }
+                // También limpiar el table_number por si está en el map
+                if (table.table_number) {
+                    next[`local-table-${table.table_number}`] = "FREE";
+                }
+                return next;
+            });
+            console.log("[PosTerminalPro] mesa liberada:", table.id, "table_number=", table.table_number);
             playChargeSuccess();
             pos.dispatch({ type: "CLEAR_ORDER" });
             pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
+
+            // 5) ★ UPDATE best-effort en Supabase dining_tables
+            //    Si el id es local-table-N (sintético), usar table_number
+            if (supabase) {
+                try {
+                    const isLocal = String(table.id).startsWith("local-");
+                    const tableNumber = String(table.table_number ?? "");
+                    if (isLocal && tableNumber) {
+                        await supabase
+                            .from("dining_tables")
+                            .update({ status: "free" })
+                            .eq("table_number", tableNumber);
+                        console.log("[PosTerminalPro] UPDATE dining_tables by table_number=", tableNumber);
+                    } else if (!isLocal) {
+                        await supabase
+                            .from("dining_tables")
+                            .update({ status: "free" })
+                            .eq("id", table.id);
+                        console.log("[PosTerminalPro] UPDATE dining_tables by id=", table.id);
+                    }
+                } catch (e) {
+                    console.warn("[PosTerminalPro] dining_tables UPDATE error:", e);
+                }
+            }
 
             const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
             const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;

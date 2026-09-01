@@ -88,7 +88,20 @@ export function SalesPanel() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tenantId]);
 
-    const metrics = computeMetrics(records.filter(r => r.status !== "cancelled"));
+    // ★ Métricas: contar cualquier ticket que NO sea 'cancelled'
+    //    Acepta status: 'closed', 'paid', 'completed', null, undefined, ''
+    const activeRecords = records.filter(r => {
+        if (r.status === "cancelled") return false;
+        return true;
+    });
+    const totalRevenue = activeRecords.reduce((s, r) => s + Number(r.total ?? r.subtotal ?? 0), 0);
+    const metrics = computeMetrics(activeRecords);
+    console.log("[SalesPanel] ★★ UI MÉTRICAS ★*", {
+        totalRecords: records.length,
+        activeRecords: activeRecords.length,
+        cancelledRecords: records.length - activeRecords.length,
+        totalRevenue: totalRevenue.toFixed(2) + " €",
+    });
 
     const filteredRecords = filterPm === "all"
         ? records
