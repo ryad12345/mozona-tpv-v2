@@ -75,7 +75,7 @@ export function usePosData(): PosDataState {
             //    cuando hay una nueva build con cache-bust
             try {
                 const cacheVersion = localStorage.getItem("mozona.cache_version");
-                const CURRENT_VERSION = "v1.4-rls-off";
+                const CURRENT_VERSION = "v1.5-direct-supabase";
                 if (cacheVersion !== CURRENT_VERSION) {
                     console.log("[usePosData] cache-bust:", cacheVersion, "→", CURRENT_VERSION);
                     const { clearAll } = await import("../lib/offlineStorage");
@@ -172,29 +172,9 @@ export function usePosData(): PosDataState {
                 }
             }
 
-            // 2) Fallback: caché IndexedDB SOLO si Supabase realmente falló
-            //    por red (no por RLS o tenant no encontrado)
-            const [cachedCats, cachedProds, cachedTables, cachedRestaurant] = await Promise.all([
-                getAllCategories().catch(() => []),
-                getAllProducts().catch(() => []),
-                getAllTables().catch(() => []),
-                getMeta<Restaurant>("mozona.current_restaurant").catch(() => null as Restaurant | null),
-            ]);
-            const hasCache = cachedProds.length > 0 || cachedCats.length > 0;
-            // Solo usar cache si NO hay sesión online (modo offline puro)
-            if (hasCache && !auth.user) {
-                console.log("[usePosData] sin sesión, usando cache offline");
-                setRestaurant(cachedRestaurant ?? null);
-                setCategories(cachedCats);
-                setProducts(cachedProds);
-                setTables(cachedTables);
-                setConnection({ printer: false, network: false, supabase: isSupabaseConfigured });
-                setSource("cache");
-                setError(null);
-                return;
-            }
-
-            // 3) Sin caché + sin sesión: estado vacío (NO más mock Casa Manolo)
+            // 2) ★★★ CONEXIÓN DIRECTA A SUPABASE ★★★
+            //    Sin IndexedDB, sin localStorage, sin fallback estático.
+            //    La caja se conecta EXCLUSIVAMENTE a Supabase.
             setRestaurant(null);
             setCategories([]);
             setProducts([]);

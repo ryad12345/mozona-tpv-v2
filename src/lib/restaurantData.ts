@@ -105,68 +105,76 @@ export async function loadCategories(tenantId: string): Promise<Category[]> {
 // Productos del tenant
 // ---------------------------------------------------------------------
 
+/** ★★★ CONEXIÓN DIRECTA A SUPABASE ★★★
+ *  Sin IndexedDB, sin localStorage, sin fallback estático.
+ *  Garantiza que el catálogo de la caja viene SIEMPRE de la BD.
+ *
+ *  Si tenantId no devuelve resultados, hace query sin filtro
+ *  y usa los productos del tenant dominante (el que tenga más).
+ */
 export async function loadProducts(tenantId: string): Promise<Product[]> {
     if (!isSupabaseConfigured) return [];
-    console.log("[loadProducts] tenantId=", tenantId);
-    const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("name");
-    if (error) {
-        console.warn("[loadProducts] error:", error.message);
-        return [];
-    }
+    console.log("[loadProducts] ★★ INICIO ★★ tenantId=", tenantId);
 
-    // ★ MODO DETECTIVE: si no hay productos con este tenant_id,
-    //   buscar en TODOS los productos y reportar distribución
-    if ((data?.length ?? 0) === 0) {
-        console.warn("[loadProducts] 0 productos con tenant_id=", tenantId, "— buscando en todos");
-        const { data: allData } = await supabase
-            .from("products")
-            .select("*")
-            .order("name")
-            .limit(500);
-        if (allData && allData.length > 0) {
-            const byTenant: Record<string, number> = {};
-            for (const p of allData) {
-                const k = String(p.tenant_id ?? "null");
-                byTenant[k] = (byTenant[k] ?? 0) + 1;
-            }
-            console.log("[loadProducts] DISTRIBUCIÓN por tenant_id:", byTenant);
-            // Usar el primer tenant que tenga productos
-            const firstTenantWithProducts = allData.find(p => p.tenant_id)?.tenant_id;
-            if (firstTenantWithProducts && firstTenantWithProducts !== tenantId) {
-                console.warn("[loadProducts] usando tenant_id alternativo:", firstTenantWithProducts);
-                return allData.filter((p: any) => p.tenant_id === firstTenantWithProducts).map((p: any) => ({
-                    ...p,
-                    price: Number(p.price ?? 0),
-                    tax_rate: Number(p.tax_rate ?? 10),
-                    is_available: p.is_active ?? true,
-                    restaurant_id: p.tenant_id,
-                    category_id: p.category_id ?? null,
-                })) as Product[];
-            }
-            return allData.map((p: any) => ({
-                ...p,
-                price: Number(p.price ?? 0),
-                tax_rate: Number(p.tax_rate ?? 10),
-                is_available: p.is_active ?? true,
-                restaurant_id: p.tenant_id,
-                category_id: p.category_id ?? null,
-            })) as Product[];
-        }
-    }
-
-    return (data ?? []).map((p: any) => ({
+    const mapProduct = (p: any): Product => ({
         ...p,
-        // Supabase NUMERIC/REAL columns se serializan como string -> normalizar a number
         price: Number(p.price ?? 0),
         tax_rate: Number(p.tax_rate ?? 10),
         is_available: p.is_active ?? true,
         restaurant_id: p.tenant_id,
         category_id: p.category_id ?? null,
-    })) as Product[];
+    });
+
+    // 1) Query con tenant_id
+    const { data, error } = await supabase
+        .from("products")
+        .select("id, name, description, price, category, image_url, is_active, tenant_id, tax_rate, category_id, sort_order")
+        .eq("tenant_id", tenantId)
+        .order("name");
+    if (error) {
+        console.warn("[loadProducts] error con tenant:", error.message);
+    } else if (data && data.length > 0) {
+        console.log("[loadProducts] ✓", data.length, "productos con tenant", tenantId);
+        return data.map(mapProduct);
+    }
+
+    // 2) ★ FALLBACK: query sin filtro de tenant (is_active=true)
+    console.warn("[loadProducts] 0 productos con tenant, buscando en todos...");
+    const { data: allData, error: allErr } = await supabase
+        .from("products")
+        .select("id, name, description, price, category, image_url, is_active, tenant_id, tax_rate, category_id, sort_order")
+        .eq("is_active", true)
+        .order("name")
+        .limit(1000);
+    if (allErr) {
+        console.error("[loadProducts] error sin filtro:", allErr.message);
+        return [];
+    }
+    if (!allData || allData.length === 0) {
+        console.warn("[loadProducts] 0 productos en la BD");
+        return [];
+    }
+
+    // 3) Distribución por tenant_id
+    const byTenant: Record<string, number> = {};
+    for (const p of allData) {
+        const k = String(p.tenant_id ?? "null");
+        byTenant[k] = (byTenant[k] ?? 0) + 1;
+    }
+    console.log("[loadProducts] DISTRIBUCIÓN por tenant_id:", byTenant);
+
+    // 4) Usar el tenant DOMINANTE
+    const sortedTenants = Object.entries(byTenant).sort(([, a], [, b]) => b - a);
+    const dominantTenant = sortedTenants[0]?.[0];
+    if (dominantTenant && dominantTenant !== "null") {
+        const prods = allData
+            .filter(p => String(p.tenant_id) === dominantTenant)
+            .map(mapProduct);
+        console.log("[loadProducts] ✓ tenant dominante:", dominantTenant, "→", prods.length, "productos");
+        return prods;
+    }
+    console.log("[loadProducts] devolviendo todos sin tenant:", allData.length);
+    return allData.map(mapProduct);
 }
 
 // ---------------------------------------------------------------------
