@@ -213,48 +213,39 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
 
 export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
     if (!isSupabaseConfigured) return [];
-    // ★ v1.9.6: Estrategia 0 - RPC get_waiter_tables (SECURITY DEFINER)
-    //   bypasa RLS para que camareros y anon puedan ver las mesas
+    // ★ v1.9.8: Estrategia 0 - RPC get_dining_tables (SECURITY DEFINER)
+    //   Tabla REAL: public.dining_tables (NO public.tables)
+    //   Columnas: id, tenant_id, name ("S-1", "B-6"), zone, status
     try {
         const { data: rpcData, error: rpcErr } = await supabase
-            .rpc("get_waiter_tables", { p_tenant_id: tenantId });
+            .rpc("get_dining_tables", { p_tenant_id: tenantId });
         if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
             console.log("[loadTables] ✓ via RPC", rpcData.length, "mesas");
-            return (rpcData as any[]).map((t, i) => ({
-                id: t.id,
-                restaurant_id: t.tenant_id,
-                zone_id: null,
-                zone: t.zone,
-                table_number: String(i + 1),
-                name: t.name ?? `Mesa ${i + 1}`,
-                seats: t.seats ?? 4,
-                status: t.status ?? "free",
-                current_order_id: t.current_order_id ?? null,
-                created_at: t.created_at ?? new Date().toISOString(),
-            }));
+            return (rpcData as any[]).map((t, i) => mapTableRow(t, i));
         }
     } catch (e) {
         console.warn("[loadTables] RPC no disponible:", e);
     }
 
-    // ★ v1.9.3: order por 'number' (NO por 'name' que puede no existir)
-    // 1) Con tenant
+    // 1) SELECT directo con tenant
     let { data, error } = await supabase
         .from("dining_tables")
         .select("*")
         .eq("tenant_id", tenantId)
-        .order("number", { ascending: true });
+        .order("zone", { ascending: true })
+        .order("name", { ascending: true });
     if (error) {
         console.warn("[restaurantData] loadTables error:", error.message);
         data = null;
     }
-    // 2) FALLBACK: si 0 con tenant, leer todas (16 mesas reales)
+    // 2) FALLBACK: si 0 con tenant, leer todas
     if (!data || data.length === 0) {
         console.warn("[loadTables] 0 con tenant, leyendo TODAS las mesas...");
         const fb = await supabase
             .from("dining_tables")
             .select("*")
-            .order("number", { ascending: true })
+            .order("zone", { ascending: true })
+            .order("name", { ascending: true })
             .limit(50);
         if (fb.error || !fb.data) {
             console.warn("[loadTables] fallback también falló");
@@ -263,19 +254,27 @@ export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
         data = fb.data;
     }
     console.log("[loadTables] ✓", data.length, "mesas cargadas");
-    return data.map((t: any, i: number) => ({
+    return data.map((t, i) => mapTableRow(t, i));
+}
+
+/** Mapea una fila de dining_tables a RestaurantTable.
+ *  Extrae el número de mesa del campo 'name' (ej: "S-1" → 1). */
+function mapTableRow(t: any, i: number): RestaurantTable {
+    const nameStr = String(t.name ?? "");
+    const m = nameStr.match(/(\d+)/);
+    const num = m ? m[1] : String(i + 1);
+    return {
         id: t.id,
         restaurant_id: t.tenant_id,
         zone_id: null,
-        zone: t.zone,
-        // Numeración SECUENCIAL basada en el orden del array (1, 2, 3, ..., 16)
-        table_number: String(i + 1),
+        zone: t.zone ?? null,
+        table_number: num,                         // ★ Extraído del name
         status: t.status === "occupied" ? "OCCUPIED"
               : t.status === "billed"   ? "BILL_REQUESTED"
               : t.status === "reserved" ? "RESERVED"
               : t.status === "dirty"    ? "DIRTY"
               : "FREE",
-    })) as RestaurantTable[];
+    };
 }
 
 // ---------------------------------------------------------------------
