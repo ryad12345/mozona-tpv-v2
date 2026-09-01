@@ -120,17 +120,32 @@ export function WaiterPad() {
     }, [ws]);
 
     // -----------------------------------------------------------------
-    // Filtrado del catálogo
+    // ★ Filtrado del catálogo: matching cruzado por UUID o nombre
     // -----------------------------------------------------------------
     const visibleProducts = useMemo(() => {
         let list = products;
         if (categoryId) {
             const norm = (s: any) => String(s ?? "").trim().toLowerCase();
             const cid = norm(categoryId);
+
+            // Buscar la categoría seleccionada (por id o name)
+            const currentCat = categories.find(
+                (c: any) => norm(c.id) === cid || norm(c.name) === cid,
+            );
+            const targetId = norm(currentCat?.id) || cid;
+            const targetName = norm(currentCat?.name) || cid;
+
             list = list.filter((p: any) => {
-                const catId = norm(p.category_id);
-                const catName = norm(p.category_name ?? p.category);
-                return catId === cid || catName === cid;
+                const pCatId = norm(p.category_id);
+                const pCatName = norm(p.category_name ?? p.category);
+                // Match por UUID o por nombre
+                const matchById = pCatId && (pCatId === targetId || pCatId === targetName);
+                const matchByName = pCatName && (
+                    pCatName === targetName ||
+                    pCatName === norm(currentCat?.name) ||
+                    pCatName === cid
+                );
+                return matchById || matchByName;
             });
         }
         if (search.trim()) {
@@ -138,7 +153,7 @@ export function WaiterPad() {
             list = list.filter(p => p.name.toLowerCase().includes(q));
         }
         return list;
-    }, [products, categoryId, search]);
+    }, [products, categories, categoryId, search]);
 
     const selectedTable = useMemo(
         () => tables.find(t => t.id === tableId) ?? null,

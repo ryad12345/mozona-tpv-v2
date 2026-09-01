@@ -213,24 +213,38 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
 
 export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    // ★ v1.9.3: order por 'number' (NO por 'name' que puede no existir)
+    // 1) Con tenant
+    let { data, error } = await supabase
         .from("dining_tables")
         .select("*")
         .eq("tenant_id", tenantId)
-        .order("zone")
-        .order("name");
+        .order("number", { ascending: true });
     if (error) {
         console.warn("[restaurantData] loadTables error:", error.message);
-        return [];
+        data = null;
     }
-    return (data ?? []).map((t: any, i: number) => ({
+    // 2) FALLBACK: si 0 con tenant, leer todas (16 mesas reales)
+    if (!data || data.length === 0) {
+        console.warn("[loadTables] 0 con tenant, leyendo TODAS las mesas...");
+        const fb = await supabase
+            .from("dining_tables")
+            .select("*")
+            .order("number", { ascending: true })
+            .limit(50);
+        if (fb.error || !fb.data) {
+            console.warn("[loadTables] fallback también falló");
+            return [];
+        }
+        data = fb.data;
+    }
+    console.log("[loadTables] ✓", data.length, "mesas cargadas");
+    return data.map((t: any, i: number) => ({
         id: t.id,
         restaurant_id: t.tenant_id,
         zone_id: null,
         zone: t.zone,
         // Numeración SECUENCIAL basada en el orden del array (1, 2, 3, ..., 16)
-        // Esto evita duplicados cuando la BD tiene nombres como "B-1" y "S-1"
-        // que ambos extraerían el dígito "1".
         table_number: String(i + 1),
         status: t.status === "occupied" ? "OCCUPIED"
               : t.status === "billed"   ? "BILL_REQUESTED"

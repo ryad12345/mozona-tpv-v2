@@ -53,18 +53,36 @@ export function CatalogPanel(props: any) {
       || activeCategory === "all"
       || norm(activeCategory) === "todo";
 
-    // Comparar por category (texto) o category_id (UUID) o category_name
-    const productCat = norm(product.category);
-    const productCatName = norm(product.category_name);
-    const productCatId  = (product.category_id ?? "").toString();
-    const currentCat    = norm(activeCategory);
+    if (isAll) {
+      // Sin filtro: solo el filtro de búsqueda
+      const searchQuery = norm(props.searchQuery);
+      const matchesSearch = !searchQuery
+        || norm(product.name).includes(searchQuery);
+      return matchesSearch;
+    }
 
-    // Match por texto normalizado (acepta "Carne" == "carne" == "Cárne")
-    // o por UUID de category_id
-    const matchesCategory = isAll
-      || productCat  === currentCat
-      || productCatName === currentCat
-      || (productCatId && productCatId === activeCategory);
+    // ★ Matching cruzado: UUID o nombre de categoría
+    const cats = Array.isArray(props.categories) ? props.categories : [];
+    const currentCat = cats.find(
+      (c: any) => norm(c.id) === norm(activeCategory) || norm(c.name) === norm(activeCategory),
+    );
+    const targetId   = norm(currentCat?.id)     || norm(activeCategory);
+    const targetName = norm(currentCat?.name)   || norm(activeCategory);
+
+    const productCat     = norm(product.category);
+    const productCatName = norm(product.category_name);
+    const productCatId   = (product.category_id ?? "").toString().trim();
+    const productCatIdN  = norm(productCatId);
+
+    // Match por UUID exacto O por nombre de categoría
+    const matchesCategory =
+      productCatIdN === targetId ||
+      productCatIdN === targetName ||
+      productCat === targetName ||
+      productCat === norm(activeCategory) ||
+      productCatName === targetName ||
+      productCatName === norm(activeCategory) ||
+      (productCatId && productCatId === activeCategory);
 
     const searchQuery = norm(props.searchQuery);
     const matchesSearch = !searchQuery
