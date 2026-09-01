@@ -147,6 +147,17 @@ export function usePosData(): PosDataState {
                         });
                         setSource("supabase");
                         setError(null);
+                        // ★ DEBUG POS: log de productos cargados
+                        console.log("[DEBUG POS] Productos cargados para la caja:", {
+                            tenant: data.restaurant.id,
+                            count: data.products.length,
+                            productos: data.products.map((p: any) => ({
+                                id: p.id,
+                                name: p.name,
+                                category: p.category,
+                                price: p.price,
+                            })),
+                        });
                         // Persistir en caché
                         try {
                             await Promise.all([
