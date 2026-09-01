@@ -74,41 +74,90 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
         tableNumber: input.tableNumber ?? null,
         tableId:     input.tableId     ?? null,
     }));
-    const { data: order, error: orderErr } = await supabase.rpc("insert_order_with_tenant", {
-        p_order: {
-            tenant_id: realId,
-            table_id: input.tableId || null,
-            table_number: input.tableNumber || null,
-            waiter_name: input.waiterName || "Caja",
-            items: itemsWithTable,
-            subtotal: input.subtotal,
-            tax_total: input.taxTotal,
-            total: input.total,
-            payment_method: input.paymentMethod || "cash",
-            status: "closed",
-            series: input.series || "T26",
-        },
-    });
 
-    if (orderErr) {
-        console.error("[executeCheckout] INSERT orders error:", orderErr);
+    // ★★★ ESTRATEGIA ROBUSTA: intentar RPC primero, fallback a INSERT directo ★★★
+    let orderId: string | undefined;
+    let insertError: string | undefined;
+    let insertErrorCode: string | undefined;
+
+    // E1) Intentar con el RPC (intenta insertar todo, bypasa RLS)
+    try {
+        const { data: order, error: orderErr } = await supabase.rpc("insert_order_with_tenant", {
+            p_order: {
+                tenant_id: realId,
+                table_id: input.tableId || null,
+                table_number: input.tableNumber || null,
+                waiter_name: input.waiterName || "Caja",
+                items: itemsWithTable,
+                subtotal: input.subtotal,
+                tax_total: input.taxTotal,
+                total: input.total,
+                payment_method: input.paymentMethod || "cash",
+                status: "closed",
+                series: input.series || "T26",
+            },
+        });
+        if (orderErr) {
+            insertError = orderErr.message;
+            insertErrorCode = orderErr.code;
+            console.warn("[executeCheckout] E1 RPC error:", insertErrorCode, insertError);
+        } else {
+            const rpcData = order as any;
+            if (rpcData?.ok && rpcData?.id) {
+                orderId = rpcData.id as string;
+                console.log("[executeCheckout] ✓ E1 RPC INSERT, id=", orderId);
+            } else {
+                insertError = rpcData?.error || "RPC retornó error";
+                console.warn("[executeCheckout] E1 RPC no ok:", insertError);
+            }
+        }
+    } catch (e) {
+        insertError = e instanceof Error ? e.message : String(e);
+        console.warn("[executeCheckout] E1 exception:", insertError);
+    }
+
+    // E2) Fallback: INSERT DIRECTO solo con columnas que SÍ existen
+    //    (la tabla real solo tiene: id, tenant_id, waiter_name, items,
+    //     subtotal, tax_total, total, payment_method, status, created_at)
+    if (!orderId) {
+        console.log("[executeCheckout] E2 fallback: INSERT directo");
+        try {
+            const { data: order, error: orderErr } = await supabase
+                .from("orders")
+                .insert([{
+                    tenant_id:      realId,
+                    waiter_name:    input.waiterName || "Caja",
+                    items:          itemsWithTable,
+                    subtotal:       input.subtotal,
+                    tax_total:      input.taxTotal,
+                    total:          input.total,
+                    payment_method: input.paymentMethod || "cash",
+                    status:         "closed",
+                }])
+                .select()
+                .single();
+            if (orderErr) {
+                insertError = orderErr.message;
+                insertErrorCode = orderErr.code;
+                console.error("[executeCheckout] E2 INSERT error:", insertErrorCode, insertError);
+            } else {
+                orderId = (order as any)?.id;
+                console.log("[executeCheckout] ✓ E2 INSERT orders, id=", orderId);
+            }
+        } catch (e) {
+            insertError = e instanceof Error ? e.message : String(e);
+            console.error("[executeCheckout] E2 exception:", insertError);
+        }
+    }
+
+    if (!orderId) {
         return {
             ok: false,
-            error: orderErr.message,
-            errorCode: orderErr.code,
+            error: insertError || "No se pudo insertar el ticket",
+            errorCode: insertErrorCode,
             step: "insert_order",
         };
     }
-    const rpcData = order as any;
-    if (!rpcData?.ok) {
-        return {
-            ok: false,
-            error: rpcData?.error || "RPC retornó error",
-            step: "rpc",
-        };
-    }
-    const orderId = rpcData.id as string;
-    console.log("[executeCheckout] ✓ INSERT orders, id=", orderId);
 
     // 2) DELETE en open_orders
     if (input.openOrderId || input.tableId || input.tableNumber) {
