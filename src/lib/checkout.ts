@@ -99,18 +99,45 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
     console.log("[executeCheckout] ✅ VENTA GUARDADA, id:", orderId);
 
     // 2) DELETE comanda activa + UPDATE mesa (best-effort, no bloquea)
+    //    ★ La columna en dining_tables es 'number' (NO 'table_number')
+    //    ★ Capturar errores HTTP 400 silenciosamente
     if (input.tableNumber) {
         const tnum = String(input.tableNumber);
+        const tnumNum = Number(input.tableNumber);
         try {
             console.log("[executeCheckout] paso 2: DELETE open_orders table_number=", tnum);
-            await supabase.from("open_orders").delete().eq("table_number", tnum);
-            console.log("[executeCheckout] paso 3: UPDATE dining_tables table_number=", tnum);
-            await supabase.from("dining_tables")
-                .update({ status: "free", current_order_id: null })
+            // 2a) DELETE comanda activa
+            const { error: delErr } = await supabase
+                .from("open_orders")
+                .delete()
                 .eq("table_number", tnum);
-            console.log("[executeCheckout] ✓ mesa liberada en BD");
+            if (delErr) {
+                console.warn("[executeCheckout] ⚠ DELETE open_orders:", delErr.message);
+            }
+
+            // 2b) UPDATE mesa — intentar por 'number' (esquema real)
+            console.log("[executeCheckout] paso 3: UPDATE dining_tables por 'number'=", tnumNum);
+            const { error: updErr1 } = await supabase
+                .from("dining_tables")
+                .update({ status: "free", current_order_id: null })
+                .eq("number", tnumNum);
+            if (updErr1) {
+                console.warn("[executeCheckout] ⚠ UPDATE por 'number' falló:", updErr1.message);
+                // Fallback: intentar por 'table_number' por si la BD usa otro esquema
+                const { error: updErr2 } = await supabase
+                    .from("dining_tables")
+                    .update({ status: "free" })
+                    .eq("table_number", tnum);
+                if (updErr2) {
+                    console.warn("[executeCheckout] ⚠ UPDATE por 'table_number' también falló (silenciado):", updErr2.message);
+                } else {
+                    console.log("[executeCheckout] ✓ mesa liberada por 'table_number'");
+                }
+            } else {
+                console.log("[executeCheckout] ✓ mesa liberada en BD");
+            }
         } catch (e) {
-            console.warn("[executeCheckout] ⚠ mesa/comanda cleanup error:", e);
+            console.warn("[executeCheckout] ⚠ mesa/comanda cleanup error (silenciado):", e);
         }
     }
 
