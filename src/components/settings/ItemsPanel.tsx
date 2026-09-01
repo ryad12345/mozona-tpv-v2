@@ -468,8 +468,15 @@ export function ItemsPanel() {
     setError(null);
 
     const realId = await resolveRealTenantId(auth.tenant?.id);
-    if (!realId || !supabase) {
-      setError("No se pudo resolver el tenant_id");
+    if (!supabase) {
+      setError("Supabase no está configurado");
+      setSaving(false);
+      return;
+    }
+    // realId siempre retorna string (resolveRealTenantId tiene 5 fallbacks)
+    // Si fuera el zero UUID, significa que la BD está vacía → mostrar error
+    if (!realId || realId === "00000000-0000-0000-0000-000000000000") {
+      setError("No se pudo resolver el tenant_id.  Verifica que existe al menos un tenant en la BD.");
       setSaving(false);
       return;
     }
