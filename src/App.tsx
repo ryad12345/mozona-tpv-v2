@@ -2,24 +2,44 @@
 // MOZONA TPV — App root
 // =====================================================================
 
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, lazy, type ErrorInfo, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { PosTerminalPro } from "./pages/PosTerminalPro";
-import { SettingsPage } from "./pages/SettingsPage";
+
+// ★ Páginas ligeras (carga inmediata: landing, auth, pricing)
 import { AuthPage } from "./pages/AuthPage";
 import { LandingPage } from "./pages/LandingPage";
 import { PricingPage } from "./pages/PricingPage";
-import { RegisterPage } from "./pages/RegisterPage";
-import { BillingSuccessPage } from "./pages/BillingSuccessPage";
-import { BillingCancelPage } from "./pages/BillingCancelPage";
-import { WaiterLoginPage } from "./pages/WaiterLoginPage";
-import { WaiterPad } from "./pages/WaiterPad";
-import { AdminInvitesPage } from "./pages/AdminInvitesPage";
-import { SetupCajaPage } from "./pages/SetupCajaPage";
+
+// ★ Páginas pesadas (lazy loading: TPV, settings, waiter)
+const PosTerminalPro  = lazy(() => import("./pages/PosTerminalPro").then(m => ({ default: m.PosTerminalPro })));
+const SettingsPage    = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const RegisterPage    = lazy(() => import("./pages/RegisterPage").then(m => ({ default: m.RegisterPage })));
+const BillingSuccessPage = lazy(() => import("./pages/BillingSuccessPage").then(m => ({ default: m.BillingSuccessPage })));
+const BillingCancelPage  = lazy(() => import("./pages/BillingCancelPage").then(m => ({ default: m.BillingCancelPage })));
+const WaiterLoginPage = lazy(() => import("./pages/WaiterLoginPage").then(m => ({ default: m.WaiterLoginPage })));
+const WaiterPad       = lazy(() => import("./pages/WaiterPad").then(m => ({ default: m.WaiterPad })));
+const AdminInvitesPage = lazy(() => import("./pages/AdminInvitesPage").then(m => ({ default: m.AdminInvitesPage })));
+const SetupCajaPage   = lazy(() => import("./pages/SetupCajaPage").then(m => ({ default: m.SetupCajaPage })));
+
+// ★ Página de cierre de caja (nueva, lazy)
+const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
+
 import { WebSocketProvider } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
+
+// ★ Spinner reutilizable para Suspense
+function PageLoader({ label = "Cargando…" }: { label?: string }) {
+    return (
+        <div className="min-h-dvh w-full flex items-center justify-center bg-slate-50">
+            <div className="text-center">
+                <div className="w-10 h-10 mx-auto mb-3 border-[3px] border-slate-200 border-t-blue-600 rounded-full animate-spin" />
+                <div className="text-[12px] text-slate-500">{label}</div>
+            </div>
+        </div>
+    );
+}
 
 // ---------------------------------------------------------------------
 // ErrorBoundary
@@ -105,27 +125,32 @@ export function App() {
             <AuthProvider>
                 <WebSocketProvider>
                     <BrowserRouter>
-                        <Routes>
-                            {/* Públicas */}
-                            <Route path="/"        element={<LandingPage />} />
-                            <Route path="/pricing" element={<PricingPage />} />
-                            <Route path="/auth"    element={<AuthPage />} />
-                            <Route path="/register" element={<RegisterPage />} />
-                            <Route path="/billing/success" element={<BillingSuccessPage />} />
-                            <Route path="/billing/cancel"  element={<BillingCancelPage />} />
-                            <Route path="/waiter/login"    element={<WaiterLoginPage />} />
-                            <Route path="/setup-caja"      element={<SetupCajaPage />} />
-                            <Route path="/admin/invites"   element={<AdminInvitesPage />} />
+                        <Suspense fallback={<PageLoader />}>
+                            <Routes>
+                                {/* Públicas */}
+                                <Route path="/"        element={<LandingPage />} />
+                                <Route path="/pricing" element={<PricingPage />} />
+                                <Route path="/auth"    element={<AuthPage />} />
+                                <Route path="/register" element={<Suspense fallback={<PageLoader label="Registrando…" />}><RegisterPage /></Suspense>} />
+                                <Route path="/billing/success" element={<Suspense fallback={<PageLoader />}><BillingSuccessPage /></Suspense>} />
+                                <Route path="/billing/cancel"  element={<Suspense fallback={<PageLoader />}><BillingCancelPage /></Suspense>} />
+                                <Route path="/waiter/login"    element={<Suspense fallback={<PageLoader />}><WaiterLoginPage /></Suspense>} />
+                                <Route path="/setup-caja"      element={<Suspense fallback={<PageLoader />}><SetupCajaPage /></Suspense>} />
+                                <Route path="/admin/invites"   element={<Suspense fallback={<PageLoader />}><AdminInvitesPage /></Suspense>} />
 
-                            {/* TPV Admin — solo desktop/tablet */}
-                            <Route path="/app"      element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><PosTerminalPro /></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
-                            <Route path="/settings" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><SettingsPage /></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
+                                {/* TPV Admin — solo desktop/tablet */}
+                                <Route path="/app"      element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Iniciando TPV…" />}><PosTerminalPro /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
+                                <Route path="/settings" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cargando ajustes…" />}><SettingsPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
 
-                            {/* Camarero — solo móvil */}
-                            <Route path="/waiter"   element={<ProtectedRoute><WaiterPad /></ProtectedRoute>} />
+                                {/* Cierre de caja (arqueo / turnos) */}
+                                <Route path="/cash-register" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cierre de caja…" />}><CashRegisterPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
 
-                            <Route path="*"        element={<Navigate to="/" replace />} />
-                        </Routes>
+                                {/* Camarero — solo móvil */}
+                                <Route path="/waiter"   element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando comandero…" />}><WaiterPad /></Suspense></ProtectedRoute>} />
+
+                                <Route path="*"        element={<Navigate to="/" replace />} />
+                            </Routes>
+                        </Suspense>
                     </BrowserRouter>
                 </WebSocketProvider>
             </AuthProvider>
