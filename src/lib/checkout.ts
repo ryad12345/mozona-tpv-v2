@@ -66,22 +66,20 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
 
     // 1) INSERT en orders (vía RPC SECURITY DEFINER bypasa RLS)
     console.log("[executeCheckout] paso 1: INSERT orders");
-    // ★ Inyectar la referencia a la mesa en el SNAPSHOT de cada item
-    //    para que el panel de Ventas pueda mostrarla aunque la tabla
-    //    orders no tenga columna table_number.
     const itemsWithTable = (input.items ?? []).map((it: any) => ({
         ...it,
         tableNumber: input.tableNumber ?? null,
         tableId:     input.tableId     ?? null,
     }));
 
-    // ★★★ ESTRATEGIA ROBUSTA: intentar RPC primero, fallback a INSERT directo ★★★
+    // ★★★ 3 ESTRATEGIAS DE INSERCIÓN ★★★
     let orderId: string | undefined;
     let insertError: string | undefined;
     let insertErrorCode: string | undefined;
 
-    // E1) Intentar con el RPC (intenta insertar todo, bypasa RLS)
+    // E1) RPC con todas las columnas
     try {
+        console.log("[executeCheckout] E1: intentando RPC insert_order_with_tenant");
         const { data: order, error: orderErr } = await supabase.rpc("insert_order_with_tenant", {
             p_order: {
                 tenant_id: realId,
@@ -116,12 +114,10 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
         console.warn("[executeCheckout] E1 exception:", insertError);
     }
 
-    // E2) Fallback: INSERT DIRECTO solo con columnas que SÍ existen
-    //    (la tabla real solo tiene: id, tenant_id, waiter_name, items,
-    //     subtotal, tax_total, total, payment_method, status, created_at)
+    // E2) INSERT directo con todas las columnas que probablemente existen
     if (!orderId) {
-        console.log("[executeCheckout] E2 fallback: INSERT directo");
         try {
+            console.log("[executeCheckout] E2: INSERT directo con 8 columnas");
             const { data: order, error: orderErr } = await supabase
                 .from("orders")
                 .insert([{
@@ -139,14 +135,42 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
             if (orderErr) {
                 insertError = orderErr.message;
                 insertErrorCode = orderErr.code;
-                console.error("[executeCheckout] E2 INSERT error:", insertErrorCode, insertError);
+                console.warn("[executeCheckout] E2 INSERT error:", insertErrorCode, insertError);
             } else {
                 orderId = (order as any)?.id;
                 console.log("[executeCheckout] ✓ E2 INSERT orders, id=", orderId);
             }
         } catch (e) {
             insertError = e instanceof Error ? e.message : String(e);
-            console.error("[executeCheckout] E2 exception:", insertError);
+            console.warn("[executeCheckout] E2 exception:", insertError);
+        }
+    }
+
+    // E3) INSERT ULTRA-MINIMO solo con columnas verificadas (id, total, created_at)
+    //    La BD real SÍ tiene estas (lo confirmó el log de listSales)
+    if (!orderId) {
+        try {
+            console.log("[executeCheckout] E3: INSERT ULTRA-mínimo (solo total)");
+            const { data: order, error: orderErr } = await supabase
+                .from("orders")
+                .insert([{
+                    total: input.total,
+                }])
+                .select()
+                .single();
+            if (orderErr) {
+                insertError = orderErr.message;
+                insertErrorCode = orderErr.code;
+                console.error("[executeCheckout] E3 INSERT error:", insertErrorCode, insertError);
+                console.error("[executeCheckout] E3 details:", orderErr);
+            } else {
+                orderId = (order as any)?.id;
+                console.log("[executeCheckout] ✓ E3 INSERT ULTRA, id=", orderId);
+                console.warn("[executeCheckout] ⚠️ INSERT con campos mínimos, no se guardó tenant/items");
+            }
+        } catch (e) {
+            insertError = e instanceof Error ? e.message : String(e);
+            console.error("[executeCheckout] E3 exception:", insertError);
         }
     }
 

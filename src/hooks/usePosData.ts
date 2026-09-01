@@ -75,7 +75,7 @@ export function usePosData(): PosDataState {
             //    cuando hay una nueva build con cache-bust
             try {
                 const cacheVersion = localStorage.getItem("mozona.cache_version");
-                const CURRENT_VERSION = "v1.6-realtime-global";
+                const CURRENT_VERSION = "v1.7-checkout-ultra";
                 if (cacheVersion !== CURRENT_VERSION) {
                     console.log("[usePosData] cache-bust:", cacheVersion, "→", CURRENT_VERSION);
                     const { clearAll } = await import("../lib/offlineStorage");
