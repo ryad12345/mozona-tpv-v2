@@ -7,7 +7,8 @@ import { useAuth } from "../../lib/auth";
 import { listSales, loadSalesMetrics, computeMetrics, cancelSale, type SaleRecord } from "../../lib/sales";
 import { fmtEUR } from "../../lib/format";
 import { supabase } from "../../lib/supabase";
-import { SalesDateFilter, type DateRange, type DateRangePreset, rangeForPreset } from "./SalesDateFilter";
+import { SalesDateFilter, type DateRange, type DateRangePreset } from "./SalesDateFilter";
+import { getPresetDateRange } from "../../lib/dateRanges";
 
 export function SalesPanel() {
     const auth = useAuth();
@@ -18,7 +19,7 @@ export function SalesPanel() {
     const [filterPm, setFilterPm] = useState<string>("all");
 
     // ★ Filtro de fechas flexible
-    const initialRange = rangeForPreset("30d");
+    const initialRange = getPresetDateRange("30d");
     const [dateRange, setDateRange] = useState<DateRange>(initialRange);
     const [preset, setPreset]       = useState<DateRangePreset>("30d");
 

@@ -3,13 +3,15 @@
 // =====================================================================
 
 import { useEffect, useMemo, useState } from "react";
+import {
+    getPresetDateRange, endOfDay, startOfDay,
+    type DateRange, type DateRangePreset,
+} from "../../lib/dateRanges";
 
-export type DateRangePreset = "today" | "yesterday" | "week" | "month" | "lastMonth" | "30d" | "all" | "custom";
+// ★ Alias local: rangeForPreset → getPresetDateRange
+const rangeForPreset = getPresetDateRange;
 
-export interface DateRange {
-    start: Date;  // 00:00:00 local
-    end:   Date;  // 23:59:59 local
-}
+export type { DateRange, DateRangePreset };
 
 export interface SalesDateFilterProps {
     value: DateRange;
@@ -18,37 +20,9 @@ export interface SalesDateFilterProps {
 }
 
 // ---------------------------------------------------------------------
-// Helpers
+// Helpers de formato
 // ---------------------------------------------------------------------
 
-function startOfDay(d: Date): Date {
-    const r = new Date(d);
-    r.setHours(0, 0, 0, 0);
-    return r;
-}
-function endOfDay(d: Date): Date {
-    const r = new Date(d);
-    r.setHours(23, 59, 59, 999);
-    return r;
-}
-function startOfWeek(d: Date): Date {
-    // lunes como inicio de semana
-    const r = startOfDay(d);
-    const day = (r.getDay() + 6) % 7; // 0=lunes
-    r.setDate(r.getDate() - day);
-    return r;
-}
-function startOfMonth(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-}
-function endOfMonth(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-function addDays(d: Date, n: number): Date {
-    const r = new Date(d);
-    r.setDate(r.getDate() + n);
-    return r;
-}
 function fmtDateShort(d: Date): string {
     return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
 }
@@ -59,32 +33,6 @@ function sameDay(a: Date, b: Date): boolean {
     return a.getFullYear() === b.getFullYear()
         && a.getMonth() === b.getMonth()
         && a.getDate() === b.getDate();
-}
-
-export function rangeForPreset(p: DateRangePreset): DateRange {
-    const now = new Date();
-    switch (p) {
-        case "today":
-            return { start: startOfDay(now), end: endOfDay(now) };
-        case "yesterday": {
-            const y = addDays(now, -1);
-            return { start: startOfDay(y), end: endOfDay(y) };
-        }
-        case "week":
-            return { start: startOfWeek(now), end: endOfDay(now) };
-        case "month":
-            return { start: startOfMonth(now), end: endOfDay(now) };
-        case "lastMonth": {
-            const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            return { start: startOfMonth(lm), end: endOfMonth(lm) };
-        }
-        case "30d":
-            return { start: startOfDay(addDays(now, -30)), end: endOfDay(now) };
-        case "all":
-            return { start: new Date(2000, 0, 1), end: endOfDay(now) };
-        case "custom":
-            return { start: startOfDay(now), end: endOfDay(now) };
-    }
 }
 
 const PRESETS: Array<{ key: DateRangePreset; label: string }> = [

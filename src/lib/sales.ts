@@ -5,6 +5,7 @@
 import { supabase } from "./supabase";
 import { resolveRealTenantId } from "./waiters";
 import type { OrderItem } from "./types";
+import { getPresetDateRange, startOfDay, endOfDay } from "./dateRanges";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -85,38 +86,40 @@ export async function listSales(
         return [];
     }
 
-    // 1) Calcular rango de fechas según periodo
-    const now = new Date();
-    // ★ Prioridad: startDate/endDate explícitos > period
-    let start: string | null = null;
-    let end:   string | null = null;
-    if (startDate) {
-        start = (startDate instanceof Date ? startDate : new Date(startDate)).toISOString();
-    } else if (period === "today") {
-        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        start = d.toISOString();
-    } else if (period === "month") {
-        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).toISOString();
-    } else if (period === "30d") {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 30);
-        start = d.toISOString();
+    // 1) Calcular rango de fechas
+    //    ★★★ PRIORIDAD: startDate/endDate EXPLÍCITOS > period preset ★★★
+    //    ★★★ SIEMPRE se aplican .gte() Y .lte() para rangos cerrados ★★★
+    let start: string;
+    let end:   string;
+    if (startDate && endDate) {
+        // Rango personalizado: normalizar a inicio/fin de día LOCAL
+        const sd = startDate instanceof Date ? startDate : new Date(startDate);
+        const ed = endDate   instanceof Date ? endDate   : new Date(endDate);
+        start = startOfDay(sd).toISOString();
+        end   = endOfDay(ed).toISOString();
     } else {
-        start = null;
+        // Preset: rangos ESTRICTOS
+        const r = getPresetDateRange(period);
+        start = r.start.toISOString();
+        end   = r.end.toISOString();
     }
-    if (endDate) {
-        end = (endDate instanceof Date ? endDate : new Date(endDate)).toISOString();
-    }
-    console.log("[listSales] start=", start ?? "(sin filtro)", "end=", end ?? "(sin tope)");
+    console.log("[listSales] ★★ RANGO ESTRICTO ★*", {
+        period,
+        startLocal: new Date(start).toLocaleString("es-ES"),
+        endLocal:   new Date(end).toLocaleString("es-ES"),
+        startIso:   start,
+        endIso:     end,
+    });
 
     // 2) Query base ULTRA-DEFENSIVA
+    //    ★ SIEMPRE .gte() + .lte() para rangos cerrados
     let query = supabase
         .from("orders")
         .select("id, total, created_at")
+        .gte("created_at", start)
+        .lte("created_at", end)
         .order("created_at", { ascending: false })
         .limit(1000);
-    if (start) query = query.gte("created_at", start);
-    if (end)   query = query.lte("created_at", end);
 
     // 3) ★ PRIMERA QUERY: con tenant_id resuelto (si lo hay)
     const realId = await resolveRealTenantId(tenantId);
