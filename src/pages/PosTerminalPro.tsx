@@ -697,19 +697,29 @@ export function PosTerminalPro() {
             persistError = e instanceof Error ? e.message : String(e);
         }
 
-        // ★★★ PASO 4: TOAST FINAL ★★★
+        // ★★★ PASO 4: TOAST FINAL (visible) ★★★
         const verb = withVeriFactu ? "Factura VeriFactu emitida" : "Cobro realizado";
         const seriesStr = `${invoice.series}-${String(invoice.number).padStart(8, "0")}`;
         if (persistOk) {
             setToast({
                 kind: "ok",
-                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · Guardado en BD`,
+                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · Guardado en BD (${orderIdCreated?.slice(0, 8) ?? "?"})`,
             });
         } else if (persistError) {
+            // ★★★ ERROR VISIBLE con alert del navegador ★★★
+            const errorMsg = persistError.length > 100 ? persistError.slice(0, 100) + "..." : persistError;
             setToast({
                 kind: "err",
-                msg: `⚠ ${verb} · Mesa ${tableNum} · ${round2(sub)} € · NO guardado en BD: ${persistError.slice(0, 80)}`,
+                msg: `❌ ${verb} Mesa ${tableNum} ${round2(sub)}€ · NO GUARDADO: ${errorMsg}`,
             });
+            // ★★ ALERT NATIVO para que se vea siempre ★★
+            alert(`❌ ERROR AL GUARDAR VENTA\n\n` +
+                  `Mesa: ${tableNum}\n` +
+                  `Importe: ${round2(sub)} €\n` +
+                  `Error: ${persistError}\n\n` +
+                  `La mesa se ha liberado localmente, pero el ticket NO se ha guardado en la base de datos.\n` +
+                  `Si el problema persiste, ve a /settings → Ventas y revisa la consola.`);
+            console.error("[performCharge] ❌ NO GUARDADO EN BD. Detalle:", persistError);
         } else {
             setToast({
                 kind: "ok",
