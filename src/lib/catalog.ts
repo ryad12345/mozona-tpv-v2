@@ -6,6 +6,9 @@
 // =====================================================================
 
 import { supabase } from "./supabase";
+import { resolveRealTenantId } from "./waiters";
+
+const FALLBACK_TENANT_ID = "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
 
 export interface PosProduct {
     id:            string;
@@ -184,6 +187,8 @@ export interface ProductInput {
 
 export async function saveProduct(input: ProductInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    // ★ v1.9.4: resolver tenant_id SIEMPRE
+    const realTenantId = (await resolveRealTenantId(null)) || FALLBACK_TENANT_ID;
     const payload: any = {
         name:          input.name,
         price:         Number(input.price),
@@ -193,6 +198,7 @@ export async function saveProduct(input: ProductInput): Promise<{ ok: boolean; i
         image_url:     input.image_url ?? null,
         is_active:     input.is_active ?? true,
         tax_rate:      Number(input.tax_rate ?? 10),
+        tenant_id:     realTenantId,
         updated_at:    new Date().toISOString(),
     };
     if (!input.id) {
@@ -259,10 +265,13 @@ export interface CategoryInput {
 
 export async function saveCategory(input: CategoryInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    // ★ v1.9.4: resolver tenant_id SIEMPRE (es NOT NULL en la BD)
+    const realTenantId = (await resolveRealTenantId(null)) || FALLBACK_TENANT_ID;
     // ★ v1.9.2: 'description' e 'is_active' no existen en tabla real
     const payload: any = {
         name:        input.name,
         sort_order:  Number(input.sort_order ?? 0),
+        tenant_id:   realTenantId,
     };
     // Solo añadir image_url si viene definido
     if (input.image_url) {
