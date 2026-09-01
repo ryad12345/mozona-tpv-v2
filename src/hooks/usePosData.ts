@@ -71,21 +71,8 @@ export function usePosData(): PosDataState {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            // 0) ★ FIX: Detectar cambio de versión y limpiar IndexedDB
-            //    cuando hay una nueva build con cache-bust
-            try {
-                const cacheVersion = localStorage.getItem("mozona.cache_version");
-                const CURRENT_VERSION = "v1.7-checkout-ultra";
-                if (cacheVersion !== CURRENT_VERSION) {
-                    console.log("[usePosData] cache-bust:", cacheVersion, "→", CURRENT_VERSION);
-                    const { clearAll } = await import("../lib/offlineStorage");
-                    await clearAll();
-                    localStorage.setItem("mozona.cache_version", CURRENT_VERSION);
-                    console.log("[usePosData] IndexedDB limpiado");
-                }
-            } catch (e) {
-                console.warn("[usePosData] cache-bust check failed:", e);
-            }
+            // ★ v1.9: 100% directo a Supabase, sin IndexedDB ni mocks
+            console.log("[usePosData] 🔄 refresh directo a Supabase (sin caché)...");
 
             // 1) Si hay sesión de camarero (vía /waiter/login), usar
             //    su tenant_id directamente

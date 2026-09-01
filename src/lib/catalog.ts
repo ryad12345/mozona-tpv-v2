@@ -1,174 +1,162 @@
 // =====================================================================
-// MOZONA TPV — catalog: carga universal del catálogo
+// MOZONA TPV — catalog: conexión 100% DIRECTA a Supabase
+// =====================================================================
+// Sin IndexedDB, sin mocks, sin fallbacks estáticos.
+// Lee en vivo de public.products y public.categories.
 // =====================================================================
 
 import { supabase } from "./supabase";
-import { getActiveTenantId, ZERO_UUID } from "./tenantResolver";
 
-export interface CatalogProduct {
-    id: string;
-    name: string;
-    description: string | null;
-    price: number;
-    category: string | null;
-    image_url: string | null;
-    is_active: boolean;
-    tax_rate: number;
-    tenant_id: string | null;
+export interface PosProduct {
+    id:            string;
+    name:          string;
+    description:   string | null;
+    price:         number;
+    category_id:   string | null;
+    category:      string | null;
+    category_name: string | null;
+    image_url:     string | null;
+    is_active:     boolean;
+    tenant_id:     string | null;
+    tax_rate:      number;
 }
+
+export interface PosCategory {
+    id:          string;
+    name:        string;
+    description: string | null;
+    image_url:   string | null;
+    sort_order:  number;
+    is_active:   boolean;
+    tenant_id:   string | null;
+}
+
+// =====================================================================
+// CATÁLOGO DE PRODUCTOS
+// =====================================================================
 
 /**
- * Carga el catálogo de productos activos. Usado por:
- *   - Caja (/app) vía usePosData
- *   - Camarero (/waiter)
- *   - ItemsPanel (/settings/products)
+ * Lee el catálogo en vivo desde Supabase. Sin IndexedDB ni fallbacks estáticos.
  *
- * Estrategia:
- *   1) SELECT con tenant_id del usuario actual
- *   2) FALLBACK: SELECT con is_active=true (todos los tenants)
- *   3) FALLBACK: SELECT sin filtros
+ * @param tenantId Si se proporciona, filtra por tenant. Si no, lee TODOS los
+ *                 productos activos de la BD.
  */
-export async function fetchCatalog(): Promise<CatalogProduct[]> {
-    if (!supabase) return [];
-    console.log("[fetchCatalog] ★★ INICIO ★*");
+export async function fetchCatalog(tenantId?: string | null): Promise<PosProduct[]> {
+    if (!supabase) {
+        console.error("[fetchCatalog] ❌ Supabase no configurado");
+        return [];
+    }
+    console.log("[fetchCatalog] 📡 Consultando Supabase EN VIVO... tenantId=", tenantId);
 
-    const tenantId = await getActiveTenantId();
-    console.log("[fetchCatalog] tenantId resuelto:", tenantId);
+    // 1) Consulta directa con tenant (si aplica)
+    const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
+    let query = supabase
+        .from("products")
+        .select("id, name, description, price, category_id, category, category_name, image_url, is_active, tenant_id, tax_rate")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+    if (useTenant) {
+        query = query.eq("tenant_id", tenantId);
+    }
 
-    // 1) Con tenant
-    if (tenantId && tenantId !== ZERO_UUID) {
-        const { data, error } = await supabase
+    let { data, error } = await query;
+
+    if (error) {
+        console.error("[fetchCatalog] ❌ Error Supabase:", error.code, error.message);
+        data = null;
+    }
+
+    // 2) Si la consulta con tenant da 0, leer TODOS los activos de la BD
+    if (!data || data.length === 0) {
+        console.warn("[fetchCatalog] 0 productos con tenant, leyendo TODOS los activos de la BD...");
+        const fallback = await supabase
             .from("products")
-            .select("*")
-            .eq("tenant_id", tenantId)
+            .select("id, name, description, price, category_id, category, category_name, image_url, is_active, tenant_id, tax_rate")
             .eq("is_active", true)
             .order("name", { ascending: true });
-        if (error) {
-            console.warn("[fetchCatalog] error con tenant:", error.message);
-        } else if (data && data.length > 0) {
-            console.log("[fetchCatalog] ✓", data.length, "productos con tenant", tenantId);
-            return data.map(normalize);
+        if (fallback.error) {
+            console.error("[fetchCatalog] ❌ Error fallback:", fallback.error.message);
+            return [];
         }
+        data = fallback.data ?? [];
     }
 
-    // 2) Sin filtro de tenant, solo is_active
-    console.warn("[fetchCatalog] 0 con tenant, buscando en todos...");
-    const { data: allData, error: allErr } = await supabase
-        .from("products")
-        .select("*")
-        .eq("is_active", true)
-        .order("name", { ascending: true })
-        .limit(1000);
-    if (allErr) {
-        console.error("[fetchCatalog] error sin filtro:", allErr.message);
-        return [];
-    }
-    if (!allData || allData.length === 0) {
-        console.warn("[fetchCatalog] 0 productos en la BD");
-        return [];
-    }
-
-    // 3) Usar el tenant DOMINANTE
-    const byTenant: Record<string, number> = {};
-    for (const p of allData) {
-        const k = String(p.tenant_id ?? "null");
-        byTenant[k] = (byTenant[k] ?? 0) + 1;
-    }
-    const dominant = Object.entries(byTenant).sort(([, a], [, b]) => b - a)[0]?.[0];
-    if (dominant && dominant !== "null") {
-        const prods = allData
-            .filter(p => String(p.tenant_id) === dominant)
-            .map(normalize);
-        console.log("[fetchCatalog] ✓ tenant dominante:", dominant, "→", prods.length);
-        return prods;
-    }
-    return allData.map(normalize);
+    console.log(`[fetchCatalog] ✓ Cargados ${data.length} productos en vivo desde Supabase`);
+    return data.map(normalizeProduct);
 }
 
-function normalize(p: any): CatalogProduct {
+function normalizeProduct(p: any): PosProduct {
     return {
-        id: p.id,
-        name: p.name,
-        description: p.description ?? null,
-        price: Number(p.price ?? 0),
-        // ★ Mapear category_id / category / category_name
-        category: p.category ?? p.category_name ?? p.categoryName ?? null,
-        image_url: p.image_url ?? p.image ?? p.imageUrl ?? null,
-        is_active: p.is_active ?? true,
-        tax_rate: Number(p.tax_rate ?? p.vat_rate ?? 10),
-        tenant_id: p.tenant_id ?? null,
+        id:            p.id,
+        name:          p.name ?? "—",
+        description:   p.description ?? null,
+        price:         Number(p.price ?? 0),
+        category_id:   p.category_id ?? null,
+        category:      p.category ?? p.category_name ?? null,
+        category_name: p.category_name ?? p.category ?? null,
+        image_url:     p.image_url ?? p.image ?? null,
+        is_active:     p.is_active ?? true,
+        tenant_id:     p.tenant_id ?? null,
+        tax_rate:      Number(p.tax_rate ?? p.vat_rate ?? 10),
     };
 }
 
 // =====================================================================
-// CATEGORIES
+// CATEGORÍAS
 // =====================================================================
 
-export interface CatalogCategory {
-    id: string;
-    name: string;
-    description?: string | null;
-    image_url?: string | null;
-    sort_order?: number;
-    is_active: boolean;
-    tenant_id: string | null;
-}
-
-/** Carga categorías con fallback multi-tenant */
-export async function fetchCategories(): Promise<CatalogCategory[]> {
-    if (!supabase) return [];
-    console.log("[fetchCategories] ★★ INICIO ★*");
-    const tenantId = await getActiveTenantId();
-
-    // 1) Con tenant
-    if (tenantId && tenantId !== ZERO_UUID) {
-        const { data, error } = await supabase
-            .from("categories")
-            .select("*")
-            .eq("tenant_id", tenantId)
-            .eq("is_active", true)
-            .order("name", { ascending: true });
-        if (error) {
-            console.warn("[fetchCategories] error con tenant:", error.message);
-        } else if (data && data.length > 0) {
-            console.log("[fetchCategories] ✓", data.length, "con tenant");
-            return data.map(normalizeCategory);
-        }
+/**
+ * Lee las categorías en vivo desde Supabase.
+ */
+export async function fetchCategories(tenantId?: string | null): Promise<PosCategory[]> {
+    if (!supabase) {
+        console.error("[fetchCategories] ❌ Supabase no configurado");
+        return [];
     }
+    console.log("[fetchCategories] 📡 Consultando Supabase EN VIVO... tenantId=", tenantId);
 
-    // 2) Sin filtro
-    const { data: allData, error: allErr } = await supabase
+    const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
+    let query = supabase
         .from("categories")
-        .select("*")
-        .eq("is_active", true)
-        .order("name", { ascending: true })
-        .limit(500);
-    if (allErr) {
-        console.error("[fetchCategories] error sin filtro:", allErr.message);
+        .select("id, name, description, image_url, sort_order, is_active, tenant_id")
+        .eq("is_active", true);
+    if (useTenant) {
+        query = query.eq("tenant_id", tenantId);
+    }
+    let { data, error } = await query;
+
+    if (error) {
+        console.error("[fetchCategories] ❌ Error:", error.message);
         return [];
     }
-    if (!allData || allData.length === 0) {
-        console.warn("[fetchCategories] 0 categorías");
-        return [];
+
+    // FALLBACK: si 0 con tenant, leer todas
+    if (!data || data.length === 0) {
+        console.warn("[fetchCategories] 0 categorías con tenant, leyendo TODAS...");
+        const fb = await supabase
+            .from("categories")
+            .select("id, name, description, image_url, sort_order, is_active, tenant_id")
+            .eq("is_active", true);
+        if (fb.error || !fb.data) return [];
+        data = fb.data;
     }
-    // Tenant dominante
-    const byTenant: Record<string, number> = {};
-    for (const c of allData) {
-        byTenant[String(c.tenant_id ?? "null")] = (byTenant[String(c.tenant_id ?? "null")] ?? 0) + 1;
-    }
-    const dominant = Object.entries(byTenant).sort(([, a], [, b]) => b - a)[0]?.[0];
-    if (dominant && dominant !== "null") {
-        return allData
-            .filter(c => String(c.tenant_id) === dominant)
-            .map(normalizeCategory);
-    }
-    return allData.map(normalizeCategory);
+
+    // Ordenar por sort_order
+    data.sort((a: any, b: any) => {
+        const sa = Number(a.sort_order ?? 0);
+        const sb = Number(b.sort_order ?? 0);
+        if (sa !== sb) return sa - sb;
+        return String(a.name).localeCompare(String(b.name));
+    });
+
+    console.log(`[fetchCategories] ✓ Cargadas ${data.length} categorías en vivo`);
+    return data.map(normalizeCategory);
 }
 
-function normalizeCategory(c: any): CatalogCategory {
+function normalizeCategory(c: any): PosCategory {
     return {
         id:          c.id,
-        name:        c.name,
+        name:        c.name ?? "—",
         description: c.description ?? null,
         image_url:   c.image_url ?? c.image ?? null,
         sort_order:  Number(c.sort_order ?? 0),
@@ -186,26 +174,29 @@ export interface ProductInput {
     name:        string;
     price:       number;
     category?:   string | null;
+    category_id?: string | null;
     description?: string | null;
     image_url?:  string | null;
     is_active?:  boolean;
     tax_rate?:   number;
 }
 
-/** INSERT / UPDATE producto en Supabase */
 export async function saveProduct(input: ProductInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    const tenantId = await getActiveTenantId();
     const payload: any = {
-        name:        input.name,
-        price:       Number(input.price),
-        category:    input.category ?? null,
-        description: input.description ?? null,
-        image_url:   input.image_url ?? null,
-        is_active:   input.is_active ?? true,
-        tax_rate:    Number(input.tax_rate ?? 10),
-        tenant_id:   tenantId === ZERO_UUID ? null : tenantId,
+        name:          input.name,
+        price:         Number(input.price),
+        category:      input.category ?? null,
+        category_id:   input.category_id ?? null,
+        description:   input.description ?? null,
+        image_url:     input.image_url ?? null,
+        is_active:     input.is_active ?? true,
+        tax_rate:      Number(input.tax_rate ?? 10),
+        updated_at:    new Date().toISOString(),
     };
+    if (!input.id) {
+        payload.created_at = new Date().toISOString();
+    }
     try {
         if (input.id) {
             const { data, error } = await supabase
@@ -232,12 +223,10 @@ export async function saveProduct(input: ProductInput): Promise<{ ok: boolean; i
             return { ok: true, id: (data as any)?.id };
         }
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, error: msg };
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
 }
 
-/** Soft-delete (is_active=false) o hard delete */
 export async function deleteProduct(id: string, hard = false): Promise<{ ok: boolean; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
     try {
@@ -250,8 +239,7 @@ export async function deleteProduct(id: string, hard = false): Promise<{ ok: boo
         }
         return { ok: true };
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, error: msg };
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
 }
 
@@ -270,14 +258,13 @@ export interface CategoryInput {
 
 export async function saveCategory(input: CategoryInput): Promise<{ ok: boolean; id?: string; error?: string }> {
     if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    const tenantId = await getActiveTenantId();
     const payload: any = {
         name:        input.name,
         description: input.description ?? null,
         image_url:   input.image_url ?? null,
         sort_order:  Number(input.sort_order ?? 0),
         is_active:   input.is_active ?? true,
-        tenant_id:   tenantId === ZERO_UUID ? null : tenantId,
+        updated_at:  new Date().toISOString(),
     };
     try {
         if (input.id) {
@@ -318,3 +305,12 @@ export async function deleteCategory(id: string, hard = false): Promise<{ ok: bo
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
 }
+
+// =====================================================================
+// COMPATIBILIDAD (tipo antiguo)
+// =====================================================================
+
+/** @deprecated usar PosProduct */
+export type CatalogProduct = PosProduct;
+/** @deprecated usar fetchCatalog */
+export const fetchCatalogLegacy = fetchCatalog;

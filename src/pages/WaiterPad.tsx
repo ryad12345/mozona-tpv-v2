@@ -124,7 +124,15 @@ export function WaiterPad() {
     // -----------------------------------------------------------------
     const visibleProducts = useMemo(() => {
         let list = products;
-        if (categoryId) list = list.filter(p => p.category_id === categoryId);
+        if (categoryId) {
+            const norm = (s: any) => String(s ?? "").trim().toLowerCase();
+            const cid = norm(categoryId);
+            list = list.filter((p: any) => {
+                const catId = norm(p.category_id);
+                const catName = norm(p.category_name ?? p.category);
+                return catId === cid || catName === cid;
+            });
+        }
         if (search.trim()) {
             const q = search.toLowerCase();
             list = list.filter(p => p.name.toLowerCase().includes(q));
