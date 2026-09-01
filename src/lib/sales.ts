@@ -112,14 +112,19 @@ export async function listSales(
             }
             console.log("[listSales] DISTRIBUCIÓN por tenant_id:", byTenant);
             console.log("[listSales] tickets encontrados (todos los tenants):", allData.length);
-            // Usar el primer tenant_id que tenga resultados
-            const firstTenantWithData = allData.find(r => r.tenant_id)?.tenant_id;
-            if (firstTenantWithData && firstTenantWithData !== realId) {
-                console.warn("[listSales] usando tenant_id alternativo:", firstTenantWithData);
-                return allData.filter(r => r.tenant_id === firstTenantWithData).map(normalizeSale);
+            // ★ Usar el tenant_id que tenga MÁS tickets
+            const sortedTenants = Object.entries(byTenant)
+                .sort(([, a], [, b]) => b - a);
+            const dominantTenant = sortedTenants[0]?.[0];
+            if (dominantTenant) {
+                console.log("[listSales] usando tenant dominante:", dominantTenant, "con", byTenant[dominantTenant], "tickets");
+                return allData
+                    .filter(r => String(r.tenant_id) === dominantTenant)
+                    .map(normalizeSale);
             }
             return allData.map(normalizeSale);
         }
+        console.warn("[listSales] 0 tickets en TODA la tabla orders");
     }
 
     if (data && data.length > 0) {

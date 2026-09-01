@@ -73,16 +73,18 @@ export function CatalogPanel(props: any) {
     return matchesCategory && matchesSearch;
   });
 
+  // ★ Categorías DINÁMICAS: derivar de los productos cargados
+  //    (antes había un array hardcodeado que no incluía 'Sándwichs')
+  const dynamicCategories = Array.from(
+    new Set(
+      productsList
+        .map((p: any) => (p.category ?? "").toString().trim())
+        .filter(Boolean)
+    )
+  ).sort();
   const categoryList = [
     { id: 'all', name: 'Todo' },
-    { id: 'Entrantes', name: 'Entrantes' },
-    { id: 'Carne', name: 'Carne' },
-    { id: 'Pescado', name: 'Pescado' },
-    { id: 'Pasta', name: 'Pasta' },
-    { id: 'Pizza', name: 'Pizza' },
-    { id: 'Extras', name: 'Extras' },
-    { id: 'Postres', name: 'Postres' },
-    { id: 'Bebidas', name: 'Bebidas' }
+    ...dynamicCategories.map(c => ({ id: c, name: c })),
   ];
 
   return (
