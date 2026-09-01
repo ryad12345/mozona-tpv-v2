@@ -37,45 +37,38 @@ export async function getMyTenant(): Promise<Restaurant | null> {
             return null;
         }
 
-        // 1) Por owner_id (silenciado si la columna no existe)
-        try {
-            const { data: byOwner, error: err1 } = await supabase
-                .from("tenants")
-                .select("*")
-                .eq("owner_id", user.id)
-                .maybeSingle();
-            if (err1) console.warn("[getMyTenant] owner_id no disponible:", err1.message);
-            if (byOwner) return byOwner as Restaurant;
-        } catch (e) {
-            console.warn("[getMyTenant] owner_id lookup error:", e);
-        }
-
-        // 2) Por tenant_users (silenciado si user_id no existe)
-        try {
-            const { data: tu, error: err2 } = await supabase
-                .from("tenant_users")
-                .select("tenant_id, tenants(*)")
-                .eq("user_id", user.id)
-                .maybeSingle();
-            if (err2) console.warn("[getMyTenant] tenant_users error:", err2.message);
-            if (tu?.tenants) return tu.tenants as unknown as Restaurant;
-        } catch (e) {
-            console.warn("[getMyTenant] tenant_users lookup error:", e);
-        }
-
-        // 3) VIP / SuperAdmin: no es owner pero debe ver el primer tenant activo
+        // ★ v1.9.1: ir DIRECTO al primer tenant activo (sin owner_id)
+        //    El user no es owner del tenant (caso VIP), así que
+        //    ahorramos queries innecesarias que devuelven 400
         try {
             const firstActive = await getFirstActiveTenant();
             if (firstActive) {
                 const { data } = await supabase
                     .from("tenants").select("*").eq("id", firstActive).maybeSingle();
                 if (data) {
-                    console.log("[getMyTenant] VIP bypass → primer tenant activo:", firstActive);
+                    console.log("[getMyTenant] ✓ primer tenant activo:", firstActive);
                     return data as Restaurant;
                 }
             }
         } catch (e) {
-            console.warn("[getMyTenant] VIP fallback error:", e);
+            console.warn("[getMyTenant] first tenant lookup error:", e);
+        }
+
+        // Si tampoco funcionó, intentar tenant_users (best-effort)
+        try {
+            const { data: tu, error: err2 } = await supabase
+                .from("tenant_users")
+                .select("tenant_id")
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (err2) console.warn("[getMyTenant] tenant_users error:", err2.message);
+            if (tu?.tenant_id) {
+                const { data: t } = await supabase
+                    .from("tenants").select("*").eq("id", tu.tenant_id).maybeSingle();
+                if (t) return t as Restaurant;
+            }
+        } catch (e) {
+            console.warn("[getMyTenant] tenant_users lookup error:", e);
         }
 
         return null;

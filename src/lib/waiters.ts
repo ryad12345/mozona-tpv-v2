@@ -176,9 +176,10 @@ export async function listWaiters(tenantId: string): Promise<Waiter[]> {
     // Resolver UUID real (bypass 'vip-bypass' y similares)
     const realTenantId = await resolveRealTenantId(tenantId);
     if (!realTenantId) return [];
+    // ★ select con columnas minimas para evitar errores 400
     const { data, error } = await supabase
         .from("tenant_users")
-        .select("id, tenant_id, user_id, name, email, username, waiter_pin, pin_code, role, is_active, created_at")
+        .select("name, email, username, waiter_pin, role, is_active")
         .eq("tenant_id", realTenantId)
         .order("name");
     if (error) throw error;
@@ -186,7 +187,6 @@ export async function listWaiters(tenantId: string): Promise<Waiter[]> {
         ...w,
         username:   w.username ?? null,
         waiter_pin: w.waiter_pin ?? null,
-        pin_code:   w.pin_code ?? null,
         is_active:  w.is_active ?? true,
     } as Waiter));
 }
