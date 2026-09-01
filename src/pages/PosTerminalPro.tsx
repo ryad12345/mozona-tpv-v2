@@ -37,6 +37,8 @@ import { resolveRealTenantId } from "../lib/waiters";
 import { isVipOrAdmin } from "../lib/vip";
 import { supabase } from "../lib/supabase";
 import { round2 } from "../lib/format";
+import { fetchCatalog } from "../lib/catalog";
+import { subscribeToPosChannels } from "../lib/realtime";
 import type { OrderItem, Product, PaymentMethod, TableStatus, Waiter, Restaurant, RestaurantTable } from "../lib/types";
 import type { OrderSentData, InvoicePaidData } from "../../shared/ws-events";
 
@@ -312,6 +314,33 @@ export function PosTerminalPro() {
             playOrderDing();
         });
         return off;
+
+    // ★ Suscripción GLOBAL a Supabase Realtime (commit 2434c3c)
+    //    Escucha cambios en products, dining_tables, open_orders, orders
+    //    y recarga el estado local SIN necesidad de F5
+    useEffect(() => {
+        if (!restaurant?.id) return;
+        const off = subscribeToPosChannels(() => {
+            console.log("[PosTerminalPro] realtime global → refresh");
+            posDataRefresh();
+        });
+        return off;
+    }, [restaurant?.id]);
+
+    // ★ FALLBACK: si usePosData no carga productos, usar fetchCatalog
+    //    que tiene 3 niveles de fallback (tenant → is_active → tenant dominante)
+    useEffect(() => {
+        if (products.length === 0 && !loading) {
+            console.log("[PosTerminalPro] usePosData vacío, usando fetchCatalog()");
+            void (async () => {
+                const prods = await fetchCatalog();
+                console.log("[PosTerminalPro] fetchCatalog devolvió", prods.length, "productos");
+                if (prods.length > 0) {
+                    posDataRefresh();
+                }
+            })();
+        }
+    }, [products.length, loading, posDataRefresh]);
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------

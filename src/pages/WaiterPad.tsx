@@ -15,6 +15,7 @@ import { useWebSocket } from "../context/WebSocketContext";
 import { useWaiterAuth, type Waiter } from "../hooks/useWaiterAuth";
 import { useAuth } from "../lib/auth";
 import { usePosData } from "../hooks/usePosData";
+import { fetchCatalog } from "../lib/catalog";
 import { PinAuthModal } from "../components/auth/PinAuthModal";
 import { IconCheck, IconUser, IconX, IconPlus, IconMinus, IconSearch, IconLogout } from "../components/icons";
 import { fmtEUR, round2 } from "../lib/format";
@@ -52,7 +53,23 @@ export function WaiterPad() {
     const ws     = useWebSocket();
     const auth   = useWaiterAuth();
     const saasAuth = useAuth();
-    const { products, categories, tables, loading, restaurant } = usePosData();
+    const { products, categories, tables, loading, restaurant, refresh: posDataRefresh } = usePosData();
+
+    // ★ FALLBACK: si usePosData no devuelve productos, usar fetchCatalog
+    //    que tiene 3 niveles de fallback (tenant → is_active → tenant dominante)
+    useEffect(() => {
+        if (products.length === 0 && !loading) {
+            console.log("[WaiterPad] usePosData vacío, usando fetchCatalog()");
+            void (async () => {
+                const prods = await fetchCatalog();
+                console.log("[WaiterPad] fetchCatalog devolvió", prods.length, "productos");
+                if (prods.length > 0) {
+                    // Forzar recarga de usePosData
+                    posDataRefresh();
+                }
+            })();
+        }
+    }, [products.length, loading, posDataRefresh]);
 
     const [showAuth, setShowAuth]     = useState(false);
     const [tableId, setTableId]       = useState<string | null>(null);
