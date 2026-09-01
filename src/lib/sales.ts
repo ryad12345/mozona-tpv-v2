@@ -45,6 +45,23 @@ export async function listMonthSales(tenantId: string | null): Promise<SaleRecor
     return listSales(tenantId, "30d");
 }
 
+/** ★★★ FUNCIÓN SIMPLIFICADA PARA EL PANEL DE VENTAS ★★★
+ *  Lee TODOS los orders, filtra los cancelados, calcula total.
+ *  Acepta cualquier status != 'cancelled'. */
+export async function loadSalesMetrics(period: "today" | "month" | "30d" | "all" = "30d") {
+    const records = await listSales(null, period);
+    const valid = records.filter(r => r.status !== "cancelled");
+    const totalRevenue = valid.reduce(
+        (s, r) => s + Number(r.total ?? r.subtotal ?? 0),
+        0,
+    );
+    return {
+        sales: valid,
+        totalRevenue,
+        count: valid.length,
+    };
+}
+
 /** ★★★ FUNCIÓN PRINCIPAL ★★★
  *  Carga ventas con SELECT directo a `orders`, sin filtros restrictivos
  *  de tenant.  Garantiza que NUNCA devuelve [] si la tabla tiene datos.
