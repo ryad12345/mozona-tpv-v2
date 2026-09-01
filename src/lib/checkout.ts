@@ -6,9 +6,10 @@
 // =====================================================================
 
 import { supabase } from "./supabase";
+import { resolveRealTenantId } from "./waiters";
 
-// ★ Tenant ID por defecto (el del usuario chalohiahmd)
-const FALLBACK_TENANT_ID = "651ce807-f124-4c55-86c5-5ded54e9e6b1";
+// ★ Tenant ID por defecto (el que devuelve get_first_active_tenant RPC)
+const FALLBACK_TENANT_ID = "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
 
 export interface ExecuteCheckoutInput {
     tenantId?:     string | null;
@@ -48,12 +49,15 @@ export async function executeCheckout(input: ExecuteCheckoutInput): Promise<Exec
         return { ok: false, error: "Supabase no está configurado", step: "tenant" };
     }
 
-    // 0) Tenant ID válido
-    let validTenantId = input.tenantId;
-    if (!validTenantId || validTenantId === "vip-bypass" || validTenantId === "00000000-0000-0000-0000-000000000000") {
-        validTenantId = FALLBACK_TENANT_ID;
-    }
-    console.log("[executeCheckout] tenantId usado:", validTenantId);
+    // 0) Tenant ID válido — USAR EL MISMO que listSales
+    //    resolveRealTenantId() prioriza el de la sesión, luego
+    //    get_first_active_tenant() (que es 58a8e6f5...), luego
+    //    FALLBACK_TENANT_ID
+    const realId = await resolveRealTenantId(input.tenantId ?? null);
+    const validTenantId = (realId && realId !== "00000000-0000-0000-0000-000000000000")
+        ? realId
+        : FALLBACK_TENANT_ID;
+    console.log("[executeCheckout] tenantId resuelto:", realId, "→ usando:", validTenantId);
 
     // 1) INSERT DIRECTO — solo columnas básicas
     console.log("[executeCheckout] paso 1: INSERT directo en orders");

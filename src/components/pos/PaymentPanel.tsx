@@ -3,14 +3,20 @@ import React, { useState, useEffect, useRef } from 'react';
 export interface PaymentPanelProps {
   total?: number;
   paymentAmount?: string | number;
+  /** Callback principal de cobro (preferido) */
+  onCharge?: (method: 'cash' | 'card', received?: number, change?: number) => void;
+  /** Alias de onCharge (compatibilidad) */
   onPay?: (method: 'cash' | 'card', received?: number, change?: number) => void;
+  /** VeriFactu */
+  onChargeVeriFactu?: (method: 'cash' | 'card', received?: number, change?: number) => void;
+  /** Limpia la mesa tras mostrar el cambio */
   onClearTable?: () => void;
   onEmitInvoice?: () => void;
   [key: string]: any;
 }
 
 export function PaymentPanel(props: PaymentPanelProps) {
-  const { total = 0, onPay, onClearTable, onEmitInvoice } = props;
+  const { total = 0, onCharge, onPay, onChargeVeriFactu, onClearTable, onEmitInvoice } = props;
   const [receivedAmount, setReceivedAmount] = useState<string>('0');
   const [changeInfo, setChangeInfo] = useState<{ received: number; change: number } | null>(null);
   const timerRef = useRef<any>(null);
@@ -37,14 +43,22 @@ export function PaymentPanel(props: PaymentPanelProps) {
   };
 
   const handleCobrar = () => {
+    console.log('★ [PaymentPanel] COBRAR clickeado! ★');
     const finalTotal = Number(total) || 0;
     const recNum = parseFloat(receivedAmount) > 0 ? parseFloat(receivedAmount) : finalTotal;
     const calculatedChange = Math.max(0, recNum - finalTotal);
 
     setChangeInfo({ received: recNum, change: calculatedChange });
 
-    if (onPay) {
-      onPay('cash', recNum, calculatedChange);
+    // ★★★ LLAMAR AL COBRO ★★★
+    // Prioridad: onCharge > onPay > onChargeVeriFactu
+    const callback = onCharge ?? onPay ?? onChargeVeriFactu;
+    if (typeof callback === 'function') {
+      console.log('★ [PaymentPanel] ejecutando callback de cobro ★');
+      callback('cash', recNum, calculatedChange);
+    } else {
+      console.error('★ [PaymentPanel] NO hay callback de cobro definido! ★');
+      alert('❌ No se puede cobrar: callback de cobro no definido. Recarga la página.');
     }
 
     // Mantener quieto en pantalla durante 6 segundos y vaciar mesa
