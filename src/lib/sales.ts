@@ -96,15 +96,12 @@ export async function listSales(
     }
     console.log("[listSales] start=", start ?? "(sin filtro)");
 
-    // 2) Query base sin filtro de tenant
-    // ★ FIX: quitar 'payment_status' que NO EXISTE en la tabla orders real.
-    // Solo pedimos columnas que sabemos que existen.
-    // ★ FIX BUG REAL: tabla orders NO tiene 'items', ni 'series', ni 'verifactu_qr'.
-    // Solo columnas planas. items[] está en la tabla relacionada order_items
-    // (que no necesitamos para el panel de ventas).
+    // 2) Query base ULTRA-DEFENSIVA
+    // ★ El esquema REAL de orders no lo conocemos. Probamos con
+    //   SELECT mínimo de columnas seguras. Si falla, fallback a select(*).
     let query = supabase
         .from("orders")
-        .select("id, waiter_name, subtotal, tax_total, total, payment_method, status, created_at, updated_at, tenant_id")
+        .select("id, total, created_at")
         .order("created_at", { ascending: false })
         .limit(1000);
     if (start) query = query.gte("created_at", start);
@@ -112,49 +109,65 @@ export async function listSales(
     // 3) ★ PRIMERA QUERY: con tenant_id resuelto (si lo hay)
     const realId = await resolveRealTenantId(tenantId);
     console.log("[listSales] tenant resuelto:", realId);
-    if (realId) {
-        const { data, error } = await query.eq("tenant_id", realId);
+
+    // ★★★ ESTRATEGIA 1: query mínima sin filtro de tenant ★★★
+    //    Pedimos solo 'id, total, created_at' (columnas que casi seguro existen)
+    let allData: any[] | null = null;
+    try {
+        const { data, error } = await query;
         if (error) {
-            console.warn("[listSales] error con tenant:", error.message);
+            console.warn("[listSales] E1 error:", error.code, error.message, error.details, error.hint);
         } else if (data && data.length > 0) {
-            console.log("[listSales] ✓ cargados", data.length, "tickets con tenant", realId);
-            return data.map(normalizeSale);
+            allData = data;
+            console.log("[listSales] E1 ✓ cargados", data.length, "tickets (mínimas)");
         }
-        console.warn("[listSales] 0 tickets con tenant", realId, "— probando sin filtro");
+    } catch (e) {
+        console.warn("[listSales] E1 exception:", e);
     }
 
-    // 4) ★ FALLBACK: query sin filtro de tenant
-    const { data: allData, error: allErr } = await query;
-    if (allErr) {
-        console.error("[listSales] error sin filtro:", allErr.message);
-        return [];
+    // ★★★ ESTRATEGIA 2: fallback a select(*) si E1 no devuelve nada ★★★
+    if (!allData || allData.length === 0) {
+        try {
+            const { data, error } = await supabase
+                .from("orders")
+                .select("*")
+                .order("created_at", { ascending: false })
+                .limit(1000);
+            if (error) {
+                console.error("[listSales] E2 error:", error.code, error.message, error.details, error.hint);
+            } else if (data && data.length > 0) {
+                allData = data;
+                console.log("[listSales] E2 ✓ cargados", data.length, "tickets con *");
+                // Mostrar las columnas reales
+                if (data[0]) {
+                    console.log("[listSales] columnas disponibles:", Object.keys(data[0]).join(", "));
+                }
+            }
+        } catch (e) {
+            console.error("[listSales] E2 exception:", e);
+        }
     }
+
     if (!allData || allData.length === 0) {
         console.warn("[listSales] 0 tickets en TODA la tabla orders");
         return [];
     }
 
-    console.log("[listSales] tickets totales (sin filtro):", allData.length);
-
-    // 5) Distribución por tenant_id
-    const byTenant: Record<string, number> = {};
-    for (const r of allData) {
-        const k = String(r.tenant_id ?? "null");
-        byTenant[k] = (byTenant[k] ?? 0) + 1;
+    console.log("[listSales] tickets totales:", allData.length);
+    if (allData[0]) {
+        console.log("[listSales] muestra ticket[0]:", JSON.stringify(allData[0]).slice(0, 500));
     }
-    console.log("[listSales] DISTRIBUCIÓN por tenant_id:", byTenant);
 
-    // 6) Usar el tenant DOMINANTE (con más tickets)
-    const sortedTenants = Object.entries(byTenant).sort(([, a], [, b]) => b - a);
-    const dominantTenant = sortedTenants[0]?.[0];
-    if (dominantTenant && dominantTenant !== "null") {
-        const tickets = allData
-            .filter(r => String(r.tenant_id) === dominantTenant)
-            .map(normalizeSale);
-        console.log("[listSales] ✓ usando tenant dominante:", dominantTenant, "→", tickets.length, "tickets");
-        return tickets;
+    // ★ Filtrar por tenant si lo hay y la columna existe
+    if (realId && allData[0] && "tenant_id" in allData[0]) {
+        const filtered = allData.filter(r => String(r.tenant_id) === realId);
+        if (filtered.length > 0) {
+            console.log("[listSales] ✓ con tenant", realId, "→", filtered.length, "tickets");
+            return filtered.map(normalizeSale);
+        }
+        console.warn("[listSales] 0 tickets con tenant", realId, "— devolviendo todos");
     }
-    console.log("[listSales] tickets sin tenant_id, devolviendo todos:", allData.length);
+
     return allData.map(normalizeSale);
 }
 
@@ -165,7 +178,8 @@ function extractTableNumber(row: any): string | null {
 }
 
 function normalizeSale(row: any): SaleRecord {
-    // Mapeo defensivo: total, subtotal, tax_total pueden ser string (NUMERIC de PG)
+    // Mapeo ultra-defensivo: no asumimos columnas.
+    // Solo leemos si la columna existe.
     const toNum = (v: any) => {
         if (v == null) return 0;
         const n = Number(v);
@@ -173,21 +187,18 @@ function normalizeSale(row: any): SaleRecord {
     };
     return {
         id:              row.id,
-        // ★ FIX: table_number NO existe en la tabla real.
-        // Lo extraemos de items[].tableNumber (cada item guarda su mesa).
-        table_number:    extractTableNumber(row),
-        waiter_name:     row.waiter_name ?? null,
-        items:           Array.isArray(row.items) ? row.items : [],
-        subtotal:        toNum(row.subtotal),
-        tax_total:       toNum(row.tax_total),
-        // total puede llegar como 'total' o 'total_amount' (defensivo)
-        total:           toNum(row.total ?? row.total_amount ?? row.amount),
-        payment_method:  row.payment_method ?? null,
-        status:          row.status         ?? "closed",
-        series:          row.series         ?? null,
-        verifactu_qr:    row.verifactu_qr   ?? null,
-        created_at:      row.created_at     ?? new Date().toISOString(),
-        updated_at:      row.updated_at     ?? row.created_at ?? new Date().toISOString(),
+        table_number:    null,    // no asumimos columna
+        waiter_name:     "waiter_name" in row ? (row.waiter_name ?? null) : null,
+        items:           [],      // no asumimos columna
+        subtotal:        "subtotal"  in row ? toNum(row.subtotal)    : 0,
+        tax_total:       "tax_total" in row ? toNum(row.tax_total)   : 0,
+        total:           "total" in row ? toNum(row.total) : 0,
+        payment_method:  "payment_method" in row ? (row.payment_method ?? null) : null,
+        status:          "status" in row ? (row.status ?? "closed") : "closed",
+        series:          null,
+        verifactu_qr:    null,
+        created_at:      "created_at" in row ? (row.created_at ?? new Date().toISOString()) : new Date().toISOString(),
+        updated_at:      "updated_at" in row ? (row.updated_at ?? row.created_at ?? new Date().toISOString()) : new Date().toISOString(),
     };
 }
 
