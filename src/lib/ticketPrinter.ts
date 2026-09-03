@@ -121,16 +121,44 @@ function padBoth(s: string, width: number): string {
     return " ".repeat(left) + s + " ".repeat(total - left);
 }
 
+/** ★ v1.9.20: divide un string largo en líneas de `width` chars SIN truncar.
+ *  Si la línea cabe, devuelve un array de un solo elemento.
+ *  Si no, parte por espacios cuando es posible; si no hay, corta blando. */
+function wrapText(s: string, width: number): string[] {
+    if (!s) return [];
+    if (s.length <= width) return [s];
+    const out: string[] = [];
+    let remaining = s;
+    while (remaining.length > width) {
+        // Buscar el último espacio dentro del rango
+        let cut = remaining.lastIndexOf(" ", width);
+        if (cut <= 0) {
+            // Sin espacios, cortar duro en width
+            cut = width;
+        }
+        out.push(remaining.slice(0, cut).trimEnd());
+        remaining = remaining.slice(cut).trimStart();
+    }
+    if (remaining.length > 0) out.push(remaining);
+    return out;
+}
+
+/** Centra cada línea de un texto multilinea. */
+function padBothMultiline(s: string, width: number): string[] {
+    return wrapText(s, width).map(line => padBoth(line, width));
+}
+
 function fmtEUR(n: number): string {
     return Number(n ?? 0).toFixed(2).replace(".", ",") + " €";
 }
 
 /** Formato EXACTO de fecha/hora en HORA LOCAL ESPAÑA (Europe/Madrid):
  *  DD/MM/YYYY HH:mm:ss
- *  Usa Intl.DateTimeFormat con timeZone para garantizar hora local
- *  española y SIEMPRE 2 dígitos por componente. */
+ *  - Intl.DateTimeFormat con timeZone Europe/Madrid para la hora local
+ *  - SIEMPRE padStart(2, '0') por componente (por si Intl devuelve 1 dígito) */
 function fmtDateTime(iso?: string): string {
     const d = new Date(iso ?? Date.now());
+    const pad = (n: number | string) => String(n).padStart(2, "0");
     try {
         const fmt = new Intl.DateTimeFormat("es-ES", {
             timeZone: "Europe/Madrid",
@@ -142,19 +170,12 @@ function fmtDateTime(iso?: string): string {
             second:"2-digit",
             hour12: false,
         });
-        // es-ES con 2-digit suele dar "DD/MM/YYYY, HH:MM:SS"
         const parts = fmt.formatToParts(d);
         const get = (t: string) => parts.find(p => p.type === t)?.value ?? "00";
-        const dd  = get("day");
-        const mm  = get("month");
-        const yy  = get("year");
-        const hh  = get("hour");
-        const mi  = get("minute");
-        const ss  = get("second");
-        return `${dd}/${mm}/${yy} ${hh}:${mi}:${ss}`;
+        // ★ v1.9.20: padStart(2,'0') garantizado incluso si Intl devuelve "4"
+        return `${pad(get("day"))}/${pad(get("month"))}/${get("year")} ${pad(get("hour"))}:${pad(get("minute"))}:${pad(get("second"))}`;
     } catch (e) {
         // Fallback manual con padStart (navegadores sin Intl avanzado)
-        const pad = (n: number) => String(n).padStart(2, "0");
         return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 }
@@ -202,7 +223,7 @@ function buildTicketHtml(input: TicketInput): string {
     // ============================================================
     const head: string[] = [];
     if (headerMsg) {
-        head.push(padBoth(escapeHtml(headerMsg), CHARS_PER_LINE));
+        head.push(...padBothMultiline(escapeHtml(headerMsg), CHARS_PER_LINE));
         head.push("-".repeat(CHARS_PER_LINE));
     }
 
@@ -210,10 +231,10 @@ function buildTicketHtml(input: TicketInput): string {
     const nameToShow = businessName && businessName.trim() !== ""
         ? businessName
         : DEFAULT_COMPANY.name;
-    head.push(padBoth(nameToShow.toUpperCase(), CHARS_PER_LINE));
-    if (cifNif)   head.push(padBoth("CIF/NIF: " + cifNif, CHARS_PER_LINE));
-    if (address) head.push(padBoth(address, CHARS_PER_LINE));
-    if (phone)   head.push(padBoth("Tel: " + phone, CHARS_PER_LINE));
+    head.push(...padBothMultiline(nameToShow.toUpperCase(), CHARS_PER_LINE));
+    if (cifNif)   head.push(...padBothMultiline("CIF/NIF: " + cifNif, CHARS_PER_LINE));
+    if (address) head.push(...padBothMultiline(address, CHARS_PER_LINE));
+    if (phone)   head.push(...padBothMultiline("Tel: " + phone, CHARS_PER_LINE));
     head.push("=".repeat(CHARS_PER_LINE));
 
     // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
