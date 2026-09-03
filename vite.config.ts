@@ -54,7 +54,7 @@ export default defineConfig({
                 name: "MOZONA TPV",
                 short_name: "MozonaTPV",
                 description: "Sistema TPV Local-First para hostelería con VeriFactu",
-                version: "1.9.26-ticket-ultracompact",
+                version: "1.9.27-ticket-centered",
                 lang: "es-ES",
                 dir: "ltr",
                 scope: "/",

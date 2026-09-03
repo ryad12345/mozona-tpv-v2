@@ -324,56 +324,62 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.22 [HOTFIX 2]: I2pos 58mm con cabezal efectivo 40-42mm
-   ★ v1.9.25: COMPACTACIÓN vertical
-   ★ v1.9.26: ULTRA-COMPACTACIÓN — 9px, line-height 1.0, padding 0 1mm */
-@page { size: ${TICKET_WIDTH} auto; margin: 0; }
+/* ★ v1.9.27 [HOTFIX]: Ticket centrado, ancho completo del área de impresión
+   v1.9.22-26: width: 42mm fijo → desalineado, dejaba margen blanco a la derecha
+   v1.9.27:      width: 100% + max-width 48mm + margin 0 auto → centrado y completo */
+@page {
+    margin: 0 !important;
+    size: auto;
+}
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
-html, body { margin: 0; padding: 0; }
+html, body {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
 body {
     font-family: ${FONT_STACK} !important;
-    font-size: 9px !important;            /* ★ v1.9.26: 11px → 9px */
+    font-size: 9.5px !important;           /* ★ v1.9.27: 9px → 9.5px */
     font-weight: 800;
-    line-height: 1.0 !important;          /* ★ v1.9.26: 1.15 → 1.0 */
+    line-height: 1.1 !important;          /* ★ v1.9.27: 1.0 → 1.1 */
     color: #000;
     background: #fff;
-    width: 42mm !important;
-    max-width: 42mm !important;
-    margin: 0 auto !important;
-    padding: 0 1mm !important;            /* ★ v1.9.26: 1mm 3mm 1mm 1mm → 0 1mm */
+    width: 100% !important;               /* ★ v1.9.27: 42mm → 100% */
+    max-width: 48mm !important;           /* ★ v1.9.27: 42mm → 48mm */
+    margin: 0 auto !important;            /* ★ v1.9.27: centrado */
+    padding: 0 1.5mm !important;          /* ★ v1.9.27: 1mm → 1.5mm lateral */
     box-sizing: border-box !important;
 }
 .ticket-container {
     width: 100%;
-    max-width: ${PRINTABLE_WIDTH};
+    max-width: 100%;                      /* ★ v1.9.27: hereda del body */
     margin: 0 !important;
     padding: 0 !important;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
     box-sizing: border-box !important;
-    line-height: 1.0 !important;          /* ★ v1.9.26 */
+    line-height: 1.1 !important;          /* ★ v1.9.27 */
 }
 .ticket-row {
     display: flex !important;
     justify-content: space-between !important;
     align-items: baseline !important;
     width: 100%;
-    margin: 0 !important;                 /* ★ v1.9.26: 1px → 0 */
+    margin: 0 !important;
     padding: 0 !important;
     text-align: left;
-    line-height: 1.0 !important;          /* ★ v1.9.26 */
+    line-height: 1.1 !important;          /* ★ v1.9.27 */
 }
 .ticket-row .desc   { flex: 0 0 auto; text-align: left;  white-space: nowrap; padding-right: 3px; }
 .ticket-row .val    { flex: 1 1 auto; text-align: right; white-space: nowrap; padding-left: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 1mm; }
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 1.5mm; }  /* ★ v1.9.27 */
 .ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; }
-.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.0 !important; }
-.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.0 !important; }
-/* ★ v1.9.23/25/26: clases para cabecera */
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.0 !important; margin: 0 !important; padding: 0 !important; }
+.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.1 !important; }
+.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.1 !important; }
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.1 !important; margin: 0 !important; padding: 0 !important; }
 .b            { font-weight: 900; }
-.meta         { font-size: 9px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.0 !important; margin: 0 !important; padding: 0 !important; }
+.meta         { font-size: 9.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.1 !important; margin: 0 !important; padding: 0 !important; }
 .sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; }
 .sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; }
 </style>
