@@ -34,6 +34,7 @@ import { useLocalIP } from "../hooks/useLocalIP";
 import { subscribeToOrders, listOpenOrders } from "../lib/orders";
 import { upsertDraft, clearDraft, listOpenDrafts, getOpenDraft, type OpenOrder } from "../lib/drafts";
 import { resolveRealTenantId } from "../lib/waiters";
+import { printPreBill as printPreBillUnified } from "../lib/ticketPrinter";
 import { isVipOrAdmin } from "../lib/vip";
 import { supabase } from "../lib/supabase";
 import { round2 } from "../lib/format";
@@ -44,181 +45,6 @@ import type { OrderSentData, InvoicePaidData } from "../../shared/ws-events";
 
 /** Detecta si estamos en Tauri (desktop) o en navegador web. */
 const inTauri = typeof window !== "undefined" && "__TAURI__" in window;
-
-// ---------------------------------------------------------------------
-// HTML fallback para window.print() cuando no estamos en Tauri
-// ---------------------------------------------------------------------
-function buildPreBillHtml(params: {
-    restaurant:  Restaurant | null;
-    table?:       RestaurantTable;
-    lines:        Array<{ name: string; qty: number; price: number; tax_rate?: number; notes?: string }>;
-    waiter?:      { name: string; loggedInAt?: string } | null;
-}): string {
-    const { restaurant, table, lines, waiter } = params;
-    // Formato español: 9,00 € (coma decimal, 2 decimales, símbolo euro con espacio)
-    const fmt = (n: number) => n.toFixed(2).replace(".", ",") + " €";
-
-    // Desglose IVA: precios YA incluyen IVA → base = gross / (1 + rate/100)
-    // El cliente paga exactamente la suma de los precios de carta.
-    const byRate = new Map<number, number>();
-    let gross = 0;
-    for (const l of lines) {
-        gross += l.qty * l.price;
-        const r = l.tax_rate ?? 10;
-        byRate.set(r, (byRate.get(r) ?? 0) + l.qty * l.price);
-    }
-    // Generar filas individuales (no concatenadas en una sola cadena)
-    // para poder formatearlas con el helper lineRow (flexbox)
-    const taxBreakdownLines: Array<{ label: string; value: string }> = [];
-    Array.from(byRate.entries())
-        .sort((a, b) => b[0] - a[0])
-        .forEach(([r, g]) => {
-            const base = g / (1 + r / 100);
-            const tax  = g - base;
-            taxBreakdownLines.push({ label: `Base (${r}%):`,    value: fmt(base) });
-            taxBreakdownLines.push({ label: `I.V.A. (${r}%):`, value: fmt(tax)  });
-        });
-
-    // Helper: formatea una línea con label a la izquierda y precio a la derecha,
-    // usando caracteres de espacio y puntos para que se alinee perfecto en
-    // cualquier fuente monoespaciada.
-    const lineRow = (label: string, value: string, bold = false): string => {
-        const cls = bold ? "row b" : "row";
-        return `<div class="${cls}"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
-    };
-    const noteRow = (txt: string): string =>
-        `<div class="row meta"><span class="lbl">&nbsp;&nbsp;&gt; ${txt}</span></div>`;
-    const itemRow = (l: { name: string; qty: number; price: number; notes?: string }): string => {
-        const line = l.qty > 1 ? `${l.qty}x ${l.name}` : `1x ${l.name}`;
-        const pr   = fmt(l.qty * l.price);
-        // Item con flex de 2 columnas: nombre izquierda, precio derecha
-        return `<div class="item-row"><span class="item-name">${line.replace(/</g, "&lt;")}</span><span class="item-price">${pr}</span></div>`
-             + (l.notes ? noteRow(l.notes.replace(/</g, "&lt;")) : "");
-    };
-
-    return `<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8" />
-<title>Pre-cuenta</title>
-<style>
-  /* Ocultar todo lo que no sea el ticket al imprimir */
-  @media print {
-    body * { visibility: hidden; }
-    #ticket-print-area, #ticket-print-area * { visibility: visible; }
-    #ticket-print-area {
-      position: absolute;
-      left: 0; top: 0;
-      width: 58mm;
-      max-width: 58mm;
-      box-sizing: border-box;
-      margin: 0;
-      padding: 1mm 2mm;
-      color: #000000 !important;
-      background: #ffffff !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-      font-family: 'Courier New', Courier, monospace !important;
-      font-size: 12px !important;
-      font-weight: 800 !important;
-      line-height: 1.2 !important;
-      letter-spacing: 0;
-      -webkit-font-smoothing: none !important;
-      text-rendering: geometricPrecision !important;
-      overflow: visible !important;
-    }
-    @page { size: auto; margin: 0; }
-  }
-  /* Vista en pantalla: para previsualizar en la nueva ventana */
-  body  { font-family: 'Courier New', Courier, monospace; background: #f5f5f5; margin: 0; padding: 12px; }
-  #ticket-print-area {
-    background: #ffffff;
-    color: #000000;
-    width: 80mm;
-    max-width: 100%;
-    margin: 0 auto;
-    padding: 4mm;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.25;
-    box-sizing: border-box;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  }
-  h1    { font-size: 14px; font-weight: 900; text-align: center; margin: 0 0 2px; letter-spacing: -0.5px; word-wrap: break-word; }
-  .ctr  { text-align: center; }
-  .sep  { font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #000; margin: 3px 0; white-space: pre; overflow: hidden; }
-  /* Filas label + valor con FLEXBOX: nombre izquierda, importe derecha */
-  .row  { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
-  .row .lbl { flex: 1 1 auto; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
-  .row .val { flex: 0 0 auto; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-  /* Items: el nombre puede ocupar varias líneas pero el precio se mantiene a la derecha */
-  .item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; width: 100%; }
-  .item-row .item-name { flex: 1 1 auto; min-width: 0; word-wrap: break-word; overflow-wrap: break-word; }
-  .item-row .item-price { flex: 0 0 auto; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-  .total{ font-weight: 900; font-size: 14px; }
-  .meta { font-size: 11px; font-weight: 700; }
-  .b    { font-weight: 900; }
-  .b .val { font-weight: 900; }
-  /* Bloque mesa/camarero: filas alineadas con etiqueta fija */
-  .meta-block { display: block; margin: 0; padding: 0; }
-  .kv {
-    display: grid;
-    grid-template-columns: 22mm 1fr;
-    align-items: baseline;
-    gap: 2mm;
-    width: 100%;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.3;
-  }
-  .kv .k { color: #000; text-align: left; }
-  .kv .v { color: #000; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
-  .kv .b { font-weight: 900; }
-</style>
-</head>
-<body>
-<div id="ticket-print-area">
-  ${(restaurant as any)?.ticket_header_msg ? `<div class="ctr meta b">${String((restaurant as any).ticket_header_msg).replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>` : ""}
-  <h1>${((restaurant as any)?.business_name ?? (restaurant as any)?.name ?? "MOZONA TPV").replace(/</g, "&lt;")}</h1>
-  <div class="ctr meta">${((restaurant as any)?.address ?? "").replace(/</g, "&lt;")}</div>
-  <div class="ctr meta">NIF/CIF: ${(restaurant as any)?.cif_nif ?? (restaurant as any)?.nif ?? "—"}</div>
-  ${restaurant?.phone ? `<div class="ctr meta">Tel: ${String(restaurant.phone).replace(/</g, "&lt;")}</div>` : ""}
-  <div class="sep">${"─".repeat(32)}</div>
-  ${table && table.table_number != null || (waiter && waiter.name)
-    ? `<div class="meta-block">
-        ${table && table.table_number != null
-          ? `<div class="kv"><span class="k">Mesa:</span><span class="v b">${String(table.table_number).replace(/</g, "&lt;")}</span></div>`
-          : ""}
-        ${(() => {
-            // Si el waiter es "Cajero Demo" / "Modo Demo" (PIN maestro
-            // sin camareros), usamos el nombre del tenant como fallback.
-            const wn = waiter?.name ?? "";
-            const isDemo = /demo/i.test(wn) && !wn.includes("Casablanca") && !wn.includes("MOZONA");
-            const displayName = isDemo
-                ? ((restaurant as any)?.business_name ?? (restaurant as any)?.name ?? "MOZONA TPV")
-                : wn;
-            return displayName
-                ? `<div class="kv"><span class="k">Camarero:</span><span class="v b">${String(displayName).replace(/</g, "&lt;")}</span></div>`
-                : "";
-        })()}
-      </div>`
-    : ""}
-  <div class="sep">${"─".repeat(32)}</div>
-  ${lines.map(itemRow).join("")}
-  <div class="sep">${"─".repeat(32)}</div>
-  ${taxBreakdownLines.map(t => lineRow(t.label, t.value)).join("")}
-  <div class="sep">${"═".repeat(32)}</div>
-  ${lineRow("TOTAL", fmt(gross), true)}
-  <div class="sep">${"─".repeat(32)}</div>
-  <div class="ctr" style="margin-top:4px;font-weight:900;">— PRE-CUENTA —</div>
-  ${(restaurant as any)?.ticket_footer_msg ? `<div class="ctr meta" style="margin-top:4px;">${String((restaurant as any).ticket_footer_msg).replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>` : ""}
-  <div class="sep">${"─".repeat(32)}</div>
-</div>
-<script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>
-</body>
-</html>`;
-}
 
 type MobileTab = "catalog" | "order" | "payment";
 
@@ -751,37 +577,43 @@ export function PosTerminalPro() {
         }
         const table = tables.find(t => t.id === pos.state.selectedTableId);
         const lines = pos.state.orderItems.map(it => ({
-            name:     it.name,
-            qty:      it.quantity,
-            price:    it.unit_price,
-            tax_rate: it.tax_rate ?? 10,
-            notes:    it.notes,
+            name:       it.name,
+            quantity:   it.quantity,
+            unit_price: it.unit_price,
+            tax_rate:   it.tax_rate ?? 10,
+            notes:      it.notes,
         }));
         try {
             if (inTauri) {
-                // 1) Tauri → ESC/POS al driver nativo
+                // 1) Tauri → ESC/POS al driver nativo (mantiene formato legacy de impresora local)
                 await printer.printPreBill({
                     businessName: restaurant?.business_name ?? "MOZONA TPV",
                     cifNif:       restaurant?.cif_nif ?? "—",
                     address:      restaurant?.address ?? "",
                     tableNumber:  table ? String(table.table_number) : undefined,
                     waiterName:   auth.activeWaiter?.name,
-                    lines,
+                    lines: lines.map(l => ({
+                        name:  l.name,
+                        qty:   l.quantity,
+                        price: l.unit_price,
+                        tax_rate: l.tax_rate,
+                        notes: l.notes ?? undefined,
+                    })),
                 });
                 setToast({ kind: "ok", msg: "Pre-cuenta impresa en la impresora local" });
             } else {
-                // 2) Web → fallback window.print (diálogo del navegador)
-                const w = window.open("", "_blank", "width=380,height=600");
-                if (!w) {
-                    setToast({ kind: "err", msg: "Permite pop-ups para imprimir la pre-cuenta" });
-                    return;
+                // 2) Web → MISMO MOTOR que printTicket (58mm, BD, datos reales)
+                const result = await printPreBillUnified({
+                    tenantId:    (restaurant as any)?.tenant_id ?? null,
+                    tableNumber: table ? String(table.table_number) : undefined,
+                    waiterName:  auth.activeWaiter?.name,
+                    lines,
+                });
+                if (!result.ok) {
+                    setToast({ kind: "err", msg: result.error ?? "Error al imprimir" });
+                } else {
+                    setToast({ kind: "ok", msg: "Pre-cuenta enviada a impresión" });
                 }
-                w.document.write(buildPreBillHtml({ restaurant, table, lines, waiter: auth.activeWaiter }));
-                w.document.close();
-                w.focus();
-                w.print();
-                w.close();
-                setToast({ kind: "ok", msg: "Diálogo de impresión abierto" });
             }
         } catch (e) {
             setToast({ kind: "err", msg: e instanceof Error ? e.message : "Error al imprimir" });

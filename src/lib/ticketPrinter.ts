@@ -291,6 +291,96 @@ ${[...head, ...body, ...foot].join("\n")}
 }
 
 /**
+ * ★★★ PRE-CUENTA ★★★
+ *  v1.9.17: USA EL MISMO MOTOR QUE printTicket.
+ *  Mismo formato 58mm, mismos datos de empresa (de ticket_settings),
+ *  mismo desglose de IVA. Diferencia: marca "PRE-CUENTA" en lugar de
+ *  "TOTAL cerrado" y NO descuenta stock / no cierra mesa.
+ *
+ *  Como printTicket, pre-resuelve TODO antes de window.open para que
+ *  el pop-up en about:blank reciba el HTML autocontenido.
+ */
+export interface PreBillInput {
+    tenantId?:      string | null;
+    tableNumber?:   string | number;
+    waiterName?:    string | null;
+    lines:          TicketLine[];
+}
+
+export async function printPreBill(input: PreBillInput): Promise<{ ok: boolean; method: "print" | "skipped" | "error"; error?: string }> {
+    try {
+        // 1) Resolver TODO en el contexto de la app
+        let ts: TicketSettings | null = null;
+        try {
+            ts = await loadTicketSettings();
+        } catch (e) {
+            console.warn("[ticketPrinter] loadTicketSettings falló:", e);
+        }
+        const company = companyFromSettings(ts);
+
+        // 2) Calcular totales
+        let gross = 0;
+        let taxTotal = 0;
+        for (const l of input.lines) {
+            const sub = Number(l.unit_price) * Number(l.quantity);
+            gross += sub;
+            const r = Number(l.tax_rate ?? 10);
+            taxTotal += sub - sub / (1 + r / 100);
+        }
+        const subtotal = gross - taxTotal;
+
+        // 3) Mapear a TicketInput
+        const ticketInput: TicketInput = {
+            orderId:        "PRE-" + Date.now(),
+            tenantId:       input.tenantId ?? ts?.tenant_id ?? null,
+            businessName:   company.name,
+            cifNif:         company.nif,
+            address:        company.address,
+            phone:          company.phone,
+            tableNumber:    input.tableNumber,
+            waiterName:     input.waiterName,
+            lines:          input.lines,
+            subtotal,
+            taxTotal,
+            total:          gross,
+            paymentMethod:  "PRE-CUENTA",
+            series:         "PRE",
+            invoiceNumber:  Math.floor(Date.now() / 1000) % 100000000,
+            headerMsg:      ts?.header_text,
+            footerMsg:      ts?.footer_text,
+            showTax:        ts?.show_vat_breakdown ?? true,
+            createdAt:      new Date().toISOString(),
+        };
+
+        // 4) Generar HTML y abrir pop-up
+        const html = buildTicketHtml(ticketInput);
+
+        const inTauri = typeof window !== "undefined" && (window as any).__TAURI__;
+        if (inTauri) {
+            try {
+                const { invoke } = await import(/* @vite-ignore */ "@tauri-apps/api/core");
+                await invoke("print_ticket", { html });
+                return { ok: true, method: "print" };
+            } catch (e) {
+                console.warn("[ticketPrinter] Tauri invoke falló, fallback a window.print", e);
+            }
+        }
+        const w = window.open("", "_blank", "width=380,height=720");
+        if (!w) {
+            return { ok: false, method: "error", error: "Pop-ups bloqueados" };
+        }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        return { ok: true, method: "print" };
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[ticketPrinter] printPreBill error:", msg);
+        return { ok: false, method: "error", error: msg };
+    }
+}
+
+/**
  * ★★★ FUNCIÓN PRINCIPAL ★★★
  *
  *  v1.9.16: REESCRITA PARA EVITAR about:blank SIN DATOS.
