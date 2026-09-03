@@ -61,9 +61,12 @@ export interface TicketInput {
     companyOverride?: any;
 }
 
-const TICKET_WIDTH_MM = 58;            // ★ papel 58mm
+const TICKET_WIDTH_MM = 58;            // ★ papel 58mm físico
 const TICKET_WIDTH    = "58mm";
-const PRINTABLE_WIDTH = "54mm";        // ★ área imprimible real (≈ 200-220px)
+// ★ v1.9.21 [HOTFIX]: área imprimible conservadora.
+//   Margen de seguridad de 2mm a cada lado para que la impresora
+//   no recorte el lateral derecho (hora, método de pago, decimales).
+const PRINTABLE_WIDTH = "48mm";        // ★ antes 54mm → ahora 48mm
 const FONT_STACK      = `"Courier New", Courier, monospace`;
 const CHARS_PER_LINE  = 32;            // 58mm Font A ~ 32 cols
 
@@ -149,7 +152,14 @@ function padBothMultiline(s: string, width: number): string[] {
 }
 
 function fmtEUR(n: number): string {
-    return Number(n ?? 0).toFixed(2).replace(".", ",") + " €";
+    // ★ v1.9.21 [HOTFIX]: formato monetario ESTRICTO.
+    //   - es-ES: usa coma decimal
+    //   - 2 decimales SIEMPRE (min y max)
+    //   - símbolo € con espacio antes
+    return Number(n ?? 0).toLocaleString("es-ES", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }) + " \u20AC";
 }
 
 /** Formato EXACTO de fecha/hora en HORA LOCAL ESPAÑA (Europe/Madrid):
@@ -295,13 +305,13 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ 58mm físico + 54mm imprimible */
+/* ★ v1.9.21 [HOTFIX]: papel 58mm, área imprimible 48mm con margen seguridad */
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
 body {
     margin: 0;
-    padding: 2mm 1mm;
+    padding: 2mm 2mm;        /* ★ margen 2mm a cada lado (antes 1mm) */
     font-family: ${FONT_STACK};
     font-size: 11px;
     font-weight: 800;
@@ -329,7 +339,7 @@ body {
     text-align: left;
 }
 .ticket-row .desc   { flex: 1 1 auto; text-align: left;  word-break: break-word; padding-right: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; }
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 2mm; }   /* ★ v1.9.21 margen seguridad */
 .ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0; }
 .ticket-total   { font-size: 14px; font-weight: 900; }
 .ticket-footer-brand { margin-top: 4px; font-size: 9px; text-align: center; letter-spacing: 0.3px; }
