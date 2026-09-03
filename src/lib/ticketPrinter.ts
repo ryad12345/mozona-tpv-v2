@@ -232,27 +232,35 @@ function buildTicketHtml(input: TicketInput): string {
     // ============================================================
     const head: string[] = [];
     if (headerMsg) {
-        head.push(...padBothMultiline(escapeHtml(headerMsg), CHARS_PER_LINE));
-        head.push("-".repeat(CHARS_PER_LINE));
+        // ★ v1.9.23: NO truncar; si es largo, CSS hace wrap
+        head.push(`<div class="ctr b">${escapeHtml(headerMsg)}</div>`);
+        head.push('<div class="sep-dash"></div>');
     }
 
     // 1b. DATOS DEL RESTAURANTE (inyectados desde BD)
     const nameToShow = businessName && businessName.trim() !== ""
         ? businessName
         : DEFAULT_COMPANY.name;
-    head.push(...padBothMultiline(nameToShow.toUpperCase(), CHARS_PER_LINE));
-    if (cifNif)   head.push(...padBothMultiline("CIF/NIF: " + cifNif, CHARS_PER_LINE));
-    if (address) head.push(...padBothMultiline(address, CHARS_PER_LINE));
-    if (phone)   head.push(...padBothMultiline("Tel: " + phone, CHARS_PER_LINE));
-    head.push("=".repeat(CHARS_PER_LINE));
+    head.push(`<div class="ctr b">${escapeHtml(nameToShow.toUpperCase())}</div>`);
+    if (cifNif) head.push(`<div class="ctr meta">CIF/NIF: ${escapeHtml(cifNif)}</div>`);
+    if (address) {
+        // ★ v1.9.23: dirección completa con wrap natural
+        const addressLines = address.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+        for (const line of addressLines) {
+            head.push(`<div class="ctr meta">${escapeHtml(line)}</div>`);
+        }
+    }
+    if (phone) head.push(`<div class="ctr meta">Tel: ${escapeHtml(phone)}</div>`);
+    head.push('<div class="sep-eq"></div>');
 
     // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
-    head.push(fmtLine("Ticket:", ticketNumber));
-    head.push(fmtLine("Fecha:", dateStr));
-    if (tableNumber) head.push(fmtLine("Mesa:", String(tableNumber)));
-    if (waiterName)  head.push(fmtLine("Camarero:", waiterName));
-    head.push(fmtLine("Pago:", paymentMethod));
-    head.push("-".repeat(CHARS_PER_LINE));
+    //     ★ v1.9.23: NO usar fmtLine (truncaba). HTML flexbox respeta contenido.
+    head.push(`<div class="ticket-row"><span class="desc">Ticket:</span><span class="val">${escapeHtml(ticketNumber)}</span></div>`);
+    head.push(`<div class="ticket-row"><span class="desc">Fecha:</span><span class="val">${escapeHtml(dateStr)}</span></div>`);
+    if (tableNumber) head.push(`<div class="ticket-row"><span class="desc">Mesa:</span><span class="val">${escapeHtml(String(tableNumber))}</span></div>`);
+    if (waiterName)  head.push(`<div class="ticket-row"><span class="desc">Camarero:</span><span class="val">${escapeHtml(waiterName)}</span></div>`);
+    head.push(`<div class="ticket-row"><span class="desc">Pago:</span><span class="val">${escapeHtml(paymentMethod)}</span></div>`);
+    head.push('<div class="sep-dash"></div>');
 
     // ============================================================
     // 2. LÍNEAS DE PRODUCTOS
@@ -325,10 +333,9 @@ body {
     width: 100%;
     max-width: ${PRINTABLE_WIDTH};
     margin: 0 auto;
-    white-space: pre;
+    white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
-    overflow: hidden;
     box-sizing: border-box !important;
 }
 .ticket-row {
@@ -344,6 +351,12 @@ body {
 .ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0; }
 .ticket-total   { font-size: 14px; font-weight: 900; }
 .ticket-footer-brand { margin-top: 4px; font-size: 9px; text-align: center; letter-spacing: 0.3px; }
+/* ★ v1.9.23: clases para cabecera */
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; }
+.b            { font-weight: 900; }
+.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
+.sep-eq       { border-top: 1px solid #000; margin: 3px 0; height: 0; }
+.sep-dash     { border-top: 1px dashed #000; margin: 2px 0; height: 0; }
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
