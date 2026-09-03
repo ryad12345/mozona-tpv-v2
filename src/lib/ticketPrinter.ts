@@ -244,17 +244,14 @@ function buildTicketHtml(input: TicketInput): string {
     head.push(`<div class="ctr b">${escapeHtml(nameToShow.toUpperCase())}</div>`);
     if (cifNif) head.push(`<div class="ctr meta">CIF/NIF: ${escapeHtml(cifNif)}</div>`);
     if (address) {
-        // ★ v1.9.23: dirección completa con wrap natural
-        const addressLines = address.split(/[,;]/).map(s => s.trim()).filter(Boolean);
-        for (const line of addressLines) {
-            head.push(`<div class="ctr meta">${escapeHtml(line)}</div>`);
-        }
+        // ★ v1.9.25: dirección en una sola línea
+        head.push(`<div class="ctr meta">${escapeHtml(address)}</div>`);
     }
     if (phone) head.push(`<div class="ctr meta">Tel: ${escapeHtml(phone)}</div>`);
     head.push('<div class="sep-eq"></div>');
 
     // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
-    //     ★ v1.9.23: NO usar fmtLine (truncaba). HTML flexbox respeta contenido.
+    //     ★ v1.9.25: CSS .desc/val con nowrap para que no rompan línea
     head.push(`<div class="ticket-row"><span class="desc">Ticket:</span><span class="val">${escapeHtml(ticketNumber)}</span></div>`);
     head.push(`<div class="ticket-row"><span class="desc">Fecha:</span><span class="val">${escapeHtml(dateStr)}</span></div>`);
     if (tableNumber) head.push(`<div class="ticket-row"><span class="desc">Mesa:</span><span class="val">${escapeHtml(String(tableNumber))}</span></div>`);
@@ -264,20 +261,28 @@ function buildTicketHtml(input: TicketInput): string {
 
     // ============================================================
     // 2. LÍNEAS DE PRODUCTOS
+    // ★ v1.9.25: UNA SOLA FILA por producto — "2x Paella | 29,00 €"
+    //   sin fila intermedia de @precio (ahorra altura)
     // ============================================================
     const body: string[] = [];
     for (const l of lines) {
         const lineSubtotal = l.unit_price * l.quantity;
-        body.push(`<div class="ticket-row"><span class="desc">${l.quantity} x ${escapeHtml(l.name.slice(0, 22))}</span></div>`);
-        body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;@ ${fmtEUR(l.unit_price)}</span><span class="price">${fmtEUR(lineSubtotal)}</span></div>`);
+        const left = `${l.quantity} x ${escapeHtml(l.name.slice(0, 18))}`;
+        body.push(
+            `<div class="ticket-row"><span class="desc">${left}</span>` +
+            `<span class="price">${fmtEUR(lineSubtotal)}</span></div>`
+        );
         if (l.notes) {
-            body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;Nota: ${escapeHtml(l.notes.slice(0, 24))}</span></div>`);
+            body.push(
+                `<div class="ticket-row"><span class="meta" style="padding-left:6px">&gt; ${escapeHtml(l.notes.slice(0, 22))}</span></div>`
+            );
         }
     }
-    body.push('<hr class="ticket-divider" />');
+    body.push('<div class="sep-dash"></div>');
 
     // ============================================================
     // 3. TOTALES + DESGLOSE IVA
+    // ★ v1.9.25: quitado un <hr> extra — un solo separador antes del TOTAL
     // ============================================================
     const foot: string[] = [];
     if (showTax) {
@@ -288,18 +293,19 @@ function buildTicketHtml(input: TicketInput): string {
         }
         foot.push(`<div class="ticket-row"><span class="desc">Total IVA:</span><span class="price">${fmtEUR(taxTotal)}</span></div>`);
     }
-    foot.push('<hr class="ticket-divider" />');
+    foot.push('<div class="sep-dash"></div>');
     foot.push(`<div class="ticket-row ticket-total"><span class="desc">TOTAL:</span><span class="price">${fmtEUR(total)}</span></div>`);
-    foot.push('<hr class="ticket-divider" />');
+    foot.push('<div class="sep-dash"></div>');
 
     // ============================================================
     // 4. PIE (footer_text) + identificación
+    // ★ v1.9.25: más compacto, una sola línea por mensaje
     // ============================================================
     if (footerMsg) {
-        foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">${escapeHtml(footerMsg)}</span></div>`);
+        foot.push(`<div class="ctr meta">${escapeHtml(footerMsg)}</div>`);
     }
     if (orderId) {
-        foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">ID: ${orderId.slice(0, 8)}</span></div>`);
+        foot.push(`<div class="ctr meta">ID: ${orderId.slice(0, 8)}</div>`);
     }
 
     // 4b. MARCA DE SOFTWARE al final
@@ -312,7 +318,8 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.22 [HOTFIX 2]: I2pos 58mm con cabezal efectivo 40-42mm */
+/* ★ v1.9.22 [HOTFIX 2]: I2pos 58mm con cabezal efectivo 40-42mm
+   ★ v1.9.25: COMPACTACIÓN vertical — menos interlineado, menos padding */
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
@@ -320,43 +327,48 @@ body {
     width: 42mm !important;
     max-width: 42mm !important;
     margin: 0 !important;
-    padding: 1mm 3mm 1mm 1mm !important;   /* ★ 3mm margen derecho de resguardo */
+    padding: 1mm 3mm 1mm 1mm !important;   /* 3mm margen derecho de resguardo */
     box-sizing: border-box !important;
     font-family: ${FONT_STACK};
     font-size: 11px !important;
     font-weight: 800;
-    line-height: 1.2;
+    line-height: 1.15 !important;          /* ★ v1.9.25: 1.2 → 1.15 */
     color: #000;
     background: #fff;
 }
 .ticket-container {
     width: 100%;
     max-width: ${PRINTABLE_WIDTH};
-    margin: 0 auto;
+    margin: 0 !important;
+    padding: 0 2mm !important;             /* ★ v1.9.25: compacto */
     white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
     box-sizing: border-box !important;
+    line-height: 1.15 !important;          /* ★ v1.9.25 */
 }
 .ticket-row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     width: 100%;
-    margin-bottom: 1px;
+    margin: 1px 0 !important;              /* ★ v1.9.25: 1px 0 (antes 1px bottom) */
+    padding: 0 !important;
     text-align: left;
+    line-height: 1.15 !important;          /* ★ v1.9.25 */
 }
-.ticket-row .desc   { flex: 1 1 auto; text-align: left;  word-break: break-word; padding-right: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 2mm; }   /* ★ v1.9.21 margen seguridad */
-.ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0; }
-.ticket-total   { font-size: 14px; font-weight: 900; }
-.ticket-footer-brand { margin-top: 4px; font-size: 9px; text-align: center; letter-spacing: 0.3px; }
-/* ★ v1.9.23: clases para cabecera */
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; }
+.ticket-row .desc   { flex: 0 0 auto; text-align: left;  white-space: nowrap; padding-right: 3px; }
+.ticket-row .val    { flex: 1 1 auto; text-align: right; white-space: nowrap; padding-left: 3px; }
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 2mm; }
+.ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0 !important; }
+.ticket-total   { font-size: 14px; font-weight: 900; line-height: 1.15 !important; }
+.ticket-footer-brand { margin-top: 2px !important; font-size: 9px; text-align: center; letter-spacing: 0.3px; line-height: 1.15 !important; }
+/* ★ v1.9.23/25: clases para cabecera */
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
 .b            { font-weight: 900; }
-.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
-.sep-eq       { border-top: 1px solid #000; margin: 3px 0; height: 0; }
-.sep-dash     { border-top: 1px dashed #000; margin: 2px 0; height: 0; }
+.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
+.sep-eq       { border-top: 1px solid #000; margin: 2px 0 !important; height: 0; }   /* ★ v1.9.25: 3px → 2px */
+.sep-dash     { border-top: 1px dashed #000; margin: 2px 0 !important; height: 0; }
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
