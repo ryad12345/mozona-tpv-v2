@@ -324,66 +324,92 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.28 [HOTFIX]: Reset CSS de impresión estricto
-   Problema: width: 42mm/48mm + margin: 0 auto dejaba margen blanco a la derecha
-            porque el viewport del pop-up de impresión es más ancho que el rollo.
-   Solución:  @page size: 58mm auto (fuerza tamaño de rollo)
-              html/body width: 100% (sin restricción)
-              .ticket-container width: 100% + box-sizing
-              padding asimétrico 1.5mm izq / 3mm der (margen seguridad derecho) */
+/* ★ v1.9.29 [HOTFIX CRÍTICO]: Sin overflow, sin @page size fijo
+   Problema: size: 58mm forzaba un viewport de 58mm → texto cortado en previsualización
+            Y overflow: hidden en algunos sitios → se comía el '€'
+   Solución:  @page size: auto (libera el ancho)
+              .ticket-container max-width: 68mm (permite rollos 58/80mm)
+              overflow: visible !important en TODO
+              .val con margin-left: 8px (separación garantizada) */
 
 @media print {
     @page {
         margin: 0 !important;
-        size: 58mm auto !important;     /* ★ fuerza tamaño de rollo térmico */
+        size: auto !important;          /* ★ NO forzar 58mm; usa el papel real */
     }
     html, body {
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
         background: transparent !important;
+        overflow: visible !important;
     }
 }
 
-* { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
+* {
+    box-sizing: border-box !important;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
+    overflow: visible !important;       /* ★ v1.9.29: NUNCA recortar */
+}
 
 .ticket-container {
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: 68mm !important;         /* ★ v1.9.29: 48mm → 68mm (rollo 80mm o 58mm completo) */
     margin: 0 !important;
-    padding: 0 3mm 0 1.5mm !important;    /* ★ 1.5mm izq + 3mm der (no tocar borde físico) */
+    padding: 2mm !important;            /* ★ v1.9.29: padding uniforme 2mm */
     box-sizing: border-box !important;
     font-family: ${FONT_STACK} !important;
-    font-size: 9.5px !important;
-    line-height: 1.15 !important;
+    font-size: 11px !important;         /* ★ v1.9.29: 9.5px → 11px (legible) */
+    line-height: 1.2 !important;
     color: #000 !important;
+    background: #fff;
+    overflow: visible !important;       /* ★ v1.9.29 */
     white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
-    background: #fff;
 }
 
 .ticket-row {
     display: flex !important;
     justify-content: space-between !important;
     align-items: baseline !important;
-    width: 100%;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     text-align: left;
-    line-height: 1.15 !important;
+    line-height: 1.2 !important;
+    overflow: visible !important;       /* ★ v1.9.29 */
+    white-space: nowrap !important;     /* ★ v1.9.29: nowrap */
 }
-.ticket-row .desc   { flex: 0 0 auto; text-align: left;  white-space: nowrap; padding-right: 3px; }
-.ticket-row .val    { flex: 1 1 auto; text-align: right; white-space: nowrap; padding-left: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 0; }  /* ★ v1.9.28 sin padding-right, el contenedor ya tiene 3mm */
-.ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; }
-.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.15 !important; }
-.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.15 !important; }
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
+.ticket-row span, .ticket-row div {
+    overflow: visible !important;       /* ★ v1.9.29: hijos sin overflow */
+}
+.ticket-row .desc {
+    text-align: left !important;
+    white-space: nowrap;
+    overflow: visible;
+}
+.ticket-row .val {
+    text-align: right !important;
+    margin-left: 8px !important;        /* ★ v1.9.29: separación garantizada */
+    font-weight: bold !important;
+    white-space: nowrap;
+    overflow: visible;
+}
+.ticket-row .price {
+    text-align: right !important;
+    white-space: nowrap;
+    overflow: visible;
+}
+.ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; overflow: visible !important; }
+.ticket-total   { font-size: 14px; font-weight: 900; line-height: 1.2 !important; overflow: visible !important; }
+.ticket-footer-brand { margin-top: 2px !important; font-size: 9px; text-align: center; letter-spacing: 0.3px; line-height: 1.2 !important; overflow: visible !important; }
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.2 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
 .b            { font-weight: 900; }
-.meta         { font-size: 9.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
-.sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; }
-.sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; }
+.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.2 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+.sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; overflow: visible !important; }
+.sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; overflow: visible !important; }
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
