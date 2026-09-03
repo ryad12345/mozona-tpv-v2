@@ -12,9 +12,14 @@
 //   6. MARCA DE SOFTWARE al final: "Software TPV: Mozona TPV"
 //
 // Formato: 80mm centrado, monospace, márgenes a CERO.
+//
+// ★ v1.9.14: los datos de Empresa (nombre/NIF/dirección/teléfono) se
+//   leen DIRECTAMENTE de localStorage, no de la BD. El panel Empresa
+//   (SettingsPage.saveEmpresa) persiste en `mozona.empresa`.
+//   Se prueban varias claves candidatas para ser compatibles con
+//   distintas versiones del panel y con datos de ejemplo.
 // =====================================================================
 
-import { supabase } from "./supabase";
 import { loadTicketSettings } from "./ticketSettings";
 
 export interface TicketLine {
@@ -51,6 +56,101 @@ const TICKET_WIDTH_MM = 80;            // ★ papel 80mm
 const TICKET_WIDTH    = "80mm";
 const FONT_STACK      = `"Courier New", Courier, monospace`;
 const CHARS_PER_LINE  = 42;            // 80mm Font A ~ 42 cols
+
+// ---------------------------------------------------------------------
+// ★ v1.9.14: Empresa desde localStorage
+// ---------------------------------------------------------------------
+
+export interface CompanyInfo {
+    name:    string;
+    nif:     string;
+    address: string;
+    phone:   string;
+}
+
+const DEFAULT_COMPANY: CompanyInfo = {
+    name:    "Restaurante",
+    nif:     "",
+    address: "",
+    phone:   "",
+};
+
+/** Lee un valor string de un objeto siguiendo varias claves candidatas. */
+function pickStr(obj: any, keys: string[]): string {
+    if (!obj || typeof obj !== "object") return "";
+    for (const k of keys) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim() !== "") return v.trim();
+        if (typeof v === "number") return String(v);
+    }
+    return "";
+}
+
+/** Lee un objeto de la primera clave localStorage que contenga un JSON parseable. */
+function readJsonAny(keys: string[]): any | null {
+    if (typeof localStorage === "undefined") return null;
+    for (const key of keys) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") return parsed;
+        } catch (e) { /* ignore */ }
+    }
+    return null;
+}
+
+/** ★★★ CARGA EMPRESA DESDE LOCALSTORAGE ★★★
+ *  Busca en este orden:
+ *    1. mozona.empresa         (panel Empresa oficial v1.9.x)
+ *    2. mozona.ticket_config   (panel Ticket contiene también datos de empresa)
+ *    3. company_info           (compatibilidad)
+ *    4. business_settings      (compatibilidad)
+ *  Devuelve la primera coincidencia válida con los 4 campos. */
+export function loadCompanyFromLocal(): CompanyInfo {
+    const keys = [
+        "mozona.empresa",
+        "mozona.ticket_config",
+        "company_info",
+        "business_settings",
+        "mozona.company",
+    ];
+    for (const k of keys) {
+        const obj = readJsonAny([k]);
+        if (!obj) continue;
+        const info: CompanyInfo = {
+            name:    pickStr(obj, ["name", "businessName", "razon_social", "razonSocial", "company_name"]),
+            nif:     pickStr(obj, ["nif", "cif", "cif_nif", "cifNif", "tax_id"]),
+            address: pickStr(obj, ["address", "direccion", "addr"]),
+            phone:   pickStr(obj, ["phone", "telefono", "tel"]),
+        };
+        if (info.name || info.nif || info.address || info.phone) {
+            return info;
+        }
+    }
+    return { ...DEFAULT_COMPANY };
+}
+
+/** Lee la configuración de impresión de ticket desde localStorage. */
+function loadTicketConfigFromLocal(): { header_text: string; footer_text: string; show_vat_breakdown: boolean } {
+    const obj = readJsonAny([
+        "mozona.ticket_config",
+        "mozona.ticket_settings",
+        "ticket_settings",
+    ]);
+    if (!obj) return { header_text: "", footer_text: "¡Gracias por su visita!", show_vat_breakdown: true };
+    return {
+        header_text:        pickStr(obj, ["header_text", "header_msg", "headerMsg"]),
+        footer_text:        pickStr(obj, ["footer_text", "footer_msg", "footerMsg", "footer"]) || "¡Gracias por su visita!",
+        show_vat_breakdown: typeof obj.show_vat_breakdown === "boolean"
+            ? obj.show_vat_breakdown
+            : (typeof obj.showTax === "boolean" ? obj.showTax : true),
+    };
+}
+
+// ---------------------------------------------------------------------
+// Helpers de formato
+// ---------------------------------------------------------------------
 
 function fmtLine(left: string, right: string, width = CHARS_PER_LINE): string {
     const gap = Math.max(1, width - left.length - right.length);
@@ -111,11 +211,12 @@ function buildTicketHtml(input: TicketInput): string {
         businessName, cifNif = "—", address = "", phone = "",
         tableNumber, waiterName, lines, subtotal, taxTotal, total,
         paymentMethod, series, invoiceNumber, headerMsg, footerMsg, showTax = true,
-        createdAt,
+        createdAt, orderId,
     } = input;
 
     const dateStr = fmtDateTime(createdAt);
     const vatSummary = summarizeVat(lines);
+    const ticketNumber = `${series}-${String(invoiceNumber).padStart(8, "0")}`;
 
     // ============================================================
     // 1. CABECERA LIBRE (header_text)
@@ -126,15 +227,18 @@ function buildTicketHtml(input: TicketInput): string {
         head.push("-".repeat(CHARS_PER_LINE));
     }
 
-    // 1b. DATOS DEL RESTAURANTE
-    head.push(padBoth(businessName.toUpperCase(), CHARS_PER_LINE));
+    // 1b. DATOS DEL RESTAURANTE (de localStorage o del input)
+    const nameToShow = businessName && businessName.trim() !== ""
+        ? businessName
+        : DEFAULT_COMPANY.name;
+    head.push(padBoth(nameToShow.toUpperCase(), CHARS_PER_LINE));
     if (cifNif && cifNif !== "—") head.push(padBoth("CIF/NIF: " + cifNif, CHARS_PER_LINE));
     if (address) head.push(padBoth(address, CHARS_PER_LINE));
     if (phone)   head.push(padBoth("Tel: " + phone, CHARS_PER_LINE));
     head.push("=".repeat(CHARS_PER_LINE));
 
     // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
-    head.push(fmtLine("Ticket:", `${series}-${String(invoiceNumber).padStart(8, "0")}`));
+    head.push(fmtLine("Ticket:", ticketNumber));
     head.push(fmtLine("Fecha:", dateStr));
     if (tableNumber) head.push(fmtLine("Mesa:", String(tableNumber)));
     if (waiterName)  head.push(fmtLine("Camarero:", waiterName));
@@ -160,14 +264,11 @@ function buildTicketHtml(input: TicketInput): string {
     // ============================================================
     const foot: string[] = [];
     if (showTax) {
-        // 3a) Base imponible agregada
         foot.push(`<div class="ticket-row"><span class="desc">Base imponible:</span><span class="price">${fmtEUR(subtotal)}</span></div>`);
-        // 3b) Desglose por tipo de IVA
         for (const v of vatSummary) {
             const label = v.rate % 1 === 0 ? `${v.rate}%` : `${v.rate.toFixed(2)}%`;
             foot.push(`<div class="ticket-row"><span class="desc">IVA ${label}:</span><span class="price">${fmtEUR(v.tax)}</span></div>`);
         }
-        // 3c) Total IVA
         foot.push(`<div class="ticket-row"><span class="desc">Total IVA:</span><span class="price">${fmtEUR(taxTotal)}</span></div>`);
     }
     foot.push('<hr class="ticket-divider" />');
@@ -175,12 +276,14 @@ function buildTicketHtml(input: TicketInput): string {
     foot.push('<hr class="ticket-divider" />');
 
     // ============================================================
-    // 4. PIE (footer_text) + despedida
+    // 4. PIE (footer_text) + identificación
     // ============================================================
     if (footerMsg) {
         foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">${escapeHtml(footerMsg)}</span></div>`);
     }
-    foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">ID: ${(input.orderId || "").slice(0, 8)}</span></div>`);
+    if (orderId) {
+        foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">ID: ${orderId.slice(0, 8)}</span></div>`);
+    }
 
     // 4b. MARCA DE SOFTWARE al final
     foot.push(`<div class="ticket-footer-brand">Software TPV: Mozona TPV</div>`);
@@ -190,7 +293,7 @@ function buildTicketHtml(input: TicketInput): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ticket ${series}-${String(invoiceNumber).padStart(8, "0")}</title>
+<title>Ticket ${ticketNumber}</title>
 <style>
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
@@ -211,7 +314,7 @@ body {
     margin: 0 auto;
     white-space: pre;
     word-break: break-word;
-    text-align: center;            /* ★ todo el texto centrado */
+    text-align: center;
 }
 .ticket-row {
     display: flex;
@@ -240,31 +343,53 @@ ${[...head, ...body, ...foot].join("\n")}
 
 /**
  * ★★★ FUNCIÓN PRINCIPAL ★★★
- *  Imprime un ticket tras el cobro. Antes de generar el HTML,
- *  fusiona la configuración de BD (ticket_settings) por si el
- *  llamador no la ha pasado todavía.
+ *  Imprime un ticket tras el cobro.
+ *
+ *  Datos de EMPRESA: leídos SIEMPRE de localStorage (loadCompanyFromLocal)
+ *  Datos de TICKET:  fusiona BD (ticket_settings) + localStorage + input
+ *  Datos de METADATOS: orderId, tableNumber, series, invoiceNumber del input
+ *  Datos del COBRO:   lines, subtotal, taxTotal, total, paymentMethod del input
+ *
+ *  Los campos de input mandan sobre localStorage/BD solo si traen valor real.
  */
 export async function printTicket(input: TicketInput): Promise<{ ok: boolean; method: "print" | "skipped" | "error"; error?: string }> {
     try {
-        // ★ v1.9.13: fusionar config de BD (no pisa si ya viene en input)
-        let cfg = { header_text: "", footer_text: "", show_vat_breakdown: true, paper_width_mm: 80 };
+        // 1) EMPRESA: SIEMPRE desde localStorage (es donde se guarda de verdad)
+        const company = loadCompanyFromLocal();
+
+        // 2) TICKET CONFIG: BD → localStorage → defaults
+        let cfg = { header_text: "", footer_text: "¡Gracias por su visita!", show_vat_breakdown: true, paper_width_mm: 80 };
         try {
             const ts = await loadTicketSettings();
             cfg = {
                 header_text:        ts.header_text        ?? "",
-                footer_text:        ts.footer_text        ?? "",
+                footer_text:        ts.footer_text        ?? cfg.footer_text,
                 show_vat_breakdown: ts.show_vat_breakdown ?? true,
                 paper_width_mm:     ts.paper_width_mm     ?? 80,
             };
         } catch (e) {
-            console.warn("[ticketPrinter] no se pudo cargar ticket_settings:", e);
+            console.warn("[ticketPrinter] no se pudo cargar ticket_settings (BD):", e);
         }
+        // Sobrescribir con localStorage si tiene valores
+        const localCfg = loadTicketConfigFromLocal();
+        if (localCfg.header_text)        cfg.header_text        = localCfg.header_text;
+        if (localCfg.footer_text)        cfg.footer_text        = localCfg.footer_text;
+        cfg.show_vat_breakdown = localCfg.show_vat_breakdown;
+
+        // 3) MERGE: input gana si trae dato real, si no usa localStorage
         const merged: TicketInput = {
             ...input,
-            headerMsg: input.headerMsg ?? cfg.header_text,
-            footerMsg: input.footerMsg ?? cfg.footer_text,
-            showTax:   input.showTax   ?? cfg.show_vat_breakdown,
+            businessName: (input.businessName && input.businessName.trim() !== "" && input.businessName !== DEFAULT_COMPANY.name)
+                          ? input.businessName
+                          : company.name,
+            cifNif:       (input.cifNif && input.cifNif !== "—") ? input.cifNif : company.nif,
+            address:      input.address ?? company.address,
+            phone:        input.phone   ?? company.phone,
+            headerMsg:    input.headerMsg ?? cfg.header_text,
+            footerMsg:    input.footerMsg ?? cfg.footer_text,
+            showTax:      input.showTax   ?? cfg.show_vat_breakdown,
         };
+
         const html = buildTicketHtml(merged);
 
         // ★ Detección: si estamos en Tauri, usar el driver nativo
