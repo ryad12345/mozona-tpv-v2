@@ -63,10 +63,9 @@ export interface TicketInput {
 
 const TICKET_WIDTH_MM = 58;            // ★ papel 58mm físico
 const TICKET_WIDTH    = "58mm";
-// ★ v1.9.21 [HOTFIX]: área imprimible conservadora.
-//   Margen de seguridad de 2mm a cada lado para que la impresora
-//   no recorte el lateral derecho (hora, método de pago, decimales).
-const PRINTABLE_WIDTH = "48mm";        // ★ antes 54mm → ahora 48mm
+// ★ v1.9.22 [HOTFIX 2]: cabezal efectivo I2pos 58mm = 40-42mm.
+//   48mm seguía cortando: perdía '€', últimos dígitos, hora, nº ticket.
+const PRINTABLE_WIDTH = "42mm";        // ★ antes 48mm → ahora 42mm
 const FONT_STACK      = `"Courier New", Courier, monospace`;
 const CHARS_PER_LINE  = 32;            // 58mm Font A ~ 32 cols
 
@@ -305,21 +304,22 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.21 [HOTFIX]: papel 58mm, área imprimible 48mm con margen seguridad */
+/* ★ v1.9.22 [HOTFIX 2]: I2pos 58mm con cabezal efectivo 40-42mm */
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
 body {
-    margin: 0;
-    padding: 2mm 2mm;        /* ★ margen 2mm a cada lado (antes 1mm) */
+    width: 42mm !important;
+    max-width: 42mm !important;
+    margin: 0 !important;
+    padding: 1mm 3mm 1mm 1mm !important;   /* ★ 3mm margen derecho de resguardo */
+    box-sizing: border-box !important;
     font-family: ${FONT_STACK};
-    font-size: 11px;
+    font-size: 11px !important;
     font-weight: 800;
     line-height: 1.2;
     color: #000;
     background: #fff;
-    display: flex;
-    justify-content: center;
 }
 .ticket-container {
     width: 100%;
@@ -329,6 +329,7 @@ body {
     word-break: break-word;
     text-align: center;
     overflow: hidden;
+    box-sizing: border-box !important;
 }
 .ticket-row {
     display: flex;
