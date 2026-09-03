@@ -26,7 +26,7 @@
 //   `ticket_settings` con los campos `company_name/nif/address/phone`.
 // =====================================================================
 
-import { loadTicketSettings, type TicketSettings } from "./ticketSettings";
+import { loadTicketSettings, type TicketSettings, companyFromSettingsWithLocal } from "./ticketSettings";
 
 export interface TicketLine {
     name:       string;
@@ -84,13 +84,8 @@ const DEFAULT_COMPANY: CompanyInfo = {
 
 /** Extrae los datos de empresa desde un objeto TicketSettings. */
 function companyFromSettings(s: TicketSettings | null | undefined): CompanyInfo {
-    if (!s) return { ...DEFAULT_COMPANY };
-    return {
-        name:    (s.company_name ?? "").trim() || DEFAULT_COMPANY.name,
-        nif:     (s.nif          ?? "").trim(),
-        address: (s.address      ?? "").trim(),
-        phone:   (s.phone        ?? "").trim(),
-    };
+    // ★ v1.9.18: usa el helper del módulo con fallback a localStorage
+    return companyFromSettingsWithLocal(s);
 }
 
 // ---------------------------------------------------------------------
@@ -113,16 +108,38 @@ function fmtEUR(n: number): string {
     return Number(n ?? 0).toFixed(2).replace(".", ",") + " €";
 }
 
-/** Formato EXACTO de fecha/hora: DD/MM/YYYY HH:mm:ss */
+/** Formato EXACTO de fecha/hora en HORA LOCAL ESPAÑA (Europe/Madrid):
+ *  DD/MM/YYYY HH:mm:ss
+ *  Usa Intl.DateTimeFormat con timeZone para garantizar hora local
+ *  española y SIEMPRE 2 dígitos por componente. */
 function fmtDateTime(iso?: string): string {
     const d = new Date(iso ?? Date.now());
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-    const ss = String(d.getSeconds()).padStart(2, "0");
-    return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+    try {
+        const fmt = new Intl.DateTimeFormat("es-ES", {
+            timeZone: "Europe/Madrid",
+            day:   "2-digit",
+            month: "2-digit",
+            year:  "numeric",
+            hour:  "2-digit",
+            minute:"2-digit",
+            second:"2-digit",
+            hour12: false,
+        });
+        // es-ES con 2-digit suele dar "DD/MM/YYYY, HH:MM:SS"
+        const parts = fmt.formatToParts(d);
+        const get = (t: string) => parts.find(p => p.type === t)?.value ?? "00";
+        const dd  = get("day");
+        const mm  = get("month");
+        const yy  = get("year");
+        const hh  = get("hour");
+        const mi  = get("minute");
+        const ss  = get("second");
+        return `${dd}/${mm}/${yy} ${hh}:${mi}:${ss}`;
+    } catch (e) {
+        // Fallback manual con padStart (navegadores sin Intl avanzado)
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
 }
 
 /** Convierte caracteres HTML peligrosos a entidades */

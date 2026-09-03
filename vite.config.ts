@@ -54,7 +54,7 @@ export default defineConfig({
                 name: "MOZONA TPV",
                 short_name: "MozonaTPV",
                 description: "Sistema TPV Local-First para hostelería con VeriFactu",
-                version: "1.9.17-prebill-unified",
+                version: "1.9.18-timezone-madrid-fallback",
                 lang: "es-ES",
                 dir: "ltr",
                 scope: "/",

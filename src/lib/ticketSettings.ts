@@ -147,3 +147,66 @@ export async function saveTicketSettings(input: Partial<TicketSettings>): Promis
         return { ok: true, source: "local", error: e?.message };
     }
 }
+
+// ---------------------------------------------------------------------
+// ★ v1.9.18: helper de FALLBACK para Empresa
+// ---------------------------------------------------------------------
+// Si la BD no tiene los datos de empresa, completa con lo que esté en
+// `localStorage["mozona.empresa"]` (donde el panel Empresa guarda).
+// Esto evita que la cabecera del ticket salga con "RESTAURANTE" / "—".
+
+export interface CompanyInfoLite {
+    name:    string;
+    nif:     string;
+    address: string;
+    phone:   string;
+}
+
+function pickStr(obj: any, keys: string[]): string {
+    if (!obj || typeof obj !== "object") return "";
+    for (const k of keys) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim() !== "") return v.trim();
+        if (typeof v === "number") return String(v);
+    }
+    return "";
+}
+
+/** Lee empresa del localStorage `mozona.empresa` con varias claves candidatas. */
+export function readCompanyFromLocalStorage(): CompanyInfoLite {
+    const DEFAULT_NAME = "Restaurante";
+    try {
+        const raw = localStorage.getItem("mozona.empresa");
+        if (!raw) return { name: DEFAULT_NAME, nif: "", address: "", phone: "" };
+        const obj = JSON.parse(raw);
+        return {
+            name:    pickStr(obj, ["name", "businessName", "razon_social", "company_name"]) || DEFAULT_NAME,
+            nif:     pickStr(obj, ["nif", "cif", "cif_nif", "tax_id"]),
+            address: pickStr(obj, ["address", "direccion", "addr"]),
+            phone:   pickStr(obj, ["phone", "telefono", "tel"]),
+        };
+    } catch (e) {
+        return { name: DEFAULT_NAME, nif: "", address: "", phone: "" };
+    }
+}
+
+/** Fusiona la empresa: BD (TicketSettings) → fallback localStorage. */
+export function companyFromSettingsWithLocal(s: TicketSettings | null | undefined): CompanyInfoLite {
+    const fromDb: CompanyInfoLite = {
+        name:    (s?.company_name ?? "").trim(),
+        nif:     (s?.nif          ?? "").trim(),
+        address: (s?.address      ?? "").trim(),
+        phone:   (s?.phone        ?? "").trim(),
+    };
+    const fromLocal = readCompanyFromLocalStorage();
+
+    const isPlaceholder = (s: string) =>
+        !s || s.toUpperCase() === "RESTAURANTE" || s === "—";
+
+    return {
+        name:    isPlaceholder(fromDb.name)    ? fromLocal.name    : fromDb.name,
+        nif:     isPlaceholder(fromDb.nif)     ? fromLocal.nif     : fromDb.nif,
+        address: isPlaceholder(fromDb.address) ? fromLocal.address : fromDb.address,
+        phone:   isPlaceholder(fromDb.phone)   ? fromLocal.phone   : fromDb.phone,
+    };
+}
