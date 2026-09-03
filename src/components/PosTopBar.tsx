@@ -4,8 +4,8 @@
 
 import type { Restaurant, ConnectionStatus } from "../lib/types";
 import {
-    IconStore, IconShield, IconUsb, IconWifi, IconSettings,
-    IconUser, IconBell, IconLock, IconPrint, IconQr, IconCash,
+    IconStore, IconShield, IconSettings,
+    IconUser, IconCash,
 } from "./icons";
 import { cn } from "../lib/cn";
 
@@ -16,21 +16,13 @@ import { cn } from "../lib/cn";
 export interface PosTopBarProps {
     restaurant: Restaurant | null;
     connection: ConnectionStatus;
-    /** "192.168.1.42:7421" — opcional, si está bindeando LAN server */
-    lanEndpoint?: string;
-    /** "192.168.1.42" — IP local detectada */
-    localIp?:     string | null;
     /** Versión de la build, sale en el badge PRO */
     version?: string;
     /** Cajero activo (en real sale de auth) */
     cashier?: { name: string; role: string; avatar?: string };
     onOpenSettings?:  () => void;
-    onOpenCustomerDisplay?: () => void;
-    onOpenMenuScanner?:    () => void;
-    onShowQR?:            () => void;
     onLogout?:            () => void;
     onOpenCashRegister?:  () => void;   // ★ Acceso directo al arqueo
-    pendingAlerts?: number;
 }
 
 // ---------------------------------------------------------------------
@@ -38,10 +30,9 @@ export interface PosTopBarProps {
 // ---------------------------------------------------------------------
 
 export function PosTopBar({
-    restaurant, connection, lanEndpoint, localIp, version = "0.1.0",
+    restaurant, connection, version = "0.1.0",
     cashier = { name: "Cajero 01", role: "Camarero" },
-    onOpenSettings, onOpenCustomerDisplay, onOpenMenuScanner, onShowQR, onLogout, onOpenCashRegister,
-    pendingAlerts = 0,
+    onOpenSettings, onLogout, onOpenCashRegister,
 }: PosTopBarProps) {
     const initial = restaurant?.business_name?.[0] ?? "M";
     const shortName =
@@ -100,79 +91,42 @@ export function PosTopBar({
                 </div>
             </div>
 
-            {/* Indicadores de estado (sm+) ============================== */}
-            <div className="hidden sm:flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                <StatusPill
-                    icon={<IconWifi size={14} strokeWidth={2} />}
-                    label="Online"
-                    tone="ok"
-                />
-                <button
-                    onClick={onShowQR}
-                    title="QR para camareros"
-                    className="inline-flex items-center gap-1.5 h-7 px-2.5 py-1 rounded-full
-                               bg-blue-50 text-blue-700 border border-blue-200/80
-                               text-xs font-semibold whitespace-nowrap shrink-0
-                               hover:bg-blue-100 active:scale-95 transition">
-                    <IconQr size={12} strokeWidth={2.2} />
-                    <span className="hidden md:inline">QR Camareros</span>
-                </button>
-                <StatusPill
-                    icon={<IconShield size={14} strokeWidth={2} />}
-                    label="VeriFactu"
-                    tone="violet"
-                    pulse
-                />
-                <StatusPill
-                    icon={<IconUsb size={14} strokeWidth={2} />}
-                    label={connection.printer ? "Impresora USB" : "Sin impresora"}
-                    tone={connection.printer ? "ok" : "danger"}
-                />
-                <StatusPill
-                    icon={<IconLock size={12} strokeWidth={2.2} />}
-                    label="AES-256"
-                    tone="muted"
-                />
-            </div>
-
-            {/* Indicador compacto (<sm) sólo LAN/USB ==================== */}
-            <div className="flex sm:hidden items-center gap-1.5 flex-1 min-w-0">
-                <StatusPill
-                    icon={<IconWifi size={12} strokeWidth={2.2} />}
-                    label={connection.network ? "Online" : "Offline"}
-                    tone={connection.network ? "ok" : "danger"}
-                />
-                <StatusPill
-                    icon={<IconShield size={12} strokeWidth={2.2} />}
-                    label="VF"
-                    tone="violet"
-                    pulse
-                />
+            {/* ★ v1.9.24: Marca de agua centrada ====================== */}
+            <div className="
+                flex-1 min-w-0
+                flex items-center justify-center
+                select-none pointer-events-none
+                px-2
+            ">
+                <span className="
+                    text-[12px] sm:text-[13px]
+                    text-slate-400
+                    font-medium
+                    tracking-tight
+                    whitespace-nowrap
+                ">
+                    Plataforma creada por{" "}
+                    <a
+                        href="https://mozona.online"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="
+                            text-slate-500
+                            font-semibold
+                            hover:text-blue-600
+                            transition
+                            pointer-events-auto
+                        "
+                    >
+                        Mozona.online
+                    </a>
+                    {" · "}
+                    <span className="text-slate-400">Riyad Mouzouna</span>
+                </span>
             </div>
 
             {/* Acciones rápidas ======================================== */}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                <IconButton
-                    onClick={onOpenMenuScanner}
-                    title="Digitalizar carta con IA"
-                    className="hidden sm:inline-flex"
-                >
-                    <IconPrint size={18} strokeWidth={1.8} />
-                </IconButton>
-                <IconButton
-                    onClick={onOpenCustomerDisplay}
-                    title="Pantalla cliente"
-                    className="hidden sm:inline-flex"
-                >
-                    <IconStore size={18} strokeWidth={1.8} />
-                </IconButton>
-                <IconButton
-                    title={`${pendingAlerts} alertas`}
-                    badge={pendingAlerts > 0 ? pendingAlerts : undefined}
-                    className="hidden sm:inline-flex"
-                >
-                    <IconBell size={18} strokeWidth={1.8} />
-                </IconButton>
                 <IconButton onClick={onOpenSettings} title="Ajustes">
                     <IconSettings size={18} strokeWidth={1.8} />
                 </IconButton>

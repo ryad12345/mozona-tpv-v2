@@ -676,25 +676,16 @@ export function PosTerminalPro() {
                     created_at: new Date().toISOString(),
                 }}
                 connection={connection}
-                lanEndpoint={ws.serverInfo && ws.httpBaseUrl
-                    ? ws.httpBaseUrl.replace(/^https?:\/\//, "")
-                    : "—"
-                }
                 cashier={{
                     name: auth.activeWaiter?.name ?? "Cajero",
                     role: auth.activeWaiter?.role ?? "—",
                 }}
                 onOpenSettings={() => nav("/settings")}
                 onOpenCashRegister={() => nav("/cash-register")}
-                onOpenCustomerDisplay={() => setToast({ kind: "ok", msg: "Pantalla cliente: pendiente de implementar" })}
-                onOpenMenuScanner={() => setToast({ kind: "ok", msg: "Escáner IA: pendiente de implementar" })}
-                onShowQR={() => setShowQR(true)}
                 onLogout={async () => {
                     await saasAuth.signOut();
                     nav("/auth");
                 }}
-                localIp={localIp.ip}
-                pendingAlerts={recentOrders.length}
             />
 
             {/* Banner de conexión + acciones rápidas (sm+) */}

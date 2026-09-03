@@ -20,6 +20,8 @@ const WaiterLoginPage = lazy(() => import("./pages/WaiterLoginPage").then(m => (
 const WaiterPad       = lazy(() => import("./pages/WaiterPad").then(m => ({ default: m.WaiterPad })));
 const AdminInvitesPage = lazy(() => import("./pages/AdminInvitesPage").then(m => ({ default: m.AdminInvitesPage })));
 const SetupCajaPage   = lazy(() => import("./pages/SetupCajaPage").then(m => ({ default: m.SetupCajaPage })));
+const InviteRedeemPage  = lazy(() => import("./pages/InviteRedeemPage").then(m => ({ default: m.InviteRedeemPage })));
+const OnboardingWizardPage = lazy(() => import("./pages/OnboardingWizardPage").then(m => ({ default: m.OnboardingWizardPage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -137,6 +139,10 @@ export function App() {
                                 <Route path="/waiter/login"    element={<Suspense fallback={<PageLoader />}><WaiterLoginPage /></Suspense>} />
                                 <Route path="/setup-caja"      element={<Suspense fallback={<PageLoader />}><SetupCajaPage /></Suspense>} />
                                 <Route path="/admin/invites"   element={<Suspense fallback={<PageLoader />}><AdminInvitesPage /></Suspense>} />
+
+                                {/* ★ Canje de invitación y onboarding inicial */}
+                                <Route path="/invite/:token"   element={<Suspense fallback={<PageLoader label="Cargando invitación…" />}><InviteRedeemPage /></Suspense>} />
+                                <Route path="/setup/onboarding" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Preparando tu TPV…" />}><OnboardingWizardPage /></Suspense></ProtectedRoute>} />
 
                                 {/* TPV Admin — solo desktop/tablet */}
                                 <Route path="/app"      element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Iniciando TPV…" />}><PosTerminalPro /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
