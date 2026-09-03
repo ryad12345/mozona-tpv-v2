@@ -1,7 +1,7 @@
 // =====================================================================
-// MOZONA TPV — ticketPrinter: impresión de tickets 80mm
+// MOZONA TPV — ticketPrinter: impresión de tickets 58mm
 // =====================================================================
-// Genera el HTML del ticket térmico 80mm y lo envía a impresión.
+// Genera el HTML del ticket térmico 58mm y lo envía a impresión.
 //
 // Estructura:
 //   1. Cabecera libre (header_text) + datos del restaurante
@@ -11,7 +11,10 @@
 //   5. Mensaje de pie (footer_text)
 //   6. MARCA DE SOFTWARE al final: "Software TPV: Mozona TPV"
 //
-// Formato: 80mm centrado, monospace, márgenes a CERO.
+// Formato: 58mm centrado, monospace, márgenes a CERO.
+//   - @page size: 58mm auto
+//   - .ticket-container max-width: 54mm (área imprimible real)
+//   - CHARS_PER_LINE = 32 (≈ 32 cols Font A 58mm)
 //
 // ★ v1.9.14: los datos de Empresa (nombre/NIF/dirección/teléfono) se
 //   leen DIRECTAMENTE de localStorage, no de la BD. El panel Empresa
@@ -52,10 +55,11 @@ export interface TicketInput {
     createdAt?:     string;          // ISO
 }
 
-const TICKET_WIDTH_MM = 80;            // ★ papel 80mm
-const TICKET_WIDTH    = "80mm";
+const TICKET_WIDTH_MM = 58;            // ★ papel 58mm
+const TICKET_WIDTH    = "58mm";
+const PRINTABLE_WIDTH = "54mm";        // ★ área imprimible real (≈ 200-220px)
 const FONT_STACK      = `"Courier New", Courier, monospace`;
-const CHARS_PER_LINE  = 42;            // 80mm Font A ~ 42 cols
+const CHARS_PER_LINE  = 32;            // 58mm Font A ~ 32 cols
 
 // ---------------------------------------------------------------------
 // ★ v1.9.14: Empresa desde localStorage
@@ -251,10 +255,10 @@ function buildTicketHtml(input: TicketInput): string {
     const body: string[] = [];
     for (const l of lines) {
         const lineSubtotal = l.unit_price * l.quantity;
-        body.push(`<div class="ticket-row"><span class="desc">${l.quantity} x ${escapeHtml(l.name.slice(0, 28))}</span></div>`);
+        body.push(`<div class="ticket-row"><span class="desc">${l.quantity} x ${escapeHtml(l.name.slice(0, 22))}</span></div>`);
         body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;@ ${fmtEUR(l.unit_price)}</span><span class="price">${fmtEUR(lineSubtotal)}</span></div>`);
         if (l.notes) {
-            body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;Nota: ${escapeHtml(l.notes.slice(0, 30))}</span></div>`);
+            body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;Nota: ${escapeHtml(l.notes.slice(0, 24))}</span></div>`);
         }
     }
     body.push('<hr class="ticket-divider" />');
@@ -295,26 +299,30 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
+/* ★ 58mm físico + 54mm imprimible */
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
 body {
+    margin: 0;
+    padding: 2mm 1mm;
     font-family: ${FONT_STACK};
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
     line-height: 1.2;
     color: #000;
     background: #fff;
     display: flex;
-    justify-content: center;       /* ★ centrado horizontal */
+    justify-content: center;
 }
-.ticket {
-    width: ${TICKET_WIDTH};
-    padding: 2mm 1mm;              /* ★ márgenes casi cero */
+.ticket-container {
+    width: 100%;
+    max-width: ${PRINTABLE_WIDTH};
     margin: 0 auto;
     white-space: pre;
     word-break: break-word;
     text-align: center;
+    overflow: hidden;
 }
 .ticket-row {
     display: flex;
@@ -324,15 +332,15 @@ body {
     margin-bottom: 1px;
     text-align: left;
 }
-.ticket-row .desc   { flex: 1 1 auto; text-align: left;  word-break: break-word; padding-right: 4px; }
+.ticket-row .desc   { flex: 1 1 auto; text-align: left;  word-break: break-word; padding-right: 3px; }
 .ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; }
 .ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0; }
-.ticket-total   { font-size: 16px; font-weight: 900; }
-.ticket-footer-brand { margin-top: 6px; font-size: 9.5px; text-align: center; letter-spacing: 0.5px; }
+.ticket-total   { font-size: 14px; font-weight: 900; }
+.ticket-footer-brand { margin-top: 4px; font-size: 9px; text-align: center; letter-spacing: 0.3px; }
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
-<div class="ticket" id="ticket-print-area">
+<div class="ticket-container" id="ticket-print-area">
 ${[...head, ...body, ...foot].join("\n")}
 </div>
 </body>
