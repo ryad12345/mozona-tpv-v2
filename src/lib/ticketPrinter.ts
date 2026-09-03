@@ -1,20 +1,21 @@
 // =====================================================================
-// MOZONA TPV — ticketPrinter: impresión de tickets 58mm
+// MOZONA TPV — ticketPrinter: impresión de tickets 80mm
 // =====================================================================
-// Genera el HTML del ticket térmico 58mm y lo envía a impresión.
+// Genera el HTML del ticket térmico 80mm y lo envía a impresión.
 //
 // Estructura:
-//   1. Cabecera: solo datos reales del restaurante
-//   2. Datos del ticket (serie, fecha, mesa, camarero, pago)
-//   3. Líneas de productos (con snapshot de la mesa)
-//   4. Totales (base, IVA, TOTAL)
-//   5. Pie: despedida + PRE-CUENTA
+//   1. Cabecera libre (header_text) + datos del restaurante
+//   2. Datos del ticket (serie, fecha/hora exacta, mesa, camarero, pago)
+//   3. Líneas de productos
+//   4. Desglose de IVA (solo si show_vat_breakdown=true) y Total
+//   5. Mensaje de pie (footer_text)
 //   6. MARCA DE SOFTWARE al final: "Software TPV: Mozona TPV"
 //
-// Formato: monospace, 32 caracteres por línea, sin antialias.
+// Formato: 80mm centrado, monospace, márgenes a CERO.
 // =====================================================================
 
 import { supabase } from "./supabase";
+import { loadTicketSettings } from "./ticketSettings";
 
 export interface TicketLine {
     name:       string;
@@ -46,10 +47,12 @@ export interface TicketInput {
     createdAt?:     string;          // ISO
 }
 
-const TICKET_WIDTH = "58mm";
-const FONT_STACK   = `"Courier New", Courier, monospace`;
+const TICKET_WIDTH_MM = 80;            // ★ papel 80mm
+const TICKET_WIDTH    = "80mm";
+const FONT_STACK      = `"Courier New", Courier, monospace`;
+const CHARS_PER_LINE  = 42;            // 80mm Font A ~ 42 cols
 
-function fmtLine(left: string, right: string, width = 32): string {
+function fmtLine(left: string, right: string, width = CHARS_PER_LINE): string {
     const gap = Math.max(1, width - left.length - right.length);
     return left + " ".repeat(gap) + right;
 }
@@ -65,11 +68,42 @@ function fmtEUR(n: number): string {
     return Number(n ?? 0).toFixed(2).replace(".", ",") + " €";
 }
 
+/** Formato EXACTO de fecha/hora: DD/MM/YYYY HH:mm:ss */
+function fmtDateTime(iso?: string): string {
+    const d = new Date(iso ?? Date.now());
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+}
+
 /** Convierte caracteres HTML peligrosos a entidades */
 function escapeHtml(s: string): string {
     return s.replace(/[<>&"']/g, c =>
         ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] ?? c)
     );
+}
+
+/** Agrupa líneas por tipo de IVA y calcula base/iva/importe */
+function summarizeVat(lines: TicketLine[]): Array<{ rate: number; base: number; tax: number; total: number }> {
+    const map = new Map<number, { base: number; tax: number; total: number }>();
+    for (const l of lines) {
+        const r = Number(l.tax_rate ?? 10);
+        const sub = Number(l.unit_price) * Number(l.quantity);
+        const base = sub / (1 + r / 100);
+        const tax  = sub - base;
+        const cur = map.get(r) ?? { base: 0, tax: 0, total: 0 };
+        cur.base  += base;
+        cur.tax   += tax;
+        cur.total += sub;
+        map.set(r, cur);
+    }
+    return Array.from(map.entries())
+        .map(([rate, v]) => ({ rate, ...v }))
+        .sort((a, b) => b.rate - a.rate);
 }
 
 function buildTicketHtml(input: TicketInput): string {
@@ -80,69 +114,75 @@ function buildTicketHtml(input: TicketInput): string {
         createdAt,
     } = input;
 
-    const now = new Date(createdAt ?? Date.now());
-    const dateStr = now.toLocaleString("es-ES", {
-        day: "2-digit", month: "2-digit", year: "numeric",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
-    });
+    const dateStr = fmtDateTime(createdAt);
+    const vatSummary = summarizeVat(lines);
 
     // ============================================================
-    // 1. CABECERA: solo datos del restaurante
+    // 1. CABECERA LIBRE (header_text)
     // ============================================================
     const head: string[] = [];
-    head.push(padBoth(businessName.toUpperCase(), 32));
-    if (cifNif && cifNif !== "—") head.push(padBoth("CIF/NIF: " + cifNif, 32));
-    if (address) head.push(padBoth(address, 32));
-    if (phone) head.push(padBoth("Tel: " + phone, 32));
-    head.push("=".repeat(32));
+    if (headerMsg) {
+        head.push(padBoth(escapeHtml(headerMsg), CHARS_PER_LINE));
+        head.push("-".repeat(CHARS_PER_LINE));
+    }
+
+    // 1b. DATOS DEL RESTAURANTE
+    head.push(padBoth(businessName.toUpperCase(), CHARS_PER_LINE));
+    if (cifNif && cifNif !== "—") head.push(padBoth("CIF/NIF: " + cifNif, CHARS_PER_LINE));
+    if (address) head.push(padBoth(address, CHARS_PER_LINE));
+    if (phone)   head.push(padBoth("Tel: " + phone, CHARS_PER_LINE));
+    head.push("=".repeat(CHARS_PER_LINE));
+
+    // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
     head.push(fmtLine("Ticket:", `${series}-${String(invoiceNumber).padStart(8, "0")}`));
     head.push(fmtLine("Fecha:", dateStr));
     if (tableNumber) head.push(fmtLine("Mesa:", String(tableNumber)));
-    if (waiterName) head.push(fmtLine("Camarero:", waiterName));
+    if (waiterName)  head.push(fmtLine("Camarero:", waiterName));
     head.push(fmtLine("Pago:", paymentMethod));
-    head.push("-".repeat(32));
+    head.push("-".repeat(CHARS_PER_LINE));
 
     // ============================================================
-    // 2. LÍNEAS (formato flex via clases)
+    // 2. LÍNEAS DE PRODUCTOS
     // ============================================================
     const body: string[] = [];
     for (const l of lines) {
         const lineSubtotal = l.unit_price * l.quantity;
-        body.push(`<div class="ticket-row"><span class="desc">${l.quantity} x ${escapeHtml(l.name.slice(0, 22))}</span></div>`);
+        body.push(`<div class="ticket-row"><span class="desc">${l.quantity} x ${escapeHtml(l.name.slice(0, 28))}</span></div>`);
         body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;@ ${fmtEUR(l.unit_price)}</span><span class="price">${fmtEUR(lineSubtotal)}</span></div>`);
         if (l.notes) {
-            body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;Nota: ${escapeHtml(l.notes.slice(0, 24))}</span></div>`);
+            body.push(`<div class="ticket-row"><span class="desc">&nbsp;&nbsp;Nota: ${escapeHtml(l.notes.slice(0, 30))}</span></div>`);
         }
     }
     body.push('<hr class="ticket-divider" />');
 
     // ============================================================
-    // 3. TOTALES
+    // 3. TOTALES + DESGLOSE IVA
     // ============================================================
     const foot: string[] = [];
     if (showTax) {
-        foot.push(`<div class="ticket-row"><span class="desc">Base:</span><span class="price">${fmtEUR(subtotal)}</span></div>`);
-        foot.push(`<div class="ticket-row"><span class="desc">IVA:</span><span class="price">${fmtEUR(taxTotal)}</span></div>`);
+        // 3a) Base imponible agregada
+        foot.push(`<div class="ticket-row"><span class="desc">Base imponible:</span><span class="price">${fmtEUR(subtotal)}</span></div>`);
+        // 3b) Desglose por tipo de IVA
+        for (const v of vatSummary) {
+            const label = v.rate % 1 === 0 ? `${v.rate}%` : `${v.rate.toFixed(2)}%`;
+            foot.push(`<div class="ticket-row"><span class="desc">IVA ${label}:</span><span class="price">${fmtEUR(v.tax)}</span></div>`);
+        }
+        // 3c) Total IVA
+        foot.push(`<div class="ticket-row"><span class="desc">Total IVA:</span><span class="price">${fmtEUR(taxTotal)}</span></div>`);
     }
     foot.push('<hr class="ticket-divider" />');
     foot.push(`<div class="ticket-row ticket-total"><span class="desc">TOTAL:</span><span class="price">${fmtEUR(total)}</span></div>`);
     foot.push('<hr class="ticket-divider" />');
 
     // ============================================================
-    // 4. MENSAJES
+    // 4. PIE (footer_text) + despedida
     // ============================================================
-    if (headerMsg) {
-        foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">${escapeHtml(headerMsg)}</span></div>`);
-    }
     if (footerMsg) {
         foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">${escapeHtml(footerMsg)}</span></div>`);
     }
-    foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">¡Gracias por su visita!</span></div>`);
     foot.push(`<div class="ticket-row"><span class="desc" style="text-align:center">ID: ${(input.orderId || "").slice(0, 8)}</span></div>`);
 
-    // ============================================================
-    // 5. MARCA DE SOFTWARE (watermark al final)
-    // ============================================================
+    // 4b. MARCA DE SOFTWARE al final
     foot.push(`<div class="ticket-footer-brand">Software TPV: Mozona TPV</div>`);
 
     const html = `<!DOCTYPE html>
@@ -155,13 +195,36 @@ function buildTicketHtml(input: TicketInput): string {
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
-body { font-family: ${FONT_STACK}; font-size: 11px; font-weight: 700; line-height: 1.25; color: #000; background: #fff; }
-.ticket { width: ${TICKET_WIDTH}; padding: 4mm 2mm; white-space: pre; word-break: break-word; }
-.ticket-row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-bottom: 1.5px; }
-.ticket-row .desc { flex: 1 1 auto; text-align: left; word-break: break-word; padding-right: 4px; }
-.ticket-row .price { flex: 0 0 auto; text-align: right; white-space: nowrap; }
-.ticket-divider { border: none; border-top: 1px dashed #000; margin: 3px 0; }
-.ticket-total { font-size: 14px; font-weight: 900; }
+body {
+    font-family: ${FONT_STACK};
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #000;
+    background: #fff;
+    display: flex;
+    justify-content: center;       /* ★ centrado horizontal */
+}
+.ticket {
+    width: ${TICKET_WIDTH};
+    padding: 2mm 1mm;              /* ★ márgenes casi cero */
+    margin: 0 auto;
+    white-space: pre;
+    word-break: break-word;
+    text-align: center;            /* ★ todo el texto centrado */
+}
+.ticket-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    width: 100%;
+    margin-bottom: 1px;
+    text-align: left;
+}
+.ticket-row .desc   { flex: 1 1 auto; text-align: left;  word-break: break-word; padding-right: 4px; }
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; }
+.ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0; }
+.ticket-total   { font-size: 16px; font-weight: 900; }
 .ticket-footer-brand { margin-top: 6px; font-size: 9.5px; text-align: center; letter-spacing: 0.5px; }
 </style>
 </head>
@@ -177,12 +240,33 @@ ${[...head, ...body, ...foot].join("\n")}
 
 /**
  * ★★★ FUNCIÓN PRINCIPAL ★★★
- *  Imprime un ticket tras el cobro. Abre una nueva ventana con
- *  window.print() y la cierra automáticamente.
+ *  Imprime un ticket tras el cobro. Antes de generar el HTML,
+ *  fusiona la configuración de BD (ticket_settings) por si el
+ *  llamador no la ha pasado todavía.
  */
 export async function printTicket(input: TicketInput): Promise<{ ok: boolean; method: "print" | "skipped" | "error"; error?: string }> {
     try {
-        const html = buildTicketHtml(input);
+        // ★ v1.9.13: fusionar config de BD (no pisa si ya viene en input)
+        let cfg = { header_text: "", footer_text: "", show_vat_breakdown: true, paper_width_mm: 80 };
+        try {
+            const ts = await loadTicketSettings();
+            cfg = {
+                header_text:        ts.header_text        ?? "",
+                footer_text:        ts.footer_text        ?? "",
+                show_vat_breakdown: ts.show_vat_breakdown ?? true,
+                paper_width_mm:     ts.paper_width_mm     ?? 80,
+            };
+        } catch (e) {
+            console.warn("[ticketPrinter] no se pudo cargar ticket_settings:", e);
+        }
+        const merged: TicketInput = {
+            ...input,
+            headerMsg: input.headerMsg ?? cfg.header_text,
+            footerMsg: input.footerMsg ?? cfg.footer_text,
+            showTax:   input.showTax   ?? cfg.show_vat_breakdown,
+        };
+        const html = buildTicketHtml(merged);
+
         // ★ Detección: si estamos en Tauri, usar el driver nativo
         const inTauri = typeof window !== "undefined" && (window as any).__TAURI__;
         if (inTauri) {

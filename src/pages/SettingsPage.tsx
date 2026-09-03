@@ -9,6 +9,7 @@ import { TablesPanel } from '../components/settings/TablesPanel';
 import { CategoriesPanel } from '../components/settings/CategoriesPanel';
 import { TeamPanel } from '../components/settings/TeamPanel';
 import { LiveTicketPreview, type RestaurantForm } from '../components/settings/LiveTicketPreview';
+import { loadTicketSettings, saveTicketSettings } from '../lib/ticketSettings';
 import { BillingPanel } from '../components/settings/BillingPanel';
 import { StoragePanel } from '../components/settings/StoragePanel';
 import { SalesPanel } from '../components/settings/SalesPanel';
@@ -100,6 +101,16 @@ export function SettingsPage() {
                         showTax:     (data as any).ticket_show_tax ?? true,
                     });
                 }
+                // ★ v1.9.13: además cargar config de ticket_settings
+                const ts = await loadTicketSettings();
+                if (!cancelled) {
+                    setTicketForm(prev => ({
+                        ...prev,
+                        header_msg:  ts.header_text ?? prev.header_msg ?? '',
+                        footer_msg:  ts.footer_text ?? prev.footer_msg ?? '¡Gracias por su visita!',
+                        showTax:     ts.show_vat_breakdown ?? prev.showTax ?? true,
+                    }));
+                }
             } catch (e) {
                 console.warn("[SettingsPage] load exception:", e);
             } finally {
@@ -155,33 +166,19 @@ export function SettingsPage() {
         setSaving(true);
         setMsg(null);
         try {
-            // ★ v1.9.4: localStorage fallback SIEMPRE
-            const tenantId = (await resolveRealTenantId(null)) || "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
+            // ★ v1.9.13: usar tabla dedicada ticket_settings
             localStorage.setItem("mozona.ticket_config", JSON.stringify(ticketForm));
 
-            // Intentar BD sin columnas que no existen
-            const safeUpdate: any = {
-                name:    ticketForm.name?.trim()    || null,
-                cif_nif: ticketForm.nif?.trim()     || null,
-                address: ticketForm.address?.trim() || null,
-                phone:   ticketForm.phone?.trim()   || null,
-            };
-            // Solo añadir campos extra si no causan 400
-            try {
-                safeUpdate.ticket_header_msg = ticketForm.header_msg?.trim() || null;
-                safeUpdate.ticket_footer_msg = ticketForm.footer_msg?.trim() || '¡Gracias por su visita!';
-                safeUpdate.ticket_show_tax   = ticketForm.showTax ?? true;
-            } catch { /* ignore */ }
-
-            const { error } = await supabase
-                .from("tenants")
-                .update(safeUpdate)
-                .eq("id", tenantId);
-            if (error) {
-                console.warn("[saveTicket] BD falló, pero localStorage OK:", error.message);
-                setMsg({ kind: 'ok', text: 'Configuración guardada en local (BD parcial)' });
-            } else {
+            const result = await saveTicketSettings({
+                header_text:        ticketForm.header_msg ?? "",
+                footer_text:        ticketForm.footer_msg ?? "¡Gracias por su visita!",
+                show_vat_breakdown: ticketForm.showTax ?? true,
+                paper_width_mm:     80,
+            });
+            if (result.source === "db") {
                 setMsg({ kind: 'ok', text: 'Configuración del ticket guardada.' });
+            } else {
+                setMsg({ kind: 'ok', text: 'Guardado en local (BD no disponible)' });
             }
         } catch (e) {
             setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error al guardar' });
