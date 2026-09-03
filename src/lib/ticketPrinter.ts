@@ -56,6 +56,9 @@ export interface TicketInput {
     footerMsg?:     string;
     showTax?:       boolean;
     createdAt?:     string;          // ISO
+    /** ★ v1.9.19: Empresa cruda del localStorage para bypasear cualquier
+     *  problema de contexto/RLS. Si viene, tiene prioridad. */
+    companyOverride?: any;
 }
 
 const TICKET_WIDTH_MM = 58;            // ★ papel 58mm
@@ -83,7 +86,21 @@ const DEFAULT_COMPANY: CompanyInfo = {
 };
 
 /** Extrae los datos de empresa desde un objeto TicketSettings. */
-function companyFromSettings(s: TicketSettings | null | undefined): CompanyInfo {
+function companyFromSettings(s: TicketSettings | null | undefined, override?: any): CompanyInfo {
+    // ★ v1.9.19: si viene `override` desde el caller (localStorage
+    //   leído en la ventana principal), tiene PRIORIDAD absoluta.
+    if (override && typeof override === "object") {
+        const fromOverride: CompanyInfo = {
+            name:    String(override.name || override.businessName || override.razon_social || override.company_name || "").trim() || DEFAULT_COMPANY.name,
+            nif:     String(override.nif   || override.cif      || override.cif_nif        || override.tax_id       || "").trim(),
+            address: String(override.address || override.direccion || override.addr          || "").trim(),
+            phone:   String(override.phone   || override.telefono  || override.tel           || "").trim(),
+        };
+        // Si el override trae al menos nombre o NIF, lo usamos entero
+        if (fromOverride.name !== DEFAULT_COMPANY.name || fromOverride.nif || fromOverride.address || fromOverride.phone) {
+            return fromOverride;
+        }
+    }
     // ★ v1.9.18: usa el helper del módulo con fallback a localStorage
     return companyFromSettingsWithLocal(s);
 }
@@ -322,6 +339,8 @@ export interface PreBillInput {
     tableNumber?:   string | number;
     waiterName?:    string | null;
     lines:          TicketLine[];
+    /** ★ v1.9.19: Empresa cruda del localStorage. Si viene, prioridad. */
+    companyOverride?: any;
 }
 
 export async function printPreBill(input: PreBillInput): Promise<{ ok: boolean; method: "print" | "skipped" | "error"; error?: string }> {
@@ -333,7 +352,7 @@ export async function printPreBill(input: PreBillInput): Promise<{ ok: boolean; 
         } catch (e) {
             console.warn("[ticketPrinter] loadTicketSettings falló:", e);
         }
-        const company = companyFromSettings(ts);
+        const company = companyFromSettings(ts, input.companyOverride);
 
         // 2) Calcular totales
         let gross = 0;
@@ -423,7 +442,7 @@ export async function printTicket(input: TicketInput): Promise<{ ok: boolean; me
         } catch (e) {
             console.warn("[ticketPrinter] loadTicketSettings falló:", e);
         }
-        const company = companyFromSettings(ts);
+        const company = companyFromSettings(ts, input.companyOverride);
 
         // ============================================================
         // 2) MERGE: input gana si trae dato real, si no usa BD

@@ -603,11 +603,22 @@ export function PosTerminalPro() {
                 setToast({ kind: "ok", msg: "Pre-cuenta impresa en la impresora local" });
             } else {
                 // 2) Web → MISMO MOTOR que printTicket (58mm, BD, datos reales)
+                // ★ v1.9.19: leer empresa del localStorage AQUÍ (ventana principal
+                //   sí tiene acceso) y pasarla como companyOverride
+                let localCompany: any = null;
+                try {
+                    const raw = localStorage.getItem("mozona.empresa")
+                             || localStorage.getItem("business_info")
+                             || localStorage.getItem("mozona.ticket_config");
+                    if (raw) localCompany = JSON.parse(raw);
+                } catch (e) { /* silenciado */ }
+
                 const result = await printPreBillUnified({
-                    tenantId:    (restaurant as any)?.tenant_id ?? null,
-                    tableNumber: table ? String(table.table_number) : undefined,
-                    waiterName:  auth.activeWaiter?.name,
+                    tenantId:        (restaurant as any)?.tenant_id ?? null,
+                    tableNumber:     table ? String(table.table_number) : undefined,
+                    waiterName:      auth.activeWaiter?.name,
                     lines,
+                    companyOverride: localCompany,
                 });
                 if (!result.ok) {
                     setToast({ kind: "err", msg: result.error ?? "Error al imprimir" });
