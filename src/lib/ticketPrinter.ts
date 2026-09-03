@@ -282,19 +282,25 @@ function buildTicketHtml(input: TicketInput): string {
 
     // ============================================================
     // 3. TOTALES + DESGLOSE IVA
-    // ★ v1.9.25: quitado un <hr> extra — un solo separador antes del TOTAL
+    // ★ v1.9.26: condensar IVA en UNA línea
+    //   "Base: X | IVA (Y%): Z | Otro (W%): K" en lugar de 3-4 filas
     // ============================================================
     const foot: string[] = [];
-    if (showTax) {
-        foot.push(`<div class="ticket-row"><span class="desc">Base imponible:</span><span class="price">${fmtEUR(subtotal)}</span></div>`);
-        for (const v of vatSummary) {
+    if (showTax && vatSummary.length > 0) {
+        // Construir UNA línea con todos los tipos de IVA
+        // "Base: 15,45 € | IVA 10%: 1,55 € | IVA 21%: 0,43 €"
+        const ivaSegments = vatSummary.map(v => {
             const label = v.rate % 1 === 0 ? `${v.rate}%` : `${v.rate.toFixed(2)}%`;
-            foot.push(`<div class="ticket-row"><span class="desc">IVA ${label}:</span><span class="price">${fmtEUR(v.tax)}</span></div>`);
-        }
-        foot.push(`<div class="ticket-row"><span class="desc">Total IVA:</span><span class="price">${fmtEUR(taxTotal)}</span></div>`);
+            return `IVA ${label}: ${fmtEUR(v.tax)}`;
+        }).join(" | ");
+        foot.push(
+            `<div class="ticket-row">` +
+            `<span class="desc">Base: ${fmtEUR(subtotal)} | ${ivaSegments}</span>` +
+            `</div>`
+        );
     }
     foot.push('<div class="sep-dash"></div>');
-    foot.push(`<div class="ticket-row ticket-total"><span class="desc">TOTAL:</span><span class="price">${fmtEUR(total)}</span></div>`);
+    foot.push(`<div class="ticket-row ticket-total"><span class="desc">TOTAL (IVA incl.):</span><span class="price">${fmtEUR(total)}</span></div>`);
     foot.push('<div class="sep-dash"></div>');
 
     // ============================================================
@@ -319,56 +325,57 @@ function buildTicketHtml(input: TicketInput): string {
 <title>Ticket ${ticketNumber}</title>
 <style>
 /* ★ v1.9.22 [HOTFIX 2]: I2pos 58mm con cabezal efectivo 40-42mm
-   ★ v1.9.25: COMPACTACIÓN vertical — menos interlineado, menos padding */
+   ★ v1.9.25: COMPACTACIÓN vertical
+   ★ v1.9.26: ULTRA-COMPACTACIÓN — 9px, line-height 1.0, padding 0 1mm */
 @page { size: ${TICKET_WIDTH} auto; margin: 0; }
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
 html, body { margin: 0; padding: 0; }
 body {
-    width: 42mm !important;
-    max-width: 42mm !important;
-    margin: 0 !important;
-    padding: 1mm 3mm 1mm 1mm !important;   /* 3mm margen derecho de resguardo */
-    box-sizing: border-box !important;
-    font-family: ${FONT_STACK};
-    font-size: 11px !important;
+    font-family: ${FONT_STACK} !important;
+    font-size: 9px !important;            /* ★ v1.9.26: 11px → 9px */
     font-weight: 800;
-    line-height: 1.15 !important;          /* ★ v1.9.25: 1.2 → 1.15 */
+    line-height: 1.0 !important;          /* ★ v1.9.26: 1.15 → 1.0 */
     color: #000;
     background: #fff;
+    width: 42mm !important;
+    max-width: 42mm !important;
+    margin: 0 auto !important;
+    padding: 0 1mm !important;            /* ★ v1.9.26: 1mm 3mm 1mm 1mm → 0 1mm */
+    box-sizing: border-box !important;
 }
 .ticket-container {
     width: 100%;
     max-width: ${PRINTABLE_WIDTH};
     margin: 0 !important;
-    padding: 0 2mm !important;             /* ★ v1.9.25: compacto */
+    padding: 0 !important;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
     box-sizing: border-box !important;
-    line-height: 1.15 !important;          /* ★ v1.9.25 */
+    line-height: 1.0 !important;          /* ★ v1.9.26 */
 }
 .ticket-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
     width: 100%;
-    margin: 1px 0 !important;              /* ★ v1.9.25: 1px 0 (antes 1px bottom) */
+    margin: 0 !important;                 /* ★ v1.9.26: 1px → 0 */
     padding: 0 !important;
     text-align: left;
-    line-height: 1.15 !important;          /* ★ v1.9.25 */
+    line-height: 1.0 !important;          /* ★ v1.9.26 */
 }
 .ticket-row .desc   { flex: 0 0 auto; text-align: left;  white-space: nowrap; padding-right: 3px; }
 .ticket-row .val    { flex: 1 1 auto; text-align: right; white-space: nowrap; padding-left: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 2mm; }
-.ticket-divider { border: none; border-top: 1px dashed #000; margin: 2px 0 !important; }
-.ticket-total   { font-size: 14px; font-weight: 900; line-height: 1.15 !important; }
-.ticket-footer-brand { margin-top: 2px !important; font-size: 9px; text-align: center; letter-spacing: 0.3px; line-height: 1.15 !important; }
-/* ★ v1.9.23/25: clases para cabecera */
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 1mm; }
+.ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; }
+.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.0 !important; }
+.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.0 !important; }
+/* ★ v1.9.23/25/26: clases para cabecera */
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.0 !important; margin: 0 !important; padding: 0 !important; }
 .b            { font-weight: 900; }
-.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
-.sep-eq       { border-top: 1px solid #000; margin: 2px 0 !important; height: 0; }   /* ★ v1.9.25: 3px → 2px */
-.sep-dash     { border-top: 1px dashed #000; margin: 2px 0 !important; height: 0; }
+.meta         { font-size: 9px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.0 !important; margin: 0 !important; padding: 0 !important; }
+.sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; }
+.sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; }
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
