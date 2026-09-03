@@ -228,194 +228,166 @@ function buildTicketHtml(input: TicketInput): string {
     const ticketNumber = `${series}-${String(invoiceNumber).padStart(8, "0")}`;
 
     // ============================================================
-    // 1. CABECERA LIBRE (header_text)
+    // ★ v1.9.30: LAYOUT CON TABLA HTML clásica
+    //   Las tablas son predecibles en TODOS los drivers de impresión
+    //   (Chrome + drivers genéricos de Windows respetan anchos en mm)
+    //   Celdas: 24mm label + 4mm sep + 32mm value = 60mm total
+    //   (cabe en rollos 58mm y 80mm; padding 0; width 100%)
     // ============================================================
-    const head: string[] = [];
-    if (headerMsg) {
-        // ★ v1.9.23: NO truncar; si es largo, CSS hace wrap
-        head.push(`<div class="ctr b">${escapeHtml(headerMsg)}</div>`);
-        head.push('<div class="sep-dash"></div>');
-    }
+    const tr = (label: string, value: string, total = false) => {
+        const cls = total ? ' class="total"' : "";
+        return `<tr${cls}><td class="l">${escapeHtml(label)}</td><td class="v">${escapeHtml(value)}</td></tr>`;
+    };
 
-    // 1b. DATOS DEL RESTAURANTE (inyectados desde BD)
+    // 1. CABECERA
+    const headRows: string[] = [];
     const nameToShow = businessName && businessName.trim() !== ""
         ? businessName
         : DEFAULT_COMPANY.name;
-    head.push(`<div class="ctr b">${escapeHtml(nameToShow.toUpperCase())}</div>`);
-    if (cifNif) head.push(`<div class="ctr meta">CIF/NIF: ${escapeHtml(cifNif)}</div>`);
-    if (address) {
-        // ★ v1.9.25: dirección en una sola línea
-        head.push(`<div class="ctr meta">${escapeHtml(address)}</div>`);
-    }
-    if (phone) head.push(`<div class="ctr meta">Tel: ${escapeHtml(phone)}</div>`);
-    head.push('<div class="sep-eq"></div>');
+    headRows.push(`<tr><td colspan="2" class="ctr b">${escapeHtml(nameToShow.toUpperCase())}</td></tr>`);
+    if (cifNif) headRows.push(`<tr><td colspan="2" class="ctr">CIF/NIF: ${escapeHtml(cifNif)}</td></tr>`);
+    if (address) headRows.push(`<tr><td colspan="2" class="ctr">${escapeHtml(address)}</td></tr>`);
+    if (phone) headRows.push(`<tr><td colspan="2" class="ctr">Tel: ${escapeHtml(phone)}</td></tr>`);
+    headRows.push(`<tr><td colspan="2" class="sep-eq"></td></tr>`);
 
-    // 1c. DATOS DEL TICKET (serie, fecha/hora, mesa, camarero, pago)
-    //     ★ v1.9.25: CSS .desc/val con nowrap para que no rompan línea
-    head.push(`<div class="ticket-row"><span class="desc">Ticket:</span><span class="val">${escapeHtml(ticketNumber)}</span></div>`);
-    head.push(`<div class="ticket-row"><span class="desc">Fecha:</span><span class="val">${escapeHtml(dateStr)}</span></div>`);
-    if (tableNumber) head.push(`<div class="ticket-row"><span class="desc">Mesa:</span><span class="val">${escapeHtml(String(tableNumber))}</span></div>`);
-    if (waiterName)  head.push(`<div class="ticket-row"><span class="desc">Camarero:</span><span class="val">${escapeHtml(waiterName)}</span></div>`);
-    head.push(`<div class="ticket-row"><span class="desc">Pago:</span><span class="val">${escapeHtml(paymentMethod)}</span></div>`);
-    head.push('<div class="sep-dash"></div>');
+    // 1b. Datos del ticket
+    headRows.push(tr("Ticket:", ticketNumber));
+    headRows.push(tr("Fecha:", dateStr));
+    if (tableNumber) headRows.push(tr("Mesa:", String(tableNumber)));
+    if (waiterName) headRows.push(tr("Camarero:", waiterName));
+    headRows.push(tr("Pago:", paymentMethod));
+    headRows.push(`<tr><td colspan="2" class="sep"></td></tr>`);
 
-    // ============================================================
-    // 2. LÍNEAS DE PRODUCTOS
-    // ★ v1.9.25: UNA SOLA FILA por producto — "2x Paella | 29,00 €"
-    //   sin fila intermedia de @precio (ahorra altura)
-    // ============================================================
-    const body: string[] = [];
+    // 2. PRODUCTOS — UNA fila por producto
+    const bodyRows: string[] = [];
     for (const l of lines) {
-        const lineSubtotal = l.unit_price * l.quantity;
-        const left = `${l.quantity} x ${escapeHtml(l.name.slice(0, 18))}`;
-        body.push(
-            `<div class="ticket-row"><span class="desc">${left}</span>` +
-            `<span class="price">${fmtEUR(lineSubtotal)}</span></div>`
-        );
-        if (l.notes) {
-            body.push(
-                `<div class="ticket-row"><span class="meta" style="padding-left:6px">&gt; ${escapeHtml(l.notes.slice(0, 22))}</span></div>`
-            );
-        }
+        const sub = l.unit_price * l.quantity;
+        const left = `${l.quantity} x ${escapeHtml(l.name.slice(0, 22))}`;
+        bodyRows.push(tr(left, fmtEUR(sub)));
     }
-    body.push('<div class="sep-dash"></div>');
+    bodyRows.push(`<tr><td colspan="2" class="sep"></td></tr>`);
 
-    // ============================================================
-    // 3. TOTALES + DESGLOSE IVA
-    // ★ v1.9.26: condensar IVA en UNA línea
-    //   "Base: X | IVA (Y%): Z | Otro (W%): K" en lugar de 3-4 filas
-    // ============================================================
-    const foot: string[] = [];
+    // 3. IVA en una línea
+    const footRows: string[] = [];
     if (showTax && vatSummary.length > 0) {
-        // Construir UNA línea con todos los tipos de IVA
-        // "Base: 15,45 € | IVA 10%: 1,55 € | IVA 21%: 0,43 €"
-        const ivaSegments = vatSummary.map(v => {
-            const label = v.rate % 1 === 0 ? `${v.rate}%` : `${v.rate.toFixed(2)}%`;
-            return `IVA ${label}: ${fmtEUR(v.tax)}`;
+        const ivaSegs = vatSummary.map(v => {
+            const lab = v.rate % 1 === 0 ? `${v.rate}%` : `${v.rate.toFixed(2)}%`;
+            return `IVA ${lab}: ${fmtEUR(v.tax)}`;
         }).join(" | ");
-        foot.push(
-            `<div class="ticket-row">` +
-            `<span class="desc">Base: ${fmtEUR(subtotal)} | ${ivaSegments}</span>` +
-            `</div>`
-        );
+        footRows.push(`<tr><td colspan="2" class="ctr vat">Base: ${fmtEUR(subtotal)} | ${ivaSegs}</td></tr>`);
     }
-    foot.push('<div class="sep-dash"></div>');
-    foot.push(`<div class="ticket-row ticket-total"><span class="desc">TOTAL (IVA incl.):</span><span class="price">${fmtEUR(total)}</span></div>`);
-    foot.push('<div class="sep-dash"></div>');
+    footRows.push(`<tr><td colspan="2" class="sep-eq"></td></tr>`);
+    footRows.push(tr("TOTAL (IVA incl.):", fmtEUR(total), true));
+    footRows.push(`<tr><td colspan="2" class="sep"></td></tr>`);
 
-    // ============================================================
-    // 4. PIE (footer_text) + identificación
-    // ★ v1.9.25: más compacto, una sola línea por mensaje
-    // ============================================================
+    // 4. PIE
+    if (headerMsg) {
+        footRows.push(`<tr><td colspan="2" class="ctr b">${escapeHtml(headerMsg)}</td></tr>`);
+    }
     if (footerMsg) {
-        foot.push(`<div class="ctr meta">${escapeHtml(footerMsg)}</div>`);
+        footRows.push(`<tr><td colspan="2" class="ctr">${escapeHtml(footerMsg)}</td></tr>`);
     }
     if (orderId) {
-        foot.push(`<div class="ctr meta">ID: ${orderId.slice(0, 8)}</div>`);
+        footRows.push(`<tr><td colspan="2" class="ctr">ID: ${orderId.slice(0, 8)}</td></tr>`);
     }
+    footRows.push(`<tr><td colspan="2" class="brand">Software TPV: Mozona TPV</td></tr>`);
 
-    // 4b. MARCA DE SOFTWARE al final
-    foot.push(`<div class="ticket-footer-brand">Software TPV: Mozona TPV</div>`);
+    const head = headRows;
+    const body = bodyRows;
+    const foot = footRows;
 
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.29 [HOTFIX CRÍTICO]: Sin overflow, sin @page size fijo
-   Problema: size: 58mm forzaba un viewport de 58mm → texto cortado en previsualización
-            Y overflow: hidden en algunos sitios → se comía el '€'
-   Solución:  @page size: auto (libera el ancho)
-              .ticket-container max-width: 68mm (permite rollos 58/80mm)
-              overflow: visible !important en TODO
-              .val con margin-left: 8px (separación garantizada) */
-
-@media print {
-    @page {
-        margin: 0 !important;
-        size: auto !important;          /* ★ NO forzar 58mm; usa el papel real */
-    }
-    html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 100% !important;
-        background: transparent !important;
-        overflow: visible !important;
-    }
-}
-
-* {
-    box-sizing: border-box !important;
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: unset;
-    overflow: visible !important;       /* ★ v1.9.29: NUNCA recortar */
-}
-
-.ticket-container {
-    width: 100% !important;
-    max-width: 68mm !important;         /* ★ v1.9.29: 48mm → 68mm (rollo 80mm o 58mm completo) */
+/* ★ v1.9.30 [HOTFIX URGENTE]: TABLA HTML con anchos en %
+   La imagen del ticket muestra que se cortaba por la derecha.
+   Causa: max-width rígido + flexbox + @page size auto → driver
+   de Windows interpretaba mal el ancho lógico.
+   Solución: TABLA HTML clásica (predecible en todos los drivers)
+            con table-layout: fixed y celdas 60% / 40%. */
+@page {
     margin: 0 !important;
-    padding: 2mm !important;            /* ★ v1.9.29: padding uniforme 2mm */
-    box-sizing: border-box !important;
-    font-family: ${FONT_STACK} !important;
-    font-size: 11px !important;         /* ★ v1.9.29: 9.5px → 11px (legible) */
-    line-height: 1.2 !important;
-    color: #000 !important;
-    background: #fff;
-    overflow: visible !important;       /* ★ v1.9.29 */
-    white-space: pre-wrap;
-    word-break: break-word;
-    text-align: center;
+    size: auto !important;
 }
-
-.ticket-row {
-    display: flex !important;
-    justify-content: space-between !important;
-    align-items: baseline !important;
-    width: 100% !important;
+html, body {
     margin: 0 !important;
     padding: 0 !important;
-    text-align: left;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: ${FONT_STACK} !important;
+    font-size: 10px !important;
+    font-weight: 800;
     line-height: 1.2 !important;
-    overflow: visible !important;       /* ★ v1.9.29 */
-    white-space: nowrap !important;     /* ★ v1.9.29: nowrap */
+    -webkit-font-smoothing: none;
 }
-.ticket-row span, .ticket-row div {
-    overflow: visible !important;       /* ★ v1.9.29: hijos sin overflow */
+* { box-sizing: border-box; }
+table.t {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
+    padding: 0;
 }
-.ticket-row .desc {
-    text-align: left !important;
-    white-space: nowrap;
+table.t td {
+    padding: 1px 2px;
+    vertical-align: top;
+    word-break: break-word;
     overflow: visible;
 }
-.ticket-row .val {
-    text-align: right !important;
-    margin-left: 8px !important;        /* ★ v1.9.29: separación garantizada */
-    font-weight: bold !important;
-    white-space: nowrap;
-    overflow: visible;
+table.t td.l {
+    width: 60%;
+    text-align: left;
 }
-.ticket-row .price {
-    text-align: right !important;
-    white-space: nowrap;
-    overflow: visible;
+table.t td.v {
+    width: 40%;
+    text-align: right;
+    font-weight: 900;
 }
-.ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; overflow: visible !important; }
-.ticket-total   { font-size: 14px; font-weight: 900; line-height: 1.2 !important; overflow: visible !important; }
-.ticket-footer-brand { margin-top: 2px !important; font-size: 9px; text-align: center; letter-spacing: 0.3px; line-height: 1.2 !important; overflow: visible !important; }
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.2 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
-.b            { font-weight: 900; }
-.meta         { font-size: 10.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.2 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
-.sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; overflow: visible !important; }
-.sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; overflow: visible !important; }
+table.t tr.total td {
+    font-size: 13px;
+    padding: 3px 2px;
+}
+table.t td.ctr {
+    text-align: center;
+    font-weight: 800;
+}
+table.t td.b {
+    font-weight: 900;
+}
+table.t td.vat {
+    font-size: 9.5px;
+    font-weight: 700;
+}
+table.t td.sep {
+    border-top: 1px dashed #000;
+    height: 0;
+    padding: 2px 0;
+    line-height: 0;
+    font-size: 0;
+}
+table.t td.sep-eq {
+    border-top: 2px solid #000;
+    height: 0;
+    padding: 2px 0;
+    line-height: 0;
+    font-size: 0;
+}
+table.t td.brand {
+    font-size: 8.5px;
+    text-align: center;
+    color: #555;
+    font-weight: 700;
+    padding-top: 4px;
+}
 </style>
 </head>
 <body onload="setTimeout(() => window.print(), 300)">
-<div class="ticket-container" id="ticket-print-area">
+<table class="t" id="ticket-print-area">
 ${[...head, ...body, ...foot].join("\n")}
-</div>
+</table>
 </body>
 </html>`;
 
