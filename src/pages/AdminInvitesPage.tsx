@@ -276,12 +276,13 @@ export function AdminInvitesPage() {
                                             <td className="px-2 py-2.5 text-right">
                                                 <div className="inline-flex gap-1">
                                                     <button onClick={() => copyLink(inv)}
-                                                            className="w-7 h-7 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50
-                                                                       flex items-center justify-center active:scale-90 transition"
-                                                            title="Copiar enlace">
+                                                            className="h-7 px-2.5 rounded-md text-[10.5px] font-bold
+                                                                       bg-blue-50 text-blue-700 hover:bg-blue-100
+                                                                       flex items-center gap-1.5 active:scale-95 transition"
+                                                            title={`Copiar enlace: ${PUBLIC_URL}/auth?invite=${inv.token}`}>
                                                         {copiedId === inv.id
-                                                            ? <IconCheck size={14} strokeWidth={2.4} className="text-emerald-500" />
-                                                            : <IconCopy  size={14} strokeWidth={2}   />
+                                                            ? <><IconCheck size={13} strokeWidth={2.4} className="text-emerald-500" /> ¡Copiado!</>
+                                                            : <><IconCopy  size={13} strokeWidth={2}   /> Copiar enlace</>
                                                         }
                                                     </button>
                                                     {!inv.is_redeemed && (
