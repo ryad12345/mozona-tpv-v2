@@ -324,43 +324,45 @@ function buildTicketHtml(input: TicketInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ticket ${ticketNumber}</title>
 <style>
-/* ★ v1.9.27 [HOTFIX]: Ticket centrado, ancho completo del área de impresión
-   v1.9.22-26: width: 42mm fijo → desalineado, dejaba margen blanco a la derecha
-   v1.9.27:      width: 100% + max-width 48mm + margin 0 auto → centrado y completo */
-@page {
-    margin: 0 !important;
-    size: auto;
+/* ★ v1.9.28 [HOTFIX]: Reset CSS de impresión estricto
+   Problema: width: 42mm/48mm + margin: 0 auto dejaba margen blanco a la derecha
+            porque el viewport del pop-up de impresión es más ancho que el rollo.
+   Solución:  @page size: 58mm auto (fuerza tamaño de rollo)
+              html/body width: 100% (sin restricción)
+              .ticket-container width: 100% + box-sizing
+              padding asimétrico 1.5mm izq / 3mm der (margen seguridad derecho) */
+
+@media print {
+    @page {
+        margin: 0 !important;
+        size: 58mm auto !important;     /* ★ fuerza tamaño de rollo térmico */
+    }
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        background: transparent !important;
+    }
 }
+
 * { box-sizing: border-box; -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; }
-html, body {
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-body {
-    font-family: ${FONT_STACK} !important;
-    font-size: 9.5px !important;           /* ★ v1.9.27: 9px → 9.5px */
-    font-weight: 800;
-    line-height: 1.1 !important;          /* ★ v1.9.27: 1.0 → 1.1 */
-    color: #000;
-    background: #fff;
-    width: 100% !important;               /* ★ v1.9.27: 42mm → 100% */
-    max-width: 48mm !important;           /* ★ v1.9.27: 42mm → 48mm */
-    margin: 0 auto !important;            /* ★ v1.9.27: centrado */
-    padding: 0 1.5mm !important;          /* ★ v1.9.27: 1mm → 1.5mm lateral */
-    box-sizing: border-box !important;
-}
+
 .ticket-container {
-    width: 100%;
-    max-width: 100%;                      /* ★ v1.9.27: hereda del body */
+    width: 100% !important;
+    max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 0 3mm 0 1.5mm !important;    /* ★ 1.5mm izq + 3mm der (no tocar borde físico) */
+    box-sizing: border-box !important;
+    font-family: ${FONT_STACK} !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
+    color: #000 !important;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: center;
-    box-sizing: border-box !important;
-    line-height: 1.1 !important;          /* ★ v1.9.27 */
+    background: #fff;
 }
+
 .ticket-row {
     display: flex !important;
     justify-content: space-between !important;
@@ -369,17 +371,17 @@ body {
     margin: 0 !important;
     padding: 0 !important;
     text-align: left;
-    line-height: 1.1 !important;          /* ★ v1.9.27 */
+    line-height: 1.15 !important;
 }
 .ticket-row .desc   { flex: 0 0 auto; text-align: left;  white-space: nowrap; padding-right: 3px; }
 .ticket-row .val    { flex: 1 1 auto; text-align: right; white-space: nowrap; padding-left: 3px; }
-.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 1.5mm; }  /* ★ v1.9.27 */
+.ticket-row .price  { flex: 0 0 auto; text-align: right; white-space: nowrap; padding-right: 0; }  /* ★ v1.9.28 sin padding-right, el contenedor ya tiene 3mm */
 .ticket-divider { border: none; border-top: 1px dashed #000; margin: 1px 0 !important; }
-.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.1 !important; }
-.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.1 !important; }
-.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.1 !important; margin: 0 !important; padding: 0 !important; }
+.ticket-total   { font-size: 12px; font-weight: 900; line-height: 1.15 !important; }
+.ticket-footer-brand { margin-top: 1px !important; font-size: 8px; text-align: center; letter-spacing: 0.2px; line-height: 1.15 !important; }
+.ctr          { text-align: center; width: 100%; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
 .b            { font-weight: 900; }
-.meta         { font-size: 9.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.1 !important; margin: 0 !important; padding: 0 !important; }
+.meta         { font-size: 9.5px; font-weight: 700; white-space: pre-wrap; word-break: break-word; line-height: 1.15 !important; margin: 0 !important; padding: 0 !important; }
 .sep-eq       { border-top: 1px solid #000; margin: 1.5px 0 !important; height: 0; }
 .sep-dash     { border-top: 1px dashed #000; margin: 1.5px 0 !important; height: 0; }
 </style>
