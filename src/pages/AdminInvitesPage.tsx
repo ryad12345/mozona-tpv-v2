@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, supabase, PUBLIC_URL } from "../lib/supabase";
-import { IconSparkles, IconShield, IconCheck, IconX, IconCopy, IconRefresh } from "../components/icons";
+import { IconSparkles, IconShield, IconCheck, IconX, IconCopy, IconRefresh, IconUser } from "../components/icons";
+import { ClientSubscriptionsPanel } from "../components/admin/ClientSubscriptionsPanel";
 
 interface Invite {
     id:          string;
@@ -33,6 +34,7 @@ const PLAN_OPTIONS = [
 export function AdminInvitesPage() {
     const auth = useAuth();
     const nav  = useNavigate();
+    const [tab,       setTab]       = useState<"invites" | "clients">("invites");
     const [invites,   setInvites]   = useState<Invite[]>([]);
     const [loading,   setLoading]   = useState(true);
     const [generating, setGenerating] = useState(false);
@@ -138,9 +140,36 @@ export function AdminInvitesPage() {
                 </div>
             </header>
 
-            <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
-                {/* Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="max-w-6xl mx-auto px-5 py-6 space-y-6">
+                {/* Tab switcher */}
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 border border-slate-200/80 w-fit">
+                    <button onClick={() => setTab("invites")}
+                            className={
+                                "h-9 px-4 rounded-xl text-[12.5px] font-bold transition " +
+                                (tab === "invites"
+                                    ? "bg-white text-violet-700 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700")
+                            }>
+                        Invitaciones
+                    </button>
+                    <button onClick={() => setTab("clients")}
+                            className={
+                                "h-9 px-4 rounded-xl text-[12.5px] font-bold transition flex items-center gap-1.5 " +
+                                (tab === "clients"
+                                    ? "bg-white text-violet-700 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700")
+                            }>
+                        <IconUser size={13} strokeWidth={2.2} />
+                        Clientes
+                    </button>
+                </div>
+
+                {tab === "clients" ? (
+                    <ClientSubscriptionsPanel />
+                ) : (
+                    <>
+                        {/* Stats */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <StatCard label="Total"        value={stats.total} />
                     <StatCard label="Activas"      value={stats.active} tone="emerald" />
                     <StatCard label="Canjeadas"    value={stats.used}   tone="blue" />
@@ -272,6 +301,8 @@ export function AdminInvitesPage() {
                         </div>
                     )}
                 </div>
+                    </>
+                )}
             </div>
         </div>
     );
