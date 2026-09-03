@@ -1,15 +1,19 @@
 // =====================================================================
 // MOZONA TPV — ticketSettings: persistencia por tenant
 // =====================================================================
-// Lee/escribe la fila de configuración del ticket en public.ticket_settings
-// usando como PK el tenant_id resuelto.
+// Lee/escribe la fila de configuración del ticket + datos de empresa
+// en public.ticket_settings usando como PK el tenant_id resuelto.
 //
-// Esquema:
+// Esquema (v1.9.16):
 //   tenant_id            UUID        PRIMARY KEY
 //   header_text          TEXT        NULL
 //   footer_text          TEXT        NULL DEFAULT '¡Gracias por su visita!'
 //   show_vat_breakdown   BOOLEAN     NOT NULL DEFAULT TRUE
 //   paper_width_mm       INTEGER     NOT NULL DEFAULT 80
+//   company_name         TEXT        NULL  -- ★ v1.9.16
+//   nif                  TEXT        NULL  -- ★ v1.9.16
+//   address              TEXT        NULL  -- ★ v1.9.16
+//   phone                TEXT        NULL  -- ★ v1.9.16
 //   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 //
 // Si la tabla no existe o falla la BD, se usa SIEMPRE localStorage
@@ -28,13 +32,21 @@ export interface TicketSettings {
     footer_text:        string;
     show_vat_breakdown: boolean;
     paper_width_mm:     number;
+    company_name:       string;
+    nif:                string;
+    address:            string;
+    phone:              string;
 }
 
 export const DEFAULT_TICKET_SETTINGS: Omit<TicketSettings, "tenant_id"> = {
     header_text:        "",
     footer_text:        "¡Gracias por su visita!",
     show_vat_breakdown: true,
-    paper_width_mm:     80,
+    paper_width_mm:     58,
+    company_name:       "",
+    nif:                "",
+    address:            "",
+    phone:              "",
 };
 
 function lsKey(tenantId: string): string {
@@ -68,7 +80,7 @@ export async function loadTicketSettings(): Promise<TicketSettings> {
     try {
         const { data, error } = await supabase
             .from("ticket_settings")
-            .select("tenant_id, header_text, footer_text, show_vat_breakdown, paper_width_mm")
+            .select("tenant_id, header_text, footer_text, show_vat_breakdown, paper_width_mm, company_name, nif, address, phone")
             .eq("tenant_id", tenantId)
             .maybeSingle();
         if (error) {
@@ -79,10 +91,14 @@ export async function loadTicketSettings(): Promise<TicketSettings> {
         const merged: TicketSettings = {
             ...DEFAULT_TICKET_SETTINGS,
             tenant_id: tenantId,
-            header_text:        (data as any).header_text ?? "",
-            footer_text:        (data as any).footer_text ?? DEFAULT_TICKET_SETTINGS.footer_text,
+            header_text:        (data as any).header_text        ?? "",
+            footer_text:        (data as any).footer_text        ?? DEFAULT_TICKET_SETTINGS.footer_text,
             show_vat_breakdown: (data as any).show_vat_breakdown ?? true,
-            paper_width_mm:     (data as any).paper_width_mm ?? 80,
+            paper_width_mm:     (data as any).paper_width_mm     ?? 58,
+            company_name:       (data as any).company_name       ?? "",
+            nif:                (data as any).nif                ?? "",
+            address:            (data as any).address            ?? "",
+            phone:              (data as any).phone              ?? "",
         };
         writeLocal(merged);   // refresca cache local
         return merged;
@@ -92,7 +108,7 @@ export async function loadTicketSettings(): Promise<TicketSettings> {
     }
 }
 
-/** Upsert de la configuración del ticket. */
+/** Upsert de la configuración del ticket (incluye empresa). */
 export async function saveTicketSettings(input: Partial<TicketSettings>): Promise<{ ok: boolean; error?: string; source: "db" | "local" }> {
     const tenantId = (await resolveRealTenantId(null)) || FALLBACK_TENANT_ID;
     const payload: TicketSettings = {
@@ -114,6 +130,10 @@ export async function saveTicketSettings(input: Partial<TicketSettings>): Promis
                 footer_text:        payload.footer_text || null,
                 show_vat_breakdown: payload.show_vat_breakdown,
                 paper_width_mm:     payload.paper_width_mm,
+                company_name:       payload.company_name || null,
+                nif:                payload.nif          || null,
+                address:            payload.address      || null,
+                phone:              payload.phone        || null,
                 updated_at:         new Date().toISOString(),
             }, { onConflict: "tenant_id" });
         if (error) {

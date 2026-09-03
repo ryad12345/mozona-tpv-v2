@@ -132,25 +132,39 @@ export function SettingsPage() {
         try {
             // ★ v1.9.4: owner_id no existe, usar localStorage + intentar BD
             const tenantId = (await resolveRealTenantId(null)) || "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
-            // Guardar SIEMPRE en localStorage como fallback
+            // Guardar SIEMPRE en localStorage como respaldo
             localStorage.setItem("mozona.empresa", JSON.stringify(empresa));
 
-            // Intentar BD con tenant_id
-            const { error } = await supabase
-                .from("tenants")
-                .update({
-                    name:    empresa.name.trim()    || null,
-                    cif_nif: empresa.nif.trim()      || null,
-                    address: empresa.address.trim() || null,
-                    phone:   empresa.phone.trim()   || null,
-                })
-                .eq("id", tenantId);
-            if (error) {
-                console.warn("[saveEmpresa] BD falló, pero localStorage OK:", error.message);
-                setMsg({ kind: 'ok', text: 'Guardado en local (BD no disponible)' });
-            } else {
-                setMsg({ kind: 'ok', text: 'Datos de empresa guardados.' });
-            }
+            // ★ v1.9.16: upsert directo en ticket_settings
+            //   El ticket se imprime desde about:blank y NO puede leer
+            //   localStorage, así que la Empresa vive también en BD.
+            const tsResult = await saveTicketSettings({
+                company_name: empresa.name?.trim()    || "",
+                nif:          empresa.nif?.trim()      || "",
+                address:      empresa.address?.trim() || "",
+                phone:        empresa.phone?.trim()   || "",
+            });
+            const empresaSource = tsResult.source;
+
+            // Mantener también el intento en `tenants` (best-effort)
+            try {
+                await supabase
+                    .from("tenants")
+                    .update({
+                        name:    empresa.name.trim()    || null,
+                        cif_nif: empresa.nif.trim()      || null,
+                        address: empresa.address.trim() || null,
+                        phone:   empresa.phone.trim()   || null,
+                    })
+                    .eq("id", tenantId);
+            } catch (e) { /* silenciado: la fuente de verdad es ticket_settings */ }
+
+            setMsg({
+                kind: 'ok',
+                text: empresaSource === "db"
+                    ? 'Datos de empresa guardados (BD).'
+                    : 'Guardado en local (BD no disponible).'
+            });
         } catch (e) {
             setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Error al guardar' });
         }

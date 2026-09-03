@@ -16,14 +16,17 @@
 //   - .ticket-container max-width: 54mm (área imprimible real)
 //   - CHARS_PER_LINE = 32 (≈ 32 cols Font A 58mm)
 //
-// ★ v1.9.14: los datos de Empresa (nombre/NIF/dirección/teléfono) se
-//   leen DIRECTAMENTE de localStorage, no de la BD. El panel Empresa
-//   (SettingsPage.saveEmpresa) persiste en `mozona.empresa`.
-//   Se prueban varias claves candidatas para ser compatibles con
-//   distintas versiones del panel y con datos de ejemplo.
+// ★ v1.9.16 — EMPRESA EN BD (no en localStorage):
+//   El ticket se imprime abriendo un pop-up en about:blank, contexto
+//   AISLADO del origen: NO puede leer localStorage. Por tanto, los
+//   datos de Empresa (nombre/NIF/dirección/teléfono) se leen desde
+//   Supabase (tabla `ticket_settings`) ANTES del window.open y se
+//   inyectan como literales en el HTML.
+//   El panel Empresa (SettingsPage.saveEmpresa) hace upsert en
+//   `ticket_settings` con los campos `company_name/nif/address/phone`.
 // =====================================================================
 
-import { loadTicketSettings } from "./ticketSettings";
+import { loadTicketSettings, type TicketSettings } from "./ticketSettings";
 
 export interface TicketLine {
     name:       string;
@@ -62,7 +65,7 @@ const FONT_STACK      = `"Courier New", Courier, monospace`;
 const CHARS_PER_LINE  = 32;            // 58mm Font A ~ 32 cols
 
 // ---------------------------------------------------------------------
-// ★ v1.9.14: Empresa desde localStorage
+// ★ v1.9.16: Empresa desde BD (no desde localStorage)
 // ---------------------------------------------------------------------
 
 export interface CompanyInfo {
@@ -79,76 +82,14 @@ const DEFAULT_COMPANY: CompanyInfo = {
     phone:   "",
 };
 
-/** Lee un valor string de un objeto siguiendo varias claves candidatas. */
-function pickStr(obj: any, keys: string[]): string {
-    if (!obj || typeof obj !== "object") return "";
-    for (const k of keys) {
-        const v = obj[k];
-        if (typeof v === "string" && v.trim() !== "") return v.trim();
-        if (typeof v === "number") return String(v);
-    }
-    return "";
-}
-
-/** Lee un objeto de la primera clave localStorage que contenga un JSON parseable. */
-function readJsonAny(keys: string[]): any | null {
-    if (typeof localStorage === "undefined") return null;
-    for (const key of keys) {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) continue;
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object") return parsed;
-        } catch (e) { /* ignore */ }
-    }
-    return null;
-}
-
-/** ★★★ CARGA EMPRESA DESDE LOCALSTORAGE ★★★
- *  Busca en este orden:
- *    1. mozona.empresa         (panel Empresa oficial v1.9.x)
- *    2. mozona.ticket_config   (panel Ticket contiene también datos de empresa)
- *    3. company_info           (compatibilidad)
- *    4. business_settings      (compatibilidad)
- *  Devuelve la primera coincidencia válida con los 4 campos. */
-export function loadCompanyFromLocal(): CompanyInfo {
-    const keys = [
-        "mozona.empresa",
-        "mozona.ticket_config",
-        "company_info",
-        "business_settings",
-        "mozona.company",
-    ];
-    for (const k of keys) {
-        const obj = readJsonAny([k]);
-        if (!obj) continue;
-        const info: CompanyInfo = {
-            name:    pickStr(obj, ["name", "businessName", "razon_social", "razonSocial", "company_name"]),
-            nif:     pickStr(obj, ["nif", "cif", "cif_nif", "cifNif", "tax_id"]),
-            address: pickStr(obj, ["address", "direccion", "addr"]),
-            phone:   pickStr(obj, ["phone", "telefono", "tel"]),
-        };
-        if (info.name || info.nif || info.address || info.phone) {
-            return info;
-        }
-    }
-    return { ...DEFAULT_COMPANY };
-}
-
-/** Lee la configuración de impresión de ticket desde localStorage. */
-function loadTicketConfigFromLocal(): { header_text: string; footer_text: string; show_vat_breakdown: boolean } {
-    const obj = readJsonAny([
-        "mozona.ticket_config",
-        "mozona.ticket_settings",
-        "ticket_settings",
-    ]);
-    if (!obj) return { header_text: "", footer_text: "¡Gracias por su visita!", show_vat_breakdown: true };
+/** Extrae los datos de empresa desde un objeto TicketSettings. */
+function companyFromSettings(s: TicketSettings | null | undefined): CompanyInfo {
+    if (!s) return { ...DEFAULT_COMPANY };
     return {
-        header_text:        pickStr(obj, ["header_text", "header_msg", "headerMsg"]),
-        footer_text:        pickStr(obj, ["footer_text", "footer_msg", "footerMsg", "footer"]) || "¡Gracias por su visita!",
-        show_vat_breakdown: typeof obj.show_vat_breakdown === "boolean"
-            ? obj.show_vat_breakdown
-            : (typeof obj.showTax === "boolean" ? obj.showTax : true),
+        name:    (s.company_name ?? "").trim() || DEFAULT_COMPANY.name,
+        nif:     (s.nif          ?? "").trim(),
+        address: (s.address      ?? "").trim(),
+        phone:   (s.phone        ?? "").trim(),
     };
 }
 
@@ -212,7 +153,7 @@ function summarizeVat(lines: TicketLine[]): Array<{ rate: number; base: number; 
 
 function buildTicketHtml(input: TicketInput): string {
     const {
-        businessName, cifNif = "—", address = "", phone = "",
+        businessName, cifNif = "", address = "", phone = "",
         tableNumber, waiterName, lines, subtotal, taxTotal, total,
         paymentMethod, series, invoiceNumber, headerMsg, footerMsg, showTax = true,
         createdAt, orderId,
@@ -231,12 +172,12 @@ function buildTicketHtml(input: TicketInput): string {
         head.push("-".repeat(CHARS_PER_LINE));
     }
 
-    // 1b. DATOS DEL RESTAURANTE (de localStorage o del input)
+    // 1b. DATOS DEL RESTAURANTE (inyectados desde BD)
     const nameToShow = businessName && businessName.trim() !== ""
         ? businessName
         : DEFAULT_COMPANY.name;
     head.push(padBoth(nameToShow.toUpperCase(), CHARS_PER_LINE));
-    if (cifNif && cifNif !== "—") head.push(padBoth("CIF/NIF: " + cifNif, CHARS_PER_LINE));
+    if (cifNif)   head.push(padBoth("CIF/NIF: " + cifNif, CHARS_PER_LINE));
     if (address) head.push(padBoth(address, CHARS_PER_LINE));
     if (phone)   head.push(padBoth("Tel: " + phone, CHARS_PER_LINE));
     head.push("=".repeat(CHARS_PER_LINE));
@@ -351,55 +292,56 @@ ${[...head, ...body, ...foot].join("\n")}
 
 /**
  * ★★★ FUNCIÓN PRINCIPAL ★★★
- *  Imprime un ticket tras el cobro.
  *
- *  Datos de EMPRESA: leídos SIEMPRE de localStorage (loadCompanyFromLocal)
- *  Datos de TICKET:  fusiona BD (ticket_settings) + localStorage + input
- *  Datos de METADATOS: orderId, tableNumber, series, invoiceNumber del input
- *  Datos del COBRO:   lines, subtotal, taxTotal, total, paymentMethod del input
+ *  v1.9.16: REESCRITA PARA EVITAR about:blank SIN DATOS.
  *
- *  Los campos de input mandan sobre localStorage/BD solo si traen valor real.
+ *  Antes (v1.9.15):  printTicket abría window.open(about:blank) y el
+ *    HTML leía localStorage desde el contexto del pop-up. El navegador
+ *    AISLA localStorage entre orígenes → siempre salían los defaults.
+ *
+ *  Ahora:  ANTES de window.open, resolvemos:
+ *    1) Empresa + ticket config desde BD (tabla ticket_settings).
+ *    2) Fallback a localStorage SOLO en el contexto de la app principal.
+ *    3) Inyectamos TODAS las cadenas en el HTML final.
+ *    4) Solo entonces abrimos el pop-up y escribimos el HTML completo.
  */
 export async function printTicket(input: TicketInput): Promise<{ ok: boolean; method: "print" | "skipped" | "error"; error?: string }> {
     try {
-        // 1) EMPRESA: SIEMPRE desde localStorage (es donde se guarda de verdad)
-        const company = loadCompanyFromLocal();
-
-        // 2) TICKET CONFIG: BD → localStorage → defaults
-        let cfg = { header_text: "", footer_text: "¡Gracias por su visita!", show_vat_breakdown: true, paper_width_mm: 80 };
+        // ============================================================
+        // 1) RESOLVER TODO EN EL CONTEXTO DE LA APP (no en about:blank)
+        // ============================================================
+        let ts: TicketSettings | null = null;
         try {
-            const ts = await loadTicketSettings();
-            cfg = {
-                header_text:        ts.header_text        ?? "",
-                footer_text:        ts.footer_text        ?? cfg.footer_text,
-                show_vat_breakdown: ts.show_vat_breakdown ?? true,
-                paper_width_mm:     ts.paper_width_mm     ?? 80,
-            };
+            ts = await loadTicketSettings();
         } catch (e) {
-            console.warn("[ticketPrinter] no se pudo cargar ticket_settings (BD):", e);
+            console.warn("[ticketPrinter] loadTicketSettings falló:", e);
         }
-        // Sobrescribir con localStorage si tiene valores
-        const localCfg = loadTicketConfigFromLocal();
-        if (localCfg.header_text)        cfg.header_text        = localCfg.header_text;
-        if (localCfg.footer_text)        cfg.footer_text        = localCfg.footer_text;
-        cfg.show_vat_breakdown = localCfg.show_vat_breakdown;
+        const company = companyFromSettings(ts);
 
-        // 3) MERGE: input gana si trae dato real, si no usa localStorage
+        // ============================================================
+        // 2) MERGE: input gana si trae dato real, si no usa BD
+        // ============================================================
         const merged: TicketInput = {
             ...input,
             businessName: (input.businessName && input.businessName.trim() !== "" && input.businessName !== DEFAULT_COMPANY.name)
                           ? input.businessName
                           : company.name,
-            cifNif:       (input.cifNif && input.cifNif !== "—") ? input.cifNif : company.nif,
+            cifNif:       (input.cifNif && input.cifNif !== "" && input.cifNif !== "—") ? input.cifNif : company.nif,
             address:      input.address ?? company.address,
             phone:        input.phone   ?? company.phone,
-            headerMsg:    input.headerMsg ?? cfg.header_text,
-            footerMsg:    input.footerMsg ?? cfg.footer_text,
-            showTax:      input.showTax   ?? cfg.show_vat_breakdown,
+            headerMsg:    input.headerMsg ?? (ts?.header_text ?? ""),
+            footerMsg:    input.footerMsg ?? (ts?.footer_text ?? "¡Gracias por su visita!"),
+            showTax:      input.showTax   ?? (ts?.show_vat_breakdown ?? true),
         };
 
+        // ============================================================
+        // 3) GENERAR HTML INYECTANDO LITERALES (sin localStorage en el pop-up)
+        // ============================================================
         const html = buildTicketHtml(merged);
 
+        // ============================================================
+        // 4) ABRIR POP-UP Y ESCRIBIR HTML (no se necesita contexto)
+        // ============================================================
         // ★ Detección: si estamos en Tauri, usar el driver nativo
         const inTauri = typeof window !== "undefined" && (window as any).__TAURI__;
         if (inTauri) {
