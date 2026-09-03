@@ -42,7 +42,7 @@ export function AdminInvitesPage() {
     const [msg,       setMsg]       = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
     useEffect(() => {
-        if (auth.isReady && !auth.isSuperAdmin) nav("/", { replace: true });
+        if (auth.isReady && !auth.isSuperAdmin) nav("/app", { replace: true });
     }, [auth.isReady, auth.isSuperAdmin, nav]);
 
     const load = async () => {
