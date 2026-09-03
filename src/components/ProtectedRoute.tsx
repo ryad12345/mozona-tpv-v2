@@ -56,7 +56,7 @@ export function AdminRoute({ children }: { children: ReactNode }) {
     const auth = useAuth();
     if (!auth.isReady) return <LoadingScreen />;
     if (!auth.isSuperAdmin) {
-        return <Navigate to="/" replace />;
+        return <Navigate to="/app" replace />;
     }
     return <>{children}</>;
 }

@@ -7,7 +7,7 @@ import {
     type ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { isVipOrAdmin } from "../lib/vip";
+import { isVipOrAdmin, isSuperAdminEmail } from "../lib/vip";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -377,7 +377,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const value = useMemo<AuthContextValue>(() => ({
         user, session, loading,
         isReady: !loading,
-        isSuperAdmin: isVipOrAdmin(user?.email),
+        isSuperAdmin: isSuperAdminEmail(user?.email),
         status: loading ? "loading" : (user ? "authenticated" : "unauthenticated"),
         tenant: isVipOrAdmin(user?.email)
             // VIP: tenant sintético para que cualquier guard que
