@@ -102,6 +102,34 @@ export function AuthPage() {
         rate.reset();
     };
 
+    const [forgotSent, setForgotSent] = useState(false);
+    const handleForgot = async () => {
+        setMsg(null);
+        if (!email) {
+            setMsg({ kind: "err", text: "Introduce tu email para enviarte el enlace de reseteo" });
+            return;
+        }
+        setBusy(true);
+        try {
+            // ★ v1.9.31: resetPasswordForEmail
+            const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+                redirectTo: `${window.location.origin}/auth?reset=true`,
+            });
+            if (error) {
+                setMsg({ kind: "err", text: error.message });
+            } else {
+                setForgotSent(true);
+                setMsg({
+                    kind: "ok",
+                    text: "Te hemos enviado un enlace para resetear tu contraseña. Revisa tu email.",
+                });
+            }
+        } catch (e: any) {
+            setMsg({ kind: "err", text: e?.message ?? "Error inesperado" });
+        }
+        setBusy(false);
+    };
+
     if (!isSupabaseConfigured) {
         return (
             <AuthShell>
@@ -165,6 +193,20 @@ export function AuthPage() {
                                disabled:opacity-50">
                 {busy ? "Entrando…" : "Entrar al panel"}
             </button>
+
+            {/* ★ v1.9.31: enlace "¿Olvidaste tu contraseña?" */}
+            <div className="mt-3 text-center">
+                <button type="button"
+                        onClick={handleForgot}
+                        disabled={busy || !email || forgotSent || rate.isBlocked}
+                        className="text-[12.5px] font-bold text-blue-600 hover:text-blue-800
+                                   hover:underline disabled:opacity-50 disabled:no-underline
+                                   transition">
+                    {forgotSent
+                        ? "✓ Enlace de reseteo enviado — revisa tu email"
+                        : "¿Olvidaste tu contraseña?"}
+                </button>
+            </div>
 
             {msg && (
                 <div className={
