@@ -76,4 +76,4 @@ git add src/App.tsx
 git commit -m "fix(app): restaurar router principal y anadir ErrorBoundary para evitar pantalla blanca"
 git push origin main
 
-echo "✅ ¡Listo! Abre https://mozonatpv.vercel.app/app tras el despliegue."
+echo "✅ ¡Listo! Abre https://mozonatpv.site/app tras el despliegue."
