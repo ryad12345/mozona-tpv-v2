@@ -28,6 +28,8 @@
 import { useEffect, useRef, useState } from "react";
 import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import { IconCheck, IconShield } from "../icons";
 
 interface Props {
@@ -39,69 +41,11 @@ interface Props {
     ctxPlan?:  PlanCode;
     onSuccess?: (leadId: string) => void;
 }
-
 const PHONE_E164 = "34644165153";
 const PHONE_DISPLAY = "+34 644 16 51 53";
 
-/** ★ v1.9.41: Construye mensaje WhatsApp estructurado con los datos del lead */
-function buildLeadWhatsAppMessage(opts: {
-    name?:           string;
-    email?:          string;
-    businessType?:   string;
-    plan?:           string;
-    source?:         string;
-    trialEndsAt?:    string;
-}): string {
-    const businessLabel = ({
-        restaurante: "Restaurante",
-        bar:         "Bar / Tapas",
-        cafeteria:   "Cafetería",
-        otro:        "Otro",
-    } as Record<string, string>)[opts.businessType ?? ""] ?? opts.businessType ?? "—";
-
-    const planLabel = ({
-        basic:         "Plan Plus (Básico) — 30€/mes",
-        professional:  "Plan Pro (Profesional) — 50€/mes",
-        premium:       "Plan Premium — 99€/mes",
-        trial:         "Trial 7 días",
-    } as Record<string, string>)[opts.plan ?? ""] ?? "Plan Plus (Básico) — 30€/mes";
-
-    const lines: string[] = [
-        "¡Hola Riyad! Vengo del asistente IA de MOZONA TPV.",
-        "",
-        "Quiero activar mi prueba gratuita de 7 días.",
-        "",
-        "📋 Mis datos:",
-        `• Negocio: ${businessLabel}`,
-        `• Nombre: ${opts.name?.trim() || "—"}`,
-        `• Plan elegido: ${planLabel}`,
-        `• Email: ${opts.email?.trim() || "—"}`,
-    ];
-    if (opts.source) {
-        const sourceLabel = ({
-            landing:   "Landing Page",
-            pricing:   "Página de Planes",
-            paywall:   "Bloqueo de Trial",
-            onboarding:"Onboarding inicial",
-            settings:  "Ajustes",
-            floating:  "Botón flotante",
-        } as Record<string, string>)[opts.source] ?? opts.source;
-        lines.push(`• Origen: ${sourceLabel}`);
-    }
-    lines.push(
-        "",
-        "¿Me puedes ayudar con la activación? 🙏",
-    );
-    return lines.join("\n");
-}
-
-function buildWhatsAppLink(message: string): string {
-    return `https://wa.me/${PHONE_E164}?text=${encodeURIComponent(message)}`;
-}
-
-const WA_LINK = buildWhatsAppLink(
-    "Hola, vengo del asistente de MOZONA TPV y quiero activar mi plan."
-);
+// ★ v1.9.42: WhatsApp eliminado del flujo. Los leads se guardan
+//   directamente en Firebase y se notifica por email vía webhook.
 
 interface Step {
     id:       string;
@@ -158,12 +102,11 @@ const STEPS: Record<string, Step> = {
     done: {
         id:      "done",
         role:    "assistant",
-        // ★ v1.9.41: mensaje dinámico según si Firebase está configurado
+        // ★ v1.9.42: mensaje dinámico según éxito del guardado
         //   (la sustitución real ocurre en el goToStep vía render dinámico)
         content: "", // se sustituye dinámicamente en getDoneMessage()
         options: [
-            { label: "📱  Abrir WhatsApp con mis datos", value: "wa",  next: "__close__" },
-            { label: "✓  No, gracias",                  value: "end",  next: "__close__" },
+            { label: "🚀  Entrar al Panel", value: "enter", next: "__close__" },
         ],
     },
 };
@@ -178,6 +121,9 @@ const PLAN_LABEL: Record<PlanCode, string> = {
 export function AIAssistantModal({
     open, onClose, source, ctxEmail, ctxName, ctxPlan, onSuccess,
 }: Props) {
+    const navigate = useNavigate();
+    const auth = useAuth();
+    const isLogged = !!auth?.user;
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [currentStep, setCurrentStep] = useState<string>("welcome");
     const [businessType, setBusinessType] = useState<string>("");
@@ -246,13 +192,14 @@ export function AIAssistantModal({
 
     // ★ v1.9.41: mensaje del paso "done" según modo
     const getDoneMessage = (): string => {
-        if (FIREBASE_CONFIGURED && savedOk && backend === "firebase") {
-            return "¡Listo! Tu prueba de 7 días está activa. He guardado tus datos correctamente. ¿Quieres que un humano te contacte por WhatsApp para terminar la activación?";
+        if (savedOk && backend === "firebase") {
+            // ★ v1.9.42: mensaje limpio post-guardado
+            return "¡Listo! Hemos activado tu prueba gratuita de 7 días. Te hemos enviado un correo de bienvenida y nos pondremos en contacto contigo brevemente.";
         }
-        if (!FIREBASE_CONFIGURED) {
-            return "¡Perfecto! Como aún no tenemos activado el guardado automático de leads, te ayudo directamente por WhatsApp. Al pulsar el botón abriré una conversación con todos tus datos pre-rellenados para que Riyad active tu prueba de 7 días al instante.";
+        if (savedOk && !FIREBASE_CONFIGURED) {
+            return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas. Te contactaremos por email.";
         }
-        return "Hemos guardado tu solicitud. ¿Quieres que un humano te contacte por WhatsApp para terminar la activación?";
+        return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas.";
     };
 
     // ★ v1.9.39 + v1.9.41: goToStep con typing + mensaje dinámico en "done"
@@ -297,16 +244,15 @@ export function AIAssistantModal({
                 return;
             }
         } else if (currentStep === "done") {
-            if (value === "wa") {
-                // ★ v1.9.41: WhatsApp con mensaje estructurado con todos los datos
-                const msg = buildLeadWhatsAppMessage({
-                    name:         name,
-                    email:        email,
-                    businessType: businessType,
-                    plan:         (plan as string) || "basic",
-                    source:       source,
-                });
-                window.open(buildWhatsAppLink(msg), "_blank", "noopener,noreferrer");
+            // ★ v1.9.42: Botón "Entrar al Panel" → navega a /app o /auth
+            if (value === "enter") {
+                if (isLogged) {
+                    navigate("/app");
+                } else {
+                    navigate("/auth?signup=1&email=" + encodeURIComponent(email));
+                }
+                onClose();
+                return;
             }
             onClose();
             return;
