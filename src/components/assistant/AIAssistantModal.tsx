@@ -61,11 +61,12 @@ interface Step {
 }
 
 const STEPS_CONFIG: Record<string, Step> = {
-    // ★ v1.9.50: copiloto de configuración en /settings
+    // ★ v1.9.51: copiloto de configuración en /settings
+    //    Mensaje de bienvenida LIMPIO, sin referencia a la prueba de 7 días
     welcome: {
         id:      "welcome",
         role:    "assistant",
-        content: "¡Hola! Soy Riyad, tu copiloto de configuración. ¿En qué te ayudo?",
+        content: "¡Hola! Soy Riyad, tu copiloto de configuración. ¿Qué te gustaría hacer en tu negocio hoy?",
         options: [
             { label: "➕  Añadir producto",      value: "add-product", next: "add-product" },
             { label: "🏷️  Crear categoría",     value: "add-category", next: "add-category" },
@@ -285,8 +286,14 @@ export function AIAssistantModal({
     const [pendingIva,   setPendingIva]   = useState<number>(10);
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // ★ v1.9.39: Mensaje de bienvenida contextual
+    // ★ v1.9.39 + v1.9.51: Mensaje de bienvenida contextual según el MODE
+    //   - mode='config'  -> saludo de gestión, sin mencionar la prueba
+    //   - mode='floating' con ctxPlan -> menciona el plan
+    //   - mode='floating' sin ctxPlan -> bienvenida de captación
     const getWelcomeMessage = (): string => {
+        if (mode === "config") {
+            return getStepsFor(mode).welcome.content;
+        }
         if (ctxPlan && ctxPlan !== "trial") {
             const planName = ctxPlan === "basic" ? "Plan Plus (Básico)"
                           : ctxPlan === "professional" ? "Plan Pro (Profesional)"
@@ -294,7 +301,7 @@ export function AIAssistantModal({
                           : "";
             return `¡Hola! Soy Riyad, tu asistente personal. Veo que te interesa el ${planName}. Vamos a configurar tu prueba gratuita de 7 días en menos de 30 segundos. ¿Qué tipo de negocio tienes?`;
         }
-        return STEPS.welcome.content;
+        return getStepsFor(mode).welcome.content;
     };
 
     // ★ v1.9.39: Delay aleatorio 400-900ms (Smart Engine)
@@ -679,7 +686,7 @@ export function AIAssistantModal({
                             ) : (
                                 <>
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                                    Online · Configura tu prueba de 7 días
+                                    Online · {mode === "config" ? "Configurando tu negocio" : "Configura tu prueba de 7 días"}
                                 </>
                             )}
                         </p>
