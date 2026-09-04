@@ -403,14 +403,14 @@ ${cardRef.current.outerHTML}
                                     src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(
                                         typeof window !== "undefined"
                                             ? `${window.location.origin}/waiter/login`
-                                            : "https://mozonatpv.vercel.app/waiter/login"
+                                            : "https://mozonatpv.site/waiter/login"
                                     )}`}
                                     alt="QR acceso camarero"
                                     className="w-20 h-20 rounded-md"
                                 />
                             </div>
                             <div className="text-center text-[8.5px] text-slate-400 mt-2 font-mono break-all">
-                                {typeof window !== "undefined" ? window.location.origin : "mozonatpv.vercel.app"}/waiter/login
+                                {typeof window !== "undefined" ? window.location.origin : "mozonatpv.site"}/waiter/login
                             </div>
                         </div>
                     </div>

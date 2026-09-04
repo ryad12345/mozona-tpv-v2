@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin/
 Disallow: /api/
 
-Sitemap: https://mozonatpv.vercel.app/sitemap.xml
+Sitemap: https://mozonatpv.site/sitemap.xml

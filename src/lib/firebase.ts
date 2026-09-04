@@ -120,7 +120,8 @@ export async function notifyNewLead(lead: NewLeadNotification): Promise<{ ok: bo
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 to, subject, html, text,
-                from: "MOZONA TPV <noreply@mozona.online>",
+                // ★ v1.9.48: from actualizado al dominio oficial
+                from: "MOZONA TPV <noreply@mozonatpv.site>",
                 lead,
             }),
         });

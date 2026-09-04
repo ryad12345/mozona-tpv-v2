@@ -215,6 +215,8 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean;
                 template_id: templateId,
                 user_id:     publicKey,
                 template_params: templateParams,
+                // ★ v1.9.48: from actualizado al dominio oficial
+                from: "MOZONA TPV <noreply@mozonatpv.site>",
             }),
         });
         if (!resp.ok) {
