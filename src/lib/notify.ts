@@ -48,6 +48,57 @@ const EMAILJS_CONFIGURED: boolean = !!(
     && import.meta.env.VITE_EMAILJS_PUBLIC_KEY
 );
 
+/** ★ v1.9.54: diagnóstico completo de la configuración de EmailJS */
+export interface EmailJSConfigStatus {
+    configured: boolean;
+    missing:    string[];      // nombres de variables faltantes
+    values: {
+        serviceId:  string | undefined;
+        templateId: string | undefined;
+        publicKey:  string | undefined;
+    };
+}
+
+export function checkEmailJSConfig(): EmailJSConfigStatus {
+    const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID  as string | undefined;
+    const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string | undefined;
+    const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  as string | undefined;
+    const missing: string[] = [];
+    if (!serviceId)  missing.push("VITE_EMAILJS_SERVICE_ID");
+    if (!templateId) missing.push("VITE_EMAILJS_TEMPLATE_ID");
+    if (!publicKey)  missing.push("VITE_EMAILJS_PUBLIC_KEY");
+    return {
+        configured: missing.length === 0,
+        missing,
+        values: { serviceId, templateId, publicKey },
+    };
+}
+
+/** Log diagnóstico al cargar el módulo (solo en dev o si no está configurado) */
+if (typeof window !== "undefined") {
+    const diag = checkEmailJSConfig();
+    if (!diag.configured) {
+        console.warn(
+            "%c[notify] EmailJS no configurado",
+            "background:#fbbf24;color:#000;padding:2px 6px;border-radius:3px;font-weight:bold",
+            "\nFaltan variables de entorno:",
+            diag.missing,
+            "\nDefine estas 3 vars en Vercel → Settings → Environment Variables:",
+            "\n  VITE_EMAILJS_SERVICE_ID",
+            "\n  VITE_EMAILJS_TEMPLATE_ID",
+            "\n  VITE_EMAILJS_PUBLIC_KEY",
+            "\nSin esto, los leads se guardan en BD pero NO se envia email."
+        );
+    } else {
+        console.log(
+            "%c[notify] EmailJS OK",
+            "background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
+            "Service:", diag.values.serviceId?.slice(0, 12) + "...",
+            "Template:", diag.values.templateId?.slice(0, 12) + "...",
+        );
+    }
+}
+
 export interface LeadEmailData {
     leadId?:         string;
     restaurantName?: string;
@@ -156,16 +207,30 @@ function buildTextBody(data: LeadEmailData): string {
 /** ★★★ FUNCIÓN PRINCIPAL ★★★
  *  Envía un email con los datos del lead al admin.
  *  Intenta EmailJS SDK si está configurado; si no, REST directo.
- *  Devuelve {ok, error?} pero NUNCA lanza excepción. */
+ *
+ *  Devuelve {ok, error?, via: 'emailjs-sdk'|'emailjs-rest'|'noop'}.
+ *  via='noop' significa que NO se envio (env vars faltantes).
+ *  via='emailjs-sdk' o 'emailjs-rest' significan que SI se intento.
+ *  NUNCA lanza excepción. */
 export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean; error?: string; via: string }> {
     const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID   as string | undefined;
     const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID  as string | undefined;
     const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY   as string | undefined;
 
     if (!serviceId || !templateId || !publicKey) {
-        // Sin env vars, no podemos enviar. No-op silencioso (no rompe la UI).
-        console.warn("[notify] EmailJS no configurado. Define VITE_EMAILJS_* en Vercel.");
-        return { ok: true, via: "noop" };
+        // ★ v1.9.54: modo noop EXPLÍCITO, no silencioso
+        // via='noop' indica que NO se envio (no fingir ok=true real)
+        const diag = checkEmailJSConfig();
+        console.warn(
+            "[notify] EmailJS no configurado. NO se envio email.",
+            "\nFaltan:", diag.missing,
+            "\nDefine en Vercel -> Settings -> Environment Variables"
+        );
+        return {
+            ok: false,
+            error: "EmailJS no configurado (faltan env vars en Vercel)",
+            via: "noop",
+        };
     }
 
     const subject = buildSubject(data);

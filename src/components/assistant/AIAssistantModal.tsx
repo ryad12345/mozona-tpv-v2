@@ -286,6 +286,8 @@ export function AIAssistantModal({
     const [pendingIva,   setPendingIva]   = useState<number>(10);
     // ★ v1.9.53: error real de EmailJS (si falla, NO fingir éxito)
     const [emailError, setEmailError] = useState<string | null>(null);
+    // ★ v1.9.54: EmailJS no configurado (env vars faltan, modo defensivo)
+    const [emailNotConfigured, setEmailNotConfigured] = useState<boolean>(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // ★ v1.9.39 + v1.9.51: Mensaje de bienvenida contextual según el MODE
@@ -326,6 +328,7 @@ export function AIAssistantModal({
             setSavedOk(false);
             setBackend(null);
             setEmailError(null);
+            setEmailNotConfigured(false);
             setIsTyping(true);
             // Mensaje contextual con typing
             thinkDelay().then(() => {
@@ -693,9 +696,17 @@ export function AIAssistantModal({
             console.warn("[AIAssistantModal] email notify error:", e?.message ?? e);
             emailResult = { ok: false, error: e?.message ?? "Error desconocido", via: "exception" };
         }
-        // ★ v1.9.53: si EmailJS está configurado y falla, no fingir éxito
-        if (emailResult && emailResult.via !== "noop" && !emailResult.ok) {
-            setEmailError(emailResult.error ?? "Error desconocido");
+        // ★ v1.9.53/54: clasificar el resultado del envío
+        if (emailResult) {
+            if (emailResult.via === "noop") {
+                // EmailJS no configurado (env vars faltan): no es un error,
+                // es estado defensivo. Mostramos info al admin.
+                setEmailNotConfigured(true);
+            } else if (!emailResult.ok) {
+                // EmailJS configurado PERO falló: error real
+                setEmailError(emailResult.error ?? "Error desconocido");
+            }
+            // else: ok=true → no mensaje
         }
         setBusy(false);
     };
@@ -910,6 +921,13 @@ export function AIAssistantModal({
                                 <div className="text-[10px] text-rose-600 font-bold
                                                 text-center px-2">
                                     ⚠ Email no enviado: {emailError}
+                                </div>
+                            )}
+                            {/* ★ v1.9.54: EmailJS no configurado (env vars faltan) */}
+                            {emailNotConfigured && (
+                                <div className="text-[10px] text-amber-700 font-bold
+                                                text-center px-2">
+                                    ⓘ Email no configurado (definir VITE_EMAILJS_* en Vercel)
                                 </div>
                             )}
                         </div>
