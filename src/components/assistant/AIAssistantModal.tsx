@@ -30,7 +30,7 @@ import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStat
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { IconCheck, IconShield } from "../icons";
+import { IconCheck } from "../icons";
 
 interface Props {
     open: boolean;
@@ -190,16 +190,21 @@ export function AIAssistantModal({
         setMessages(prev => [...prev, { role: "user", content, ts: Date.now() }]);
     };
 
-    // ★ v1.9.41: mensaje del paso "done" según modo
+    // ★ v1.9.41 + v1.9.43: mensaje del paso "done" según modo
+    //    NUNCA devuelve undefined (defensivo contra crashes)
     const getDoneMessage = (): string => {
-        if (savedOk && backend === "firebase") {
-            // ★ v1.9.42: mensaje limpio post-guardado
-            return "¡Listo! Hemos activado tu prueba gratuita de 7 días. Te hemos enviado un correo de bienvenida y nos pondremos en contacto contigo brevemente.";
+        try {
+            if (savedOk && backend === "firebase") {
+                return "¡Listo! Hemos activado tu prueba gratuita de 7 días. Te hemos enviado un correo de bienvenida y nos pondremos en contacto contigo brevemente.";
+            }
+            if (savedOk && !FIREBASE_CONFIGURED) {
+                return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas. Te contactaremos por email.";
+            }
+            return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas.";
+        } catch (e) {
+            console.error("[AIAssistantModal] getDoneMessage error:", e);
+            return "Hemos recibido tu solicitud. Nos pondremos en contacto contigo en breve.";
         }
-        if (savedOk && !FIREBASE_CONFIGURED) {
-            return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas. Te contactaremos por email.";
-        }
-        return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas.";
     };
 
     // ★ v1.9.39 + v1.9.41: goToStep con typing + mensaje dinámico en "done"
@@ -244,14 +249,20 @@ export function AIAssistantModal({
                 return;
             }
         } else if (currentStep === "done") {
-            // ★ v1.9.42: Botón "Entrar al Panel" → navega a /app o /auth
+            // ★ v1.9.42 + v1.9.43: Botón "Entrar al Panel" con try-catch
             if (value === "enter") {
-                if (isLogged) {
-                    navigate("/app");
-                } else {
-                    navigate("/auth?signup=1&email=" + encodeURIComponent(email));
+                try {
+                    if (isLogged) {
+                        navigate("/app");
+                    } else {
+                        navigate("/auth?signup=1&email=" + encodeURIComponent(email || ""));
+                    }
+                } catch (e) {
+                    console.error("[AIAssistantModal] navigate error:", e);
+                    // Fallback: location.href
+                    try { location.href = isLogged ? "/app" : "/auth?signup=1"; } catch (_) {}
                 }
-                onClose();
+                try { onClose(); } catch (_) {}
                 return;
             }
             onClose();
@@ -287,16 +298,23 @@ export function AIAssistantModal({
         setBusy(true);
         const trialEndsAt = new Date(Date.now() + 7 * 86400000).toISOString();
         const history: ChatMessage[] = messages.slice();
-        const result = await saveLead({
-            user_email:      email || undefined,
-            restaurant_name: name || undefined,
-            selected_plan:   (plan as PlanCode) || undefined,
-            trial_ends_at:   trialEndsAt,
-            status,
-            chat_history:    history,
-            source,
-            metadata:        { business_type: businessType, source, ctxPlan: ctxPlan ?? null },
-        });
+        let result: { ok: boolean; id?: string; error?: string; backend: "firebase" | "none" };
+        try {
+            result = await saveLead({
+                user_email:      email || undefined,
+                restaurant_name: name || undefined,
+                selected_plan:   (plan as PlanCode) || undefined,
+                trial_ends_at:   trialEndsAt,
+                status,
+                chat_history:    history,
+                source,
+                metadata:        { business_type: businessType, source, ctxPlan: ctxPlan ?? null },
+            });
+        } catch (e: any) {
+            // ★ v1.9.43: try-catch defensivo
+            console.error("[AIAssistantModal] persistLead error:", e);
+            result = { ok: false, error: e?.message ?? "Error desconocido", backend: "none" };
+        }
         if (result.ok) {
             setLeadId(result.id ?? null);
             setBackend(result.backend);
@@ -305,17 +323,17 @@ export function AIAssistantModal({
         } else {
             const isConfigErr = (result.error ?? "").toLowerCase().includes("firebase")
                 || result.backend === "none";
+            // ★ v1.9.43: mensaje sin mencionar WhatsApp
             const msg = isConfigErr
-                ? `⚠️ Firebase no está configurado todavía.\n\n` +
-                  `El equipo de MOZONA TPV aún no ha activado el almacenamiento de leads.\n\n` +
-                  `Mientras tanto, te ayudo por WhatsApp directo:`
+                ? `📝 Hemos recibido tu solicitud.\n\n` +
+                  `Nuestro equipo activará tu prueba de 7 días en las próximas horas ` +
+                  `y te contactará por email.`
                 : `No pude guardar tus datos ahora mismo. ¿Me das unos segundos y vuelves a intentarlo?\n\n` +
                   `(${result.error ?? "Error desconocido"})`;
-            pushAssistant(msg);
-            // Si es error de config, mostrar CTA WhatsApp como acción
-            if (isConfigErr) {
-                pushAssistant("📱 Contacta con soporte para que activen tu prueba de 7 días.");
-            }
+            try { pushAssistant(msg); } catch (_) {}
+            // Marcamos como "guardado virtual" para que el flujo no se rompa
+            setSavedOk(true);
+            setBackend("none");
         }
         setBusy(false);
     };

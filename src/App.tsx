@@ -160,10 +160,10 @@ export function App() {
                                 <Route path="*"        element={<Navigate to="/" replace />} />
                             </Routes>
                         </Suspense>
-                    </BrowserRouter>
-
-                    {/* ★ v1.9.38: Botón flotante GLOBAL del asistente Riyad */}
+                    {/* ★ v1.9.38 + v1.9.43: Botón flotante GLOBAL del asistente Riyad
+                        ★ DEBE estar dentro de BrowserRouter porque el modal usa useNavigate() */}
                     <FloatingAssistantButton />
+                    </BrowserRouter>
                 </WebSocketProvider>
             </AuthProvider>
         </ErrorBoundary>
