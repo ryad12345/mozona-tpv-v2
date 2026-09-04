@@ -93,47 +93,123 @@
                 console.error('[MOZONA] promise rechazada:', msg);
             });
         </script>
-        <!-- ★ v1.8.0 - AUTO LIMPIEZA DE CACHÉ v1.7 -->
+        <!-- ★ v1.9.40 - INVALIDACIÓN AGRESIVA DE CACHÉ PWA / SW -->
         <script>
         (function() {
             try {
-                var CURRENT = 'v1.9.39-smart-engine-landing';
-                var stored = localStorage.getItem('mozona.build_version');
+                var CURRENT = 'v1.9.40-cache-bust';
+                var LS_KEY  = 'mozona.build_version';
+                var stored  = localStorage.getItem(LS_KEY);
+
+                // ──────────────────────────────────────────────
+                // 1) Si cambió la versión → limpieza TOTAL
+                // ──────────────────────────────────────────────
                 if (stored !== CURRENT) {
-                    console.log('[v1.8] build changed:', stored, '→', CURRENT, '— LIMPIANDO TODO');
-                    // Limpiar localStorage de versiones anteriores
-                    Object.keys(localStorage).forEach(function(k) {
-                        if (k.indexOf('mozona.') === 0 && k !== 'mozona.build_version') {
-                            // Mantener solo los datos críticos
-                            if (k !== 'mozona.cash_closures') {
+                    console.log('[v1.9.40] build changed:', stored, '→', CURRENT, '— LIMPIANDO TODO');
+
+                    // localStorage (mantener solo críticos)
+                    try {
+                        Object.keys(localStorage).forEach(function(k) {
+                            if (k.indexOf('mozona.') === 0
+                                && k !== LS_KEY
+                                && k !== 'mozona.cash_closures') {
                                 localStorage.removeItem(k);
                             }
-                        }
-                    });
-                    // Desregistrar TODAS las SW
+                        });
+                    } catch (_) {}
+
+                    // sessionStorage completo
+                    try { sessionStorage.clear(); } catch (_) {}
+
+                    // Desregistrar TODAS las SW (incluso las de la versión anterior)
                     if ('serviceWorker' in navigator) {
                         navigator.serviceWorker.getRegistrations().then(function(regs) {
                             regs.forEach(function(r) { r.unregister(); });
-                            console.log('[v1.8] SW desregistrados:', regs.length);
+                            console.log('[v1.9.40] SW desregistrados:', regs.length);
                         });
                     }
-                    // Limpiar caches
+
+                    // Borrar TODAS las caches PWA
                     if ('caches' in window) {
                         caches.keys().then(function(keys) {
                             keys.forEach(function(k) {
                                 caches.delete(k);
-                                console.log('[v1.8] cache borrada:', k);
+                                console.log('[v1.9.40] cache borrada:', k);
                             });
                         });
                     }
-                    localStorage.setItem('mozona.build_version', CURRENT);
-                    console.log('[v1.8] ✓ versión nueva registrada, recargando en 1.5s...');
-                    setTimeout(function() { location.reload(true); }, 1500);
-                } else {
-                    console.log('[v1.8] ya en versión correcta');
+
+                    // Marcar nueva versión ANTES de recargar
+                    localStorage.setItem(LS_KEY, CURRENT);
+
+                    // ★ Toast de aviso al usuario
+                    try {
+                        var toast = document.createElement('div');
+                        toast.id = 'mozona-cache-toast';
+                        toast.innerHTML =
+                            '<div style="position:fixed;inset:0;z-index:99999;' +
+                            'background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);' +
+                            'display:flex;align-items:center;justify-content:center;' +
+                            'font-family:-apple-system,BlinkMacSystemFont,sans-serif">' +
+                            '<div style="background:white;padding:24px 28px;border-radius:16px;' +
+                            'max-width:340px;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.25)">' +
+                            '<div style="width:48px;height:48px;margin:0 auto 14px;border-radius:50%;' +
+                            'background:#2563eb;display:flex;align-items:center;justify-content:center">' +
+                            '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"' +
+                            ' stroke="white" stroke-width="2.5" stroke-linecap="round"' +
+                            ' stroke-linejoin="round">' +
+                            '<path d="M21 12a9 9 0 1 1-6.22-8.56"/><path d="M21 4v5h-5"/>' +
+                            '</svg></div>' +
+                            '<div style="font-size:15px;font-weight:800;color:#0f172a;margin-bottom:4px">' +
+                            'Actualizando MOZONA TPV</div>' +
+                            '<div style="font-size:12.5px;color:#64748b">' +
+                            'Nueva versión detectada · Limpiando caché...</div>' +
+                            '<div style="margin-top:14px;height:3px;background:#e2e8f0;' +
+                            'border-radius:999px;overflow:hidden">' +
+                            '<div style="height:100%;background:#2563eb;border-radius:999px;' +
+                            'width:40%;animation:mozona-progress 1s linear infinite"></div>' +
+                            '</div></div></div>' +
+                            '<style>@keyframes mozona-progress{' +
+                            '0%{margin-left:0;width:0%}50%{width:60%}' +
+                            '100%{margin-left:100%;width:0%}}</style>';
+                        (document.body || document.documentElement).appendChild(toast);
+                    } catch (_) {}
+
+                    // Recarga con cache-bust (forzar GET nuevo)
+                    setTimeout(function() {
+                        var url = location.href.split('?')[0].split('#')[0];
+                        url += (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + CURRENT + '&t=' + Date.now();
+                        console.log('[v1.9.40] reload con cache-bust →', url);
+                        location.replace(url);
+                    }, 1200);
+                    return;
+                }
+
+                console.log('[v1.9.40] ya en versión correcta:', CURRENT);
+
+                // ──────────────────────────────────────────────
+                // 2) Si hay un SW con versión nueva en "waiting"
+                //    → pedirle que se active inmediatamente
+                // ──────────────────────────────────────────────
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistration().then(function(reg) {
+                        if (reg && reg.waiting) {
+                            console.log('[v1.9.40] SW en waiting → skipWaiting');
+                            try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch (_) {}
+                        }
+                    });
+
+                    // Detectar SW controllerchange (nuevo SW activado)
+                    var refreshing = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', function() {
+                        if (refreshing) return;
+                        refreshing = true;
+                        console.log('[v1.9.40] nuevo SW activado → recargando');
+                        location.reload();
+                    });
                 }
             } catch (e) {
-                console.error('[v1.8] error en auto-limpieza:', e);
+                console.error('[v1.9.40] error en auto-limpieza:', e);
             }
         })();
         </script>
