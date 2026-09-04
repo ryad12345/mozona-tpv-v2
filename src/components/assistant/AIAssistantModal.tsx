@@ -288,6 +288,8 @@ export function AIAssistantModal({
     const [emailError, setEmailError] = useState<string | null>(null);
     // ★ v1.9.54: EmailJS no configurado (env vars faltan, modo defensivo)
     const [emailNotConfigured, setEmailNotConfigured] = useState<boolean>(false);
+    // ★ v1.9.58: estado del envío vía /api/send-email (proxy)
+    const [emailStatus, setEmailStatus] = useState<"ok" | "error" | "pending" | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // ★ v1.9.39 + v1.9.51: Mensaje de bienvenida contextual según el MODE
@@ -329,6 +331,7 @@ export function AIAssistantModal({
             setBackend(null);
             setEmailError(null);
             setEmailNotConfigured(false);
+            setEmailStatus(null);
             setIsTyping(true);
             // Mensaje contextual con typing
             thinkDelay().then(() => {
@@ -436,6 +439,7 @@ export function AIAssistantModal({
                 markLeadAttempt(); // Marca el intento AHORA (rate limit)
                 setIsSubmitting(true);
                 setIsTyping(true);
+                setEmailStatus("pending");
                 try {
                     if (FIREBASE_CONFIGURED) {
                         await persistLead("trial_activo");
@@ -696,17 +700,21 @@ export function AIAssistantModal({
             console.warn("[AIAssistantModal] email notify error:", e?.message ?? e);
             emailResult = { ok: false, error: e?.message ?? "Error desconocido", via: "exception" };
         }
-        // ★ v1.9.53/54: clasificar el resultado del envío
+        // ★ v1.9.53/54/58: clasificar el resultado del envío
         if (emailResult) {
-            if (emailResult.via === "noop") {
-                // EmailJS no configurado (env vars faltan): no es un error,
-                // es estado defensivo. Mostramos info al admin.
-                setEmailNotConfigured(true);
-            } else if (!emailResult.ok) {
-                // EmailJS configurado PERO falló: error real
+            if (emailResult.ok) {
+                setEmailStatus("ok");
+                setEmailNotConfigured(false);
+                setEmailError(null);
+            } else if (emailResult.via === "noop" || emailResult.via === "network-error") {
+                // Error de red o servidor no configurado
+                setEmailStatus("error");
+                setEmailError(emailResult.error ?? "Sin respuesta del servidor");
+            } else {
+                // Error de EmailJS (HTTP 4xx/5xx)
+                setEmailStatus("error");
                 setEmailError(emailResult.error ?? "Error desconocido");
             }
-            // else: ok=true → no mensaje
         }
         setBusy(false);
     };
@@ -906,28 +914,34 @@ export function AIAssistantModal({
 
                     {savedOk && (
                         <div className="flex flex-col items-center gap-1 pt-1">
-                            <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
-                                            font-bold justify-center">
-                                <IconCheck size={12} strokeWidth={2.4} />
-                                <span>
-                                    Guardado en{" "}
-                                    <span className="uppercase">{backend ?? "—"}</span>
-                                    {" · ID: "}
-                                    {leadId?.slice(0, 8) ?? "—"}
-                                </span>
-                            </div>
-                            {/* ★ v1.9.53: error real de EmailJS si falló */}
-                            {emailError && (
-                                <div className="text-[10px] text-rose-600 font-bold
-                                                text-center px-2">
-                                    ⚠ Email no enviado: {emailError}
+                            {/* ★ v1.9.58: estado del email vía /api/send-email (proxy) */}
+                            {emailStatus === "ok" && (
+                                <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
+                                                font-bold justify-center">
+                                    <IconCheck size={12} strokeWidth={2.4} />
+                                    <span>Email enviado correctamente</span>
                                 </div>
                             )}
-                            {/* ★ v1.9.54: EmailJS no configurado (env vars faltan) */}
-                            {emailNotConfigured && (
-                                <div className="text-[10px] text-amber-700 font-bold
+                            {emailStatus === "pending" && (
+                                <div className="flex items-center gap-1.5 text-[10.5px] text-amber-700
+                                                font-bold justify-center">
+                                    <span className="inline-block w-2.5 h-2.5
+                                                     border-2 border-amber-700 border-t-transparent
+                                                     rounded-full animate-spin" />
+                                    <span>Enviando email...</span>
+                                </div>
+                            )}
+                            {emailStatus === "error" && emailError && (
+                                <div className="text-[10px] text-rose-600 font-bold
                                                 text-center px-2">
-                                    ⓘ Email no configurado (definir VITE_EMAILJS_* en Vercel)
+                                    ⚠ Error email: {emailError}
+                                </div>
+                            )}
+                            {/* ★ Lead ID: solo si Firebase lo guardó (no 'none') */}
+                            {backend && backend !== "none" && leadId && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500
+                                                font-semibold justify-center">
+                                    <span>Lead ID: {leadId.slice(0, 12)}…</span>
                                 </div>
                             )}
                         </div>
