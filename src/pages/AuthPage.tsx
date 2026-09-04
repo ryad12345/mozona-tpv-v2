@@ -111,9 +111,11 @@ export function AuthPage() {
         }
         setBusy(true);
         try {
-            // ★ v1.9.31: resetPasswordForEmail
+            // ★ v1.9.31/32: resetPasswordForEmail
+            //   redirectTo apunta a /reset-password (ruta dedicada en App.tsx)
+            //   para que Supabase inyecte el access_token y updateUser funcione
             const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: `${window.location.origin}/auth?reset=true`,
+                redirectTo: `${window.location.origin}/reset-password`,
             });
             if (error) {
                 setMsg({ kind: "err", text: error.message });

@@ -22,6 +22,7 @@ const AdminInvitesPage = lazy(() => import("./pages/AdminInvitesPage").then(m =>
 const SetupCajaPage   = lazy(() => import("./pages/SetupCajaPage").then(m => ({ default: m.SetupCajaPage })));
 const InviteRedeemPage  = lazy(() => import("./pages/InviteRedeemPage").then(m => ({ default: m.InviteRedeemPage })));
 const OnboardingWizardPage = lazy(() => import("./pages/OnboardingWizardPage").then(m => ({ default: m.OnboardingWizardPage })));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -133,6 +134,7 @@ export function App() {
                                 <Route path="/"        element={<LandingPage />} />
                                 <Route path="/pricing" element={<PricingPage />} />
                                 <Route path="/auth"    element={<AuthPage />} />
+                                <Route path="/reset-password" element={<Suspense fallback={<PageLoader label="Cargando…" />}><ResetPasswordPage /></Suspense>} />
                                 <Route path="/register" element={<Suspense fallback={<PageLoader label="Registrando…" />}><RegisterPage /></Suspense>} />
                                 <Route path="/billing/success" element={<Suspense fallback={<PageLoader />}><BillingSuccessPage /></Suspense>} />
                                 <Route path="/billing/cancel"  element={<Suspense fallback={<PageLoader />}><BillingCancelPage /></Suspense>} />
