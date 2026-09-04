@@ -42,59 +42,108 @@
 // Email del administrador (privado, no se muestra en UI)
 const ADMIN_EMAIL_DEFAULT = "rofixinsta@gmail.com";
 
-const EMAILJS_CONFIGURED: boolean = !!(
-    import.meta.env.VITE_EMAILJS_SERVICE_ID
-    && import.meta.env.VITE_EMAILJS_TEMPLATE_ID
-    && import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-);
+// ★ v1.9.55: helper para sanear valores de env vars
+// Elimina espacios, saltos de línea, comillas accidentales
+function cleanEnv(value: string | undefined | null): string {
+    if (value == null) return "";
+    return String(value).trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "");
+}
 
-/** ★ v1.9.54: diagnóstico completo de la configuración de EmailJS */
+/** ★ v1.9.55: helper para validar si una env var está REALMENTE configurada
+ *  No acepta: undefined, "", "undefined", "null", solo espacios, etc. */
+function isEnvSet(value: string | undefined | null): boolean {
+    const v = cleanEnv(value);
+    if (!v) return false;
+    if (v === "undefined" || v === "null" || v === "false") return false;
+    // EmailJS public keys suelen tener ~40 chars; service/template IDs también
+    if (v.length < 8) return false;
+    return true;
+}
+
+/** ★ v1.9.55: constantes evaluadas al cargar el módulo
+ *  Usan isEnvSet() en lugar de simple truthy check */
+const RAW_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+const RAW_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+const RAW_PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+const SERVICE_ID  = cleanEnv(RAW_SERVICE_ID);
+const TEMPLATE_ID = cleanEnv(RAW_TEMPLATE_ID);
+const PUBLIC_KEY  = cleanEnv(RAW_PUBLIC_KEY);
+
+const EMAILJS_CONFIGURED: boolean =
+    isEnvSet(SERVICE_ID) && isEnvSet(TEMPLATE_ID) && isEnvSet(PUBLIC_KEY);
+
+/** ★ v1.9.55: diagnóstico completo de la configuración de EmailJS */
 export interface EmailJSConfigStatus {
     configured: boolean;
-    missing:    string[];      // nombres de variables faltantes
-    values: {
-        serviceId:  string | undefined;
-        templateId: string | undefined;
-        publicKey:  string | undefined;
+    missing:    string[];      // nombres de variables faltantes o inválidas
+    invalid:    string[];      // vars con valor presente pero inválido
+    values:     {
+        serviceId:  string;
+        templateId: string;
+        publicKey:  string;
+    };
+    rawLengths: {
+        serviceId:  number;
+        templateId: number;
+        publicKey:  number;
     };
 }
 
 export function checkEmailJSConfig(): EmailJSConfigStatus {
-    const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID  as string | undefined;
-    const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string | undefined;
-    const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY  as string | undefined;
     const missing: string[] = [];
-    if (!serviceId)  missing.push("VITE_EMAILJS_SERVICE_ID");
-    if (!templateId) missing.push("VITE_EMAILJS_TEMPLATE_ID");
-    if (!publicKey)  missing.push("VITE_EMAILJS_PUBLIC_KEY");
+    const invalid: string[] = [];
+    if (!RAW_SERVICE_ID)         missing.push("VITE_EMAILJS_SERVICE_ID");
+    else if (!isEnvSet(SERVICE_ID))  invalid.push("VITE_EMAILJS_SERVICE_ID");
+    if (!RAW_TEMPLATE_ID)        missing.push("VITE_EMAILJS_TEMPLATE_ID");
+    else if (!isEnvSet(TEMPLATE_ID)) invalid.push("VITE_EMAILJS_TEMPLATE_ID");
+    if (!RAW_PUBLIC_KEY)         missing.push("VITE_EMAILJS_PUBLIC_KEY");
+    else if (!isEnvSet(PUBLIC_KEY))  invalid.push("VITE_EMAILJS_PUBLIC_KEY");
     return {
-        configured: missing.length === 0,
+        configured: missing.length === 0 && invalid.length === 0,
         missing,
-        values: { serviceId, templateId, publicKey },
+        invalid,
+        values: {
+            serviceId:  SERVICE_ID,
+            templateId: TEMPLATE_ID,
+            publicKey:  PUBLIC_KEY,
+        },
+        rawLengths: {
+            serviceId:  String(RAW_SERVICE_ID  ?? "").length,
+            templateId: String(RAW_TEMPLATE_ID ?? "").length,
+            publicKey:  String(RAW_PUBLIC_KEY  ?? "").length,
+        },
     };
 }
 
-/** Log diagnóstico al cargar el módulo (solo en dev o si no está configurado) */
+/** ★ v1.9.55: Log diagnóstico al cargar el módulo
+ *  Muestra siempre el estado real de las env vars
+ *  (longitud, primeros chars sanitizados, etc.) */
 if (typeof window !== "undefined") {
     const diag = checkEmailJSConfig();
+    const mask = (s: string) => s.length > 0
+        ? `${s.slice(0, 8)}...${s.slice(-4)} (${s.length} chars)`
+        : "(empty)";
+
     if (!diag.configured) {
         console.warn(
             "%c[notify] EmailJS no configurado",
             "background:#fbbf24;color:#000;padding:2px 6px;border-radius:3px;font-weight:bold",
-            "\nFaltan variables de entorno:",
-            diag.missing,
-            "\nDefine estas 3 vars en Vercel → Settings → Environment Variables:",
-            "\n  VITE_EMAILJS_SERVICE_ID",
-            "\n  VITE_EMAILJS_TEMPLATE_ID",
-            "\n  VITE_EMAILJS_PUBLIC_KEY",
-            "\nSin esto, los leads se guardan en BD pero NO se envia email."
+            "\nFaltan (undefined):", diag.missing.length ? diag.missing : "ninguna",
+            "\nInvalidas (valor presente pero malformado):", diag.invalid.length ? diag.invalid : "ninguna",
+            "\nValores actuales (en runtime):",
+            "\n  VITE_EMAILJS_SERVICE_ID :", mask(diag.values.serviceId),   "(raw:", diag.rawLengths.serviceId,  "chars)",
+            "\n  VITE_EMAILJS_TEMPLATE_ID:", mask(diag.values.templateId),  "(raw:", diag.rawLengths.templateId, "chars)",
+            "\n  VITE_EMAILJS_PUBLIC_KEY :", mask(diag.values.publicKey),   "(raw:", diag.rawLengths.publicKey,  "chars)",
+            "\nDefine en Vercel -> Settings -> Environment Variables y haz redeploy.",
         );
     } else {
         console.log(
             "%c[notify] EmailJS OK",
             "background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
-            "Service:", diag.values.serviceId?.slice(0, 12) + "...",
-            "Template:", diag.values.templateId?.slice(0, 12) + "...",
+            "Service: ",  mask(diag.values.serviceId),
+            "Template:",  mask(diag.values.templateId),
+            "PublicKey:", mask(diag.values.publicKey),
         );
     }
 }
@@ -212,26 +261,31 @@ function buildTextBody(data: LeadEmailData): string {
  *  via='noop' significa que NO se envio (env vars faltantes).
  *  via='emailjs-sdk' o 'emailjs-rest' significan que SI se intento.
  *  NUNCA lanza excepción. */
-export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean; error?: string; via: string }> {
-    const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID   as string | undefined;
-    const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID  as string | undefined;
-    const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY   as string | undefined;
-
-    if (!serviceId || !templateId || !publicKey) {
-        // ★ v1.9.54: modo noop EXPLÍCITO, no silencioso
-        // via='noop' indica que NO se envio (no fingir ok=true real)
+export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean; error?: string; via: string; statusCode?: number }> {
+    // ★ v1.9.55: usar las versiones saneadas (trim + no undefined literal)
+    // Si están vacías o malformadas, noop explícito
+    if (!EMAILJS_CONFIGURED) {
         const diag = checkEmailJSConfig();
+        const reason = diag.missing.length
+            ? `faltan: ${diag.missing.join(", ")}`
+            : `inválidas: ${diag.invalid.join(", ")}`;
         console.warn(
-            "[notify] EmailJS no configurado. NO se envio email.",
-            "\nFaltan:", diag.missing,
-            "\nDefine en Vercel -> Settings -> Environment Variables"
+            "[notify] EmailJS no configurado. NO se envío email.",
+            `\nVariables ${reason}`,
+            "\nService: ", diag.values.serviceId.length, "chars (raw:", diag.rawLengths.serviceId, ")",
+            "\nTemplate:", diag.values.templateId.length, "chars (raw:", diag.rawLengths.templateId, ")",
+            "\nPubKey:   ", diag.values.publicKey.length, "chars (raw:", diag.rawLengths.publicKey, ")",
         );
         return {
             ok: false,
-            error: "EmailJS no configurado (faltan env vars en Vercel)",
+            error: `EmailJS no configurado (${reason})`,
             via: "noop",
         };
     }
+
+    const serviceId  = SERVICE_ID;
+    const templateId = TEMPLATE_ID;
+    const publicKey  = PUBLIC_KEY;
 
     const subject = buildSubject(data);
     const html    = buildHtmlBody(data);
@@ -254,23 +308,28 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean;
         trial_until:   data.trialEndsAt    || "",
     };
 
-    // ★ Camino 1: SDK EmailJS (mejor experiencia en navegadores modernos)
-    if (EMAILJS_CONFIGURED) {
-        try {
-            // Carga dinámica: si EmailJS falla, el bundle principal sigue OK
-            const emailjs = await import("@emailjs/browser");
-            const resp = await emailjs.send(serviceId, templateId, templateParams, {
-                publicKey: publicKey,
-            });
-            console.log("[notify] EmailJS OK:", resp?.status, resp?.text);
-            return { ok: true, via: "emailjs-sdk" };
-        } catch (e: any) {
-            console.warn("[notify] EmailJS SDK falló, intento REST:", e?.message ?? e);
-            // Continúa al fallback REST
-        }
+    // ★ v1.9.55: Camino 1: SDK EmailJS con propagación de error real
+    try {
+        const emailjs = await import("@emailjs/browser");
+        const resp = await emailjs.send(serviceId, templateId, templateParams, {
+            publicKey: publicKey,
+        });
+        console.log("[notify] EmailJS SDK OK:", resp?.status, resp?.text);
+        return { ok: true, via: "emailjs-sdk", statusCode: resp?.status ?? 200 };
+    } catch (e: any) {
+        const status = e?.status ?? e?.response?.status;
+        const text   = e?.text ?? e?.response?.text ?? e?.message ?? "Error";
+        console.warn(
+            "[notify] EmailJS SDK error:",
+            `\n  status: ${status ?? "?"}`,
+            `\n  text:   ${text}`,
+            "\nIntentando fallback REST...",
+        );
+        // ★ NO degradar a noop: continuar al fallback REST con el mismo config
     }
 
-    // ★ Camino 2: REST API directo
+    // ★ v1.9.55: Camino 2: REST API directo
+    // Si EmailJS falla, propagamos el status y body exactos al UI
     try {
         const resp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
             method: "POST",
@@ -286,14 +345,28 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean;
         });
         if (!resp.ok) {
             const body = await resp.text().catch(() => "");
-            console.warn("[notify] REST status", resp.status, body.slice(0, 200));
-            return { ok: false, error: `HTTP ${resp.status}`, via: "emailjs-rest" };
+            console.warn(
+                "[notify] REST status",
+                resp.status,
+                "\n  body:",
+                body.slice(0, 500),
+            );
+            return {
+                ok: false,
+                error: `EmailJS HTTP ${resp.status}: ${body.slice(0, 200) || resp.statusText}`,
+                via: "emailjs-rest",
+                statusCode: resp.status,
+            };
         }
         console.log("[notify] EmailJS REST OK");
-        return { ok: true, via: "emailjs-rest" };
+        return { ok: true, via: "emailjs-rest", statusCode: resp.status };
     } catch (e: any) {
         console.warn("[notify] REST error:", e?.message ?? e);
-        return { ok: false, error: e?.message ?? "Error", via: "emailjs-rest" };
+        return {
+            ok: false,
+            error: `EmailJS red: ${e?.message ?? "Error"}`,
+            via: "emailjs-rest",
+        };
     }
 }
 
