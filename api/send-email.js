@@ -123,6 +123,22 @@ function buildSubject(d) {
 }
 
 export default async function handler(req, res) {
+    // ★ v1.9.59: try-catch GLOBAL como safety net definitivo
+    // Garantiza que NUNCA se queda colgado sin responder
+    try {
+        return await handleRequest(req, res);
+    } catch (e) {
+        console.error("[api/send-email] UNCAUGHT error:", e);
+        if (!res.headersSent) {
+            return res.status(500).json({
+                ok: false,
+                error: `Server error: ${e?.message ?? "Unknown"}`,
+            });
+        }
+    }
+}
+
+async function handleRequest(req, res) {
     const origin = req.headers.origin || req.headers.referer?.replace(/\/$/, "") || "";
     setCors(res, origin);
 
@@ -185,7 +201,12 @@ export default async function handler(req, res) {
         trial_until:   data.trialEndsAt    || "",
     };
 
-    // Llamada a EmailJS REST API (desde el servidor)
+    // ★ v1.9.59: llamada a EmailJS con AbortController (timeout 5s)
+    //    Garantiza que SIEMPRE devolvemos una respuesta, nunca cuelga
+    const TIMEOUT_MS = 5000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
     try {
         const emailjsResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
             method: "POST",
@@ -196,7 +217,9 @@ export default async function handler(req, res) {
                 user_id:        PUBLIC_KEY,
                 template_params: templateParams,
             }),
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         const body = await emailjsResp.text().catch(() => "");
 
@@ -217,6 +240,16 @@ export default async function handler(req, res) {
             leadId: data.leadId,
         });
     } catch (e) {
+        clearTimeout(timeoutId);
+        // ★ v1.9.59: manejar AbortError específicamente
+        if (e?.name === "AbortError") {
+            console.error("[api/send-email] Timeout (>5s) al llamar a EmailJS");
+            return res.status(504).json({
+                ok: false,
+                error: "Timeout: EmailJS no respondió en 5 segundos",
+                statusCode: 504,
+            });
+        }
         console.error("[api/send-email] Network error:", e);
         return res.status(502).json({
             ok: false,

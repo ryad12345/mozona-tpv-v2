@@ -48,6 +48,11 @@ export interface SendResult {
  *  Hace POST a /api/send-email. La Vercel Serverless Function
  *  lee las credenciales del servidor y llama a EmailJS. */
 export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
+    // ★ v1.9.59: timeout del cliente (10s) por si el serverless cuelga
+    const TIMEOUT_MS = 10000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
     try {
         const resp = await fetch("/api/send-email", {
             method: "POST",
@@ -56,13 +61,14 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
                 "Accept": "application/json",
             },
             body: JSON.stringify(data),
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         let json: any = null;
         try {
             json = await resp.json();
         } catch (_) {
-            // Si la respuesta no es JSON válido, devolvemos error genérico
             return {
                 ok: false,
                 error: `Respuesta no-JSON del servidor (HTTP ${resp.status})`,
@@ -88,6 +94,14 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
             leadId: json.leadId,
         };
     } catch (e: any) {
+        clearTimeout(timeoutId);
+        if (e?.name === "AbortError") {
+            return {
+                ok: false,
+                error: "Timeout: el servidor no respondió en 10s",
+                via: "network-error",
+            };
+        }
         console.error("[notify] network error:", e);
         return {
             ok: false,
