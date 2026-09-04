@@ -29,6 +29,7 @@ import { useEffect, useRef, useState } from "react";
 import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
 import { sendLeadEmail } from "../../lib/notify";
+import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit, LEAD_RATE_LIMIT_MS } from "../../lib/leadGuard";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { IconCheck } from "../icons";
@@ -119,6 +120,79 @@ const PLAN_LABEL: Record<PlanCode, string> = {
     trial:         "Trial 7 días",
 };
 
+/** ★ v1.9.49: vista cuando el usuario ya envió un lead desde este dispositivo */
+function AlreadySubmittedView({
+    onClose, isLogged, navigate,
+}: { onClose: () => void; isLogged: boolean; navigate: (path: string) => void }) {
+    return (
+        <div className="fixed inset-0 z-[200] bg-slate-900/70 backdrop-blur-sm
+                        flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl
+                            shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden
+                            border border-slate-200/80">
+                {/* Cabecera */}
+                <div className="bg-gradient-to-br from-emerald-600 to-emerald-700
+                                text-white px-5 py-4 flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur
+                                    flex items-center justify-center shadow-lg">
+                        <IconCheck size={22} strokeWidth={3} />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-[14px] font-black tracking-tight">
+                            Solicitud ya registrada
+                        </h3>
+                        <p className="text-[10.5px] text-emerald-100 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 inline-block" />
+                            Recepción confirmada
+                        </p>
+                    </div>
+                    <button onClick={onClose}
+                            className="w-8 h-8 rounded-xl text-white/80 hover:text-white
+                                       hover:bg-white/10 flex items-center justify-center">
+                        ✕
+                    </button>
+                </div>
+
+                {/* Cuerpo */}
+                <div className="px-5 py-6 text-center space-y-4">
+                    <p className="text-[13.5px] text-slate-700 leading-relaxed">
+                        Tu solicitud ya ha sido recibida correctamente. Nos pondremos en contacto
+                        contigo a la brevedad al correo electrónico que nos facilitaste.
+                    </p>
+                    <p className="text-[11.5px] text-slate-400">
+                        Si necesitas modificar algún dato, escríbenos por WhatsApp.
+                    </p>
+                </div>
+
+                {/* Acciones */}
+                <div className="border-t border-slate-200/80 bg-white px-4 py-3 space-y-2">
+                    <button type="button"
+                            onClick={() => {
+                                try {
+                                    if (isLogged) navigate("/app");
+                                    else navigate("/auth?signup=1");
+                                } catch (_) {
+                                    try { location.href = isLogged ? "/app" : "/auth?signup=1"; } catch (_) {}
+                                }
+                                try { onClose(); } catch (_) {}
+                            }}
+                            className="w-full h-10 rounded-xl bg-blue-600 text-white
+                                       text-[12.5px] font-black active:scale-95 transition
+                                       hover:bg-blue-700">
+                        🚀 Entrar al Panel
+                    </button>
+                    <button type="button"
+                            onClick={onClose}
+                            className="w-full h-8 text-[11px] text-slate-500 font-semibold
+                                       hover:text-slate-700">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function AIAssistantModal({
     open, onClose, source, ctxEmail, ctxName, ctxPlan, onSuccess,
 }: Props) {
@@ -137,6 +211,10 @@ export function AIAssistantModal({
     const [savedOk, setSavedOk] = useState(false);
     const [backend, setBackend]   = useState<"firebase" | "supabase" | "none" | null>(null);
     const [isTyping, setIsTyping] = useState(false);  // ★ v1.9.39: Smart Engine
+    // ★ v1.9.49: estado de envío + rate limit
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [alreadySubmitted] = useState<boolean>(() => isLeadAlreadySubmitted());
+    const [rateLimitedUntil, setRateLimitedUntil] = useState<number>(0);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // ★ v1.9.39: Mensaje de bienvenida contextual
@@ -235,17 +313,33 @@ export function AIAssistantModal({
             if (value === "fix-email") { await goToStep("email"); return; }
             if (value === "fix-name")  { await goToStep("name");  return; }
             if (value === "yes") {
-                setIsTyping(true);
-                if (FIREBASE_CONFIGURED) {
-                    // ★ Camino normal: guardar en Firestore
-                    await persistLead("trial_activo");
-                } else {
-                    // ★ v1.9.41 Camino defensivo: Firebase no configurado
-                    //   → simulamos "guardado" y pasamos a WhatsApp directo
-                    setSavedOk(true);
-                    setBackend("none");
+                // ★ v1.9.49: Rate limit check
+                if (!canSubmitAgain()) {
+                    const ms = msUntilNextSubmit();
+                    const s = Math.ceil(ms / 1000);
+                    setRateLimitedUntil(Date.now() + ms);
+                    try { pushAssistant(`⏳ Acabas de enviar una solicitud. Espera ${s}s para enviar otra.`); } catch (_) {}
+                    return;
                 }
-                setIsTyping(false);
+                if (isSubmitting) {
+                    return; // Doble-click seguro
+                }
+                markLeadAttempt(); // Marca el intento AHORA (rate limit)
+                setIsSubmitting(true);
+                setIsTyping(true);
+                try {
+                    if (FIREBASE_CONFIGURED) {
+                        await persistLead("trial_activo");
+                    } else {
+                        setSavedOk(true);
+                        setBackend("none");
+                    }
+                    // ★ v1.9.49: marca el envío exitoso en localStorage
+                    markLeadSubmitted();
+                } finally {
+                    setIsSubmitting(false);
+                    setIsTyping(false);
+                }
                 await goToStep("done");
                 return;
             }
@@ -359,6 +453,12 @@ export function AIAssistantModal({
     };
 
     if (!open) return null;
+
+    // ★ v1.9.49: Si ya se envió una solicitud desde este dispositivo,
+    //    mostrar mensaje permanente en lugar del flujo de 5 pasos.
+    if (alreadySubmitted) {
+        return <AlreadySubmittedView onClose={onClose} isLogged={isLogged} navigate={navigate} />;
+    }
 
     // Texto de confirmación
     const confirmText =
@@ -509,17 +609,33 @@ export function AIAssistantModal({
                         </div>
                     ) : STEPS[currentStep]?.options ? (
                         <div className="grid grid-cols-1 gap-2">
-                            {STEPS[currentStep].options!.map((opt, i) => (
+                            {STEPS[currentStep].options!.map((opt, i) => {
+                                // ★ v1.9.49: el botón "yes" muestra "Enviando..." durante el submit
+                                const isYesSubmitting = isSubmitting
+                                    && currentStep === "confirm"
+                                    && opt.value === "yes";
+                                const label = isYesSubmitting
+                                    ? "⏳  Enviando solicitud..."
+                                    : opt.label;
+                                return (
                                 <button key={i}
                                         onClick={() => handleOption(opt.value, opt.next)}
-                                        disabled={isTyping || (busy && currentStep === "confirm")}
+                                        disabled={isTyping || isSubmitting || (busy && currentStep === "confirm")}
                                         className="w-full h-10 rounded-xl bg-slate-100 hover:bg-slate-200
                                                    text-[12.5px] font-bold text-slate-800
                                                    active:scale-95 transition disabled:opacity-50
                                                    text-left px-4 flex items-center gap-2">
-                                    <span className="text-blue-600">→</span> {opt.label}
+                                    {isYesSubmitting ? (
+                                        <span className="inline-block w-3.5 h-3.5
+                                                         border-2 border-blue-600 border-t-transparent
+                                                         rounded-full animate-spin" />
+                                    ) : (
+                                        <span className="text-blue-600">→</span>
+                                    )}
+                                    {label}
                                 </button>
-                            ))}
+                                );
+                            })}
                         </div>
                     ) : null}
 
