@@ -42,6 +42,35 @@
 // Email del administrador (privado, no se muestra en UI)
 const ADMIN_EMAIL_DEFAULT = "rofixinsta@gmail.com";
 
+// ★ v1.9.56: FALLBACK HARDCODEADO de credenciales EmailJS
+// Si las env vars VITE_EMAILJS_* no se inyectan en el bundle
+// (problema conocido en algunos entornos de build), el código
+// usa estas constantes como respaldo.
+//
+// INSTRUCCIONES PARA ACTIVAR:
+//   1. Crea una cuenta en https://www.emailjs.com/ (gratis)
+//   2. Email Services -> Add New Service (Gmail, Outlook, etc.)
+//   3. Email Templates -> Create New Template
+//      (usa {{to_email}}, {{subject}}, {{message}}, {{html_body}}, etc.)
+//   4. Account -> Public Key
+//   5. Rellena las 3 constantes de abajo con tus credenciales
+//   6. Redeploy (o el cambio se aplica al siguiente build)
+//
+// ⚠️ SEGURIDAD:
+//   - EmailJS Public Key está DISEÑADA para ser pública
+//     (se usa en el cliente para autenticar el envío)
+//   - Los Service ID y Template ID tampoco son secretos
+//   - La seguridad real está en: el template EmailJS,
+//     el SMTP configurado en el servicio, y las reglas
+//     de dominio de EmailJS
+const FALLBACK_EMAILJS_CONFIG = {
+    serviceId:  "",  // ← pega aquí tu Service ID  (ej: "service_abc123")
+    templateId: "",  // ← pega aquí tu Template ID (ej: "template_xyz789")
+    publicKey:  "",  // ← pega aquí tu Public Key   (ej: "AbCdEfGhIjK...")
+// ⚠️ NO COMMITEES CREDENCIALES REALES A REPOSITORIOS PÚBLICOS.
+// Si tu repo es privado, puedes pegarlas. Si es público, usa Vercel env vars.
+};
+
 // ★ v1.9.55: helper para sanear valores de env vars
 // Elimina espacios, saltos de línea, comillas accidentales
 function cleanEnv(value: string | undefined | null): string {
@@ -70,8 +99,42 @@ const SERVICE_ID  = cleanEnv(RAW_SERVICE_ID);
 const TEMPLATE_ID = cleanEnv(RAW_TEMPLATE_ID);
 const PUBLIC_KEY  = cleanEnv(RAW_PUBLIC_KEY);
 
-const EMAILJS_CONFIGURED: boolean =
-    isEnvSet(SERVICE_ID) && isEnvSet(TEMPLATE_ID) && isEnvSet(PUBLIC_KEY);
+/** ★ v1.9.56: fuente efectiva de credenciales
+ *  Prioridad: env vars > fallback hardcodeado
+ *  Retorna el primer valor que esté "set" (no vacío, válido) */
+function getEffectiveConfig(): {
+    serviceId:  string;
+    templateId: string;
+    publicKey:  string;
+    source:     "env" | "fallback" | "none";
+} {
+    // 1) Intentar env vars
+    if (isEnvSet(SERVICE_ID) && isEnvSet(TEMPLATE_ID) && isEnvSet(PUBLIC_KEY)) {
+        return {
+            serviceId:  SERVICE_ID,
+            templateId: TEMPLATE_ID,
+            publicKey:  PUBLIC_KEY,
+            source:     "env",
+        };
+    }
+    // 2) Fallback hardcodeado
+    const fb = FALLBACK_EMAILJS_CONFIG;
+    const fbService  = cleanEnv(fb.serviceId);
+    const fbTemplate = cleanEnv(fb.templateId);
+    const fbKey      = cleanEnv(fb.publicKey);
+    if (isEnvSet(fbService) && isEnvSet(fbTemplate) && isEnvSet(fbKey)) {
+        return {
+            serviceId:  fbService,
+            templateId: fbTemplate,
+            publicKey:  fbKey,
+            source:     "fallback",
+        };
+    }
+    return { serviceId: "", templateId: "", publicKey: "", source: "none" };
+}
+
+const EFFECTIVE = getEffectiveConfig();
+const EMAILJS_CONFIGURED: boolean = EFFECTIVE.source !== "none";
 
 /** ★ v1.9.55: diagnóstico completo de la configuración de EmailJS */
 export interface EmailJSConfigStatus {
@@ -88,6 +151,7 @@ export interface EmailJSConfigStatus {
         templateId: number;
         publicKey:  number;
     };
+    source:     "env" | "fallback" | "none";
 }
 
 export function checkEmailJSConfig(): EmailJSConfigStatus {
@@ -100,25 +164,25 @@ export function checkEmailJSConfig(): EmailJSConfigStatus {
     if (!RAW_PUBLIC_KEY)         missing.push("VITE_EMAILJS_PUBLIC_KEY");
     else if (!isEnvSet(PUBLIC_KEY))  invalid.push("VITE_EMAILJS_PUBLIC_KEY");
     return {
-        configured: missing.length === 0 && invalid.length === 0,
+        configured: EFFECTIVE.source !== "none",
         missing,
         invalid,
         values: {
-            serviceId:  SERVICE_ID,
-            templateId: TEMPLATE_ID,
-            publicKey:  PUBLIC_KEY,
+            serviceId:  EFFECTIVE.serviceId,
+            templateId: EFFECTIVE.templateId,
+            publicKey:  EFFECTIVE.publicKey,
         },
         rawLengths: {
             serviceId:  String(RAW_SERVICE_ID  ?? "").length,
             templateId: String(RAW_TEMPLATE_ID ?? "").length,
             publicKey:  String(RAW_PUBLIC_KEY  ?? "").length,
         },
+        source: EFFECTIVE.source,
     };
 }
 
-/** ★ v1.9.55: Log diagnóstico al cargar el módulo
- *  Muestra siempre el estado real de las env vars
- *  (longitud, primeros chars sanitizados, etc.) */
+/** ★ v1.9.55/56: Log diagnóstico al cargar el módulo
+ *  Muestra fuente efectiva (env | fallback | none) */
 if (typeof window !== "undefined") {
     const diag = checkEmailJSConfig();
     const mask = (s: string) => s.length > 0
@@ -135,15 +199,18 @@ if (typeof window !== "undefined") {
             "\n  VITE_EMAILJS_SERVICE_ID :", mask(diag.values.serviceId),   "(raw:", diag.rawLengths.serviceId,  "chars)",
             "\n  VITE_EMAILJS_TEMPLATE_ID:", mask(diag.values.templateId),  "(raw:", diag.rawLengths.templateId, "chars)",
             "\n  VITE_EMAILJS_PUBLIC_KEY :", mask(diag.values.publicKey),   "(raw:", diag.rawLengths.publicKey,  "chars)",
-            "\nDefine en Vercel -> Settings -> Environment Variables y haz redeploy.",
+            "\nPara activar emails:",
+            "\n  OPCION A: Vercel -> Settings -> Environment Variables + redeploy",
+            "\n  OPCION B: Edita FALLBACK_EMAILJS_CONFIG en src/lib/notify.ts",
         );
     } else {
         console.log(
             "%c[notify] EmailJS OK",
             "background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
-            "Service: ",  mask(diag.values.serviceId),
-            "Template:",  mask(diag.values.templateId),
-            "PublicKey:", mask(diag.values.publicKey),
+            "Fuente:", diag.source,
+            "\n  Service: ",  mask(diag.values.serviceId),
+            "\n  Template:",  mask(diag.values.templateId),
+            "\n  PublicKey:", mask(diag.values.publicKey),
         );
     }
 }
@@ -283,9 +350,10 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<{ ok: boolean;
         };
     }
 
-    const serviceId  = SERVICE_ID;
-    const templateId = TEMPLATE_ID;
-    const publicKey  = PUBLIC_KEY;
+    const serviceId  = EFFECTIVE.serviceId;
+    const templateId = EFFECTIVE.templateId;
+    const publicKey  = EFFECTIVE.publicKey;
+    console.log(`[notify] usando credenciales desde: ${EFFECTIVE.source}`);
 
     const subject = buildSubject(data);
     const html    = buildHtmlBody(data);
