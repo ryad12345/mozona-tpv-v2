@@ -54,7 +54,7 @@ export default defineConfig({
                 name: "MOZONA TPV",
                 short_name: "MozonaTPV",
                 description: "Sistema TPV Local-First para hostelería con VeriFactu",
-                version: "1.9.40-cache-bust",
+                version: "1.9.41-defensive-whatsapp",
                 lang: "es-ES",
                 dir: "ltr",
                 scope: "/",
