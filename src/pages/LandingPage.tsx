@@ -28,10 +28,10 @@ const FEATURES = [
 ];
 
 const PLANS = [
-    { name: "Plus",  price: "30",  tag: "Recomendado",
+    { id: "basic",        name: "Plus",  price: "30",  tag: "Recomendado",
       perks: ["TPV ilimitado en la nube", "Comanderos móviles en tiempo real", "Mesas, tickets e inventario",
               "VeriFactu + AES-256", "Soporte por email"] },
-    { name: "Pro",   price: "50",  tag: "Para crecer",
+    { id: "professional", name: "Pro",   price: "50",  tag: "Para crecer",
       perks: ["Todo lo de Plus", "Soporte técnico prioritario", "Asistencia remota",
               "Copias de seguridad continuas", "Formación inicial"] },
 ];
@@ -58,25 +58,6 @@ export function LandingPage() {
                         <a href="#features"  className="hover:text-slate-900 transition">Características</a>
                         <a href="#pricing"   className="hover:text-slate-900 transition">Planes</a>
                         <a href="#faq"       className="hover:text-slate-900 transition">FAQ</a>
-                        {/* ★ v1.9.38: Asistente / Probar 7 días */}
-                        <button
-                            type="button"
-                            onClick={() => openAssistant({ source: "landing" })}
-                            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full
-                                       bg-violet-50 text-violet-700
-                                       border border-violet-200/80
-                                       hover:bg-violet-100 active:scale-95 transition
-                                       text-[12px] font-bold">
-                            <span className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-600 to-violet-700
-                                             text-white text-[10px] font-black flex items-center justify-center
-                                             relative">
-                                R
-                                <span className="absolute -bottom-0.5 -right-0.5
-                                                 w-1.5 h-1.5 rounded-full bg-emerald-500
-                                                 border border-white" />
-                            </span>
-                            <span>Habla con Riyad</span>
-                        </button>
                     </nav>
                     <div className="flex items-center gap-2">
                         {auth.user ? (
@@ -95,14 +76,15 @@ export function LandingPage() {
                                                  hover:text-slate-900 transition hidden sm:inline-flex">
                                     Iniciar sesión
                                 </Link>
-                                <Link to="/auth?signup=1"
-                                      className="h-9 px-4 inline-flex items-center gap-1.5 rounded-xl
-                                                 bg-blue-600 text-white text-[12.5px] font-bold
-                                                 shadow-sm shadow-blue-600/30
-                                                 active:scale-95 transition">
+                                <button type="button"
+                                        onClick={() => openAssistant({ source: "landing" })}
+                                        className="h-9 px-4 inline-flex items-center gap-1.5 rounded-xl
+                                                   bg-blue-600 text-white text-[12.5px] font-bold
+                                                   shadow-sm shadow-blue-600/30
+                                                   active:scale-95 transition">
                                     Probar 7 días
                                     <IconArrowRight size={14} strokeWidth={2.4} />
-                                </Link>
+                                </button>
                             </>
                         )}
                     </div>
@@ -128,14 +110,15 @@ export function LandingPage() {
                         todo lo que tu local necesita — funciona online y offline, sin instalaciones.
                     </p>
                     <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
-                        <Link to="/auth?signup=1"
+                        <button type="button"
+                              onClick={() => openAssistant({ source: "landing" })}
                               className="h-12 px-6 inline-flex items-center gap-2 rounded-2xl
                                          bg-slate-900 text-white text-[15px] font-black
                                          shadow-lg shadow-slate-900/20
                                          hover:scale-[1.02] active:scale-95 transition">
-                            Empezar 14 días gratis
+                            Probar 7 días gratis
                             <IconArrowRight size={16} strokeWidth={2.4} />
-                        </Link>
+                        </button>
                         <a href="#features"
                            className="h-12 px-5 inline-flex items-center
                                       text-[14px] font-semibold text-slate-700
@@ -220,12 +203,16 @@ export function LandingPage() {
                                         </li>
                                     ))}
                                 </ul>
-                                <Link to="/auth?signup=1"
-                                      className="mt-6 w-full h-11 inline-flex items-center justify-center
-                                                 rounded-xl bg-slate-900 text-white text-[13.5px] font-black
-                                                 active:scale-95 transition">
-                                    Empezar con {p.name}
-                                </Link>
+                                <button type="button"
+                                        onClick={() => openAssistant({
+                                            source: "pricing",
+                                            ctxPlan: p.id as any,
+                                        })}
+                                        className="mt-6 w-full h-11 inline-flex items-center justify-center
+                                                   rounded-xl bg-slate-900 text-white text-[13.5px] font-black
+                                                   active:scale-95 transition">
+                                    Elegir {p.name} · Probar 7 días
+                                </button>
                             </div>
                         ))}
                     </div>

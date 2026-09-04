@@ -33,6 +33,7 @@ interface OpenDetail {
     source?:  Source;
     ctxEmail?: string;
     ctxName?:  string;
+    ctxPlan?:  import("../../lib/chatLeads").PlanCode;
 }
 
 /** ★ API pública: abre el modal del asistente */
@@ -49,6 +50,7 @@ export function FloatingAssistantButton() {
     const [source, setSource] = useState<Source>("floating");
     const [ctxEmail, setCtxEmail] = useState<string | undefined>();
     const [ctxName,  setCtxName]  = useState<string | undefined>();
+    const [ctxPlan,  setCtxPlan]  = useState<import("../../lib/chatLeads").PlanCode | undefined>();
     const [hovered, setHovered] = useState(false);
 
     // Escuchar eventos globales
@@ -58,6 +60,7 @@ export function FloatingAssistantButton() {
             setSource(detail.source ?? "floating");
             setCtxEmail(detail.ctxEmail);
             setCtxName(detail.ctxName);
+            setCtxPlan(detail.ctxPlan);
             setOpen(true);
         };
         const closeHandler = () => setOpen(false);
@@ -147,6 +150,7 @@ export function FloatingAssistantButton() {
                 source={source}
                 ctxEmail={ctxEmail}
                 ctxName={ctxName}
+                ctxPlan={ctxPlan}
             />
         </>
     );

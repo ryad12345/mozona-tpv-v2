@@ -21,6 +21,7 @@
 //   source     — desde dónde se abre ('paywall' | 'landing' | 'onboarding' | 'pricing' | 'settings')
 //   ctxEmail   — email si ya logueado (opcional)
 //   ctxName    — nombre restaurante si ya logueado (opcional)
+//   ctxPlan    — plan pre-seleccionado (basic | professional | premium | trial)
 //   onSuccess  — callback tras crear el lead (recibe leadId)
 // =====================================================================
 
@@ -34,6 +35,7 @@ interface Props {
     source: AssistantSource;
     ctxEmail?: string;
     ctxName?:  string;
+    ctxPlan?:  PlanCode;
     onSuccess?: (leadId: string) => void;
 }
 
@@ -111,12 +113,12 @@ const PLAN_LABEL: Record<PlanCode, string> = {
 };
 
 export function AIAssistantModal({
-    open, onClose, source, ctxEmail, ctxName, onSuccess,
+    open, onClose, source, ctxEmail, ctxName, ctxPlan, onSuccess,
 }: Props) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [currentStep, setCurrentStep] = useState<string>("welcome");
     const [businessType, setBusinessType] = useState<string>("");
-    const [plan, setPlan] = useState<PlanCode | "">("");
+    const [plan, setPlan] = useState<PlanCode | "">(ctxPlan ?? "");
     const [name, setName] = useState(ctxName ?? "");
     const [email, setEmail] = useState(ctxEmail ?? "");
     const [inputValue, setInputValue] = useState("");
@@ -124,28 +126,53 @@ export function AIAssistantModal({
     const [leadId, setLeadId] = useState<string | null>(null);
     const [savedOk, setSavedOk] = useState(false);
     const [backend, setBackend]   = useState<"firebase" | "supabase" | "none" | null>(null);
+    const [isTyping, setIsTyping] = useState(false);  // ★ v1.9.39: Smart Engine
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // ★ v1.9.39: Mensaje de bienvenida contextual
+    const getWelcomeMessage = (): string => {
+        if (ctxPlan && ctxPlan !== "trial") {
+            const planName = ctxPlan === "basic" ? "Plan Plus (Básico)"
+                          : ctxPlan === "professional" ? "Plan Pro (Profesional)"
+                          : ctxPlan === "premium" ? "Plan Premium"
+                          : "";
+            return `¡Hola! Soy Riyad, tu asistente personal. Veo que te interesa el ${planName}. Vamos a configurar tu prueba gratuita de 7 días en menos de 30 segundos. ¿Qué tipo de negocio tienes?`;
+        }
+        return STEPS.welcome.content;
+    };
+
+    // ★ v1.9.39: Delay aleatorio 400-900ms (Smart Engine)
+    const thinkDelay = (): Promise<void> => {
+        const ms = 400 + Math.floor(Math.random() * 500);
+        return new Promise(r => setTimeout(r, ms));
+    };
 
     // Reset al abrir
     useEffect(() => {
         if (open) {
-            setMessages([{ role: "assistant", content: STEPS.welcome.content, ts: Date.now() }]);
+            setMessages([]);
             setCurrentStep("welcome");
             setBusinessType("");
-            setPlan("");
+            setPlan(ctxPlan ?? "");
             setName(ctxName ?? "");
             setEmail(ctxEmail ?? "");
             setInputValue("");
             setLeadId(null);
             setSavedOk(false);
             setBackend(null);
+            setIsTyping(true);
+            // Mensaje contextual con typing
+            thinkDelay().then(() => {
+                setMessages([{ role: "assistant", content: getWelcomeMessage(), ts: Date.now() }]);
+                setIsTyping(false);
+            });
         }
-    }, [open, ctxName, ctxEmail]);
+    }, [open, ctxName, ctxEmail, ctxPlan]);
 
     // Auto-scroll al fondo
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-    }, [messages]);
+    }, [messages, isTyping]);
 
     const pushAssistant = (content: string) => {
         setMessages(prev => [...prev, { role: "assistant", content, ts: Date.now() }]);
@@ -154,15 +181,19 @@ export function AIAssistantModal({
         setMessages(prev => [...prev, { role: "user", content, ts: Date.now() }]);
     };
 
-    const goToStep = (stepId: string) => {
+    // ★ v1.9.39: goToStep con typing
+    const goToStep = async (stepId: string) => {
         const step = STEPS[stepId];
         if (!step) return;
         setCurrentStep(stepId);
+        setIsTyping(true);
+        await thinkDelay();
         pushAssistant(step.content);
+        setIsTyping(false);
     };
 
+    // ★ v1.9.39: handleOption con typing antes de avanzar
     const handleOption = async (value: string, next: string) => {
-        // Registrar la elección del usuario
         const step = STEPS[currentStep];
         if (!step) return;
         const opt = step.options?.find(o => o.value === value);
@@ -173,23 +204,24 @@ export function AIAssistantModal({
         } else if (currentStep === "plan") {
             setPlan(value as PlanCode);
         } else if (currentStep === "confirm") {
-            if (value === "fix-email") { goToStep("email"); return; }
-            if (value === "fix-name")  { goToStep("name");  return; }
+            if (value === "fix-email") { await goToStep("email"); return; }
+            if (value === "fix-name")  { await goToStep("name");  return; }
             if (value === "yes") {
                 // Crear el lead en BD
+                setIsTyping(true);
                 await persistLead("trial_activo");
-                goToStep("done");
+                setIsTyping(false);
+                await goToStep("done");
                 return;
             }
         } else if (currentStep === "done") {
             if (value === "wa") {
                 window.open(WA_LINK, "_blank", "noopener,noreferrer");
             }
-            // Cerrar
             onClose();
             return;
         }
-        goToStep(next);
+        await goToStep(next);
     };
 
     const handleInput = async () => {
@@ -198,25 +230,27 @@ export function AIAssistantModal({
         pushUser(v);
         if (currentStep === "name") {
             setName(v);
-            goToStep("email");
+            await goToStep("email");
         } else if (currentStep === "email") {
-            // Validar email básico
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) {
+                setIsTyping(true);
+                await thinkDelay();
                 pushAssistant("Ese email no parece válido. ¿Puedes repetirlo?");
+                setIsTyping(false);
                 setInputValue("");
                 return;
             }
             setEmail(v);
-            goToStep("confirm");
+            await goToStep("confirm");
         }
         setInputValue("");
     };
 
     const persistLead = async (status: LeadStatus) => {
-        if (savedOk) return; // idempotente
+        if (savedOk) return;
         setBusy(true);
         const trialEndsAt = new Date(Date.now() + 7 * 86400000).toISOString();
-        const history: ChatMessage[] = messages.slice(); // copia del estado actual
+        const history: ChatMessage[] = messages.slice();
         const result = await saveLead({
             user_email:      email || undefined,
             restaurant_name: name || undefined,
@@ -225,7 +259,7 @@ export function AIAssistantModal({
             status,
             chat_history:    history,
             source,
-            metadata:        { business_type: businessType, source },
+            metadata:        { business_type: businessType, source, ctxPlan: ctxPlan ?? null },
         });
         if (result.ok) {
             setLeadId(result.id ?? null);
@@ -233,7 +267,6 @@ export function AIAssistantModal({
             setSavedOk(true);
             onSuccess?.(result.id ?? "");
         } else {
-            // ★ v1.9.37: mensaje específico para Firebase no configurado
             const isConfigErr = (result.error ?? "").toLowerCase().includes("firebase")
                 || result.backend === "none";
             const msg = isConfigErr
@@ -264,24 +297,44 @@ export function AIAssistantModal({
             <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl
                             shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden
                             border border-slate-200/80">
-                {/* ★ v1.9.36: Cabecera con avatar Riyad + indicador online */}
+                {/* ★ v1.9.36 + v1.9.39: Cabecera con avatar Riyad + glow animado cuando piensa */}
                 <div className="bg-gradient-to-br from-violet-600 to-violet-700
                                 text-white px-5 py-4 flex items-center gap-3">
                     <div className="relative shrink-0">
-                        <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur
-                                        flex items-center justify-center
-                                        ring-1 ring-white/30 shadow-lg">
-                            <span className="text-[15px] font-black tracking-tight">R</span>
+                        {/* ★ v1.9.39: Glow ring animado cuando está pensando */}
+                        {isTyping && (
+                            <>
+                                <span className="absolute inset-0 rounded-2xl
+                                                 bg-emerald-400/40 animate-ping" />
+                                <span className="absolute -inset-1 rounded-2xl
+                                                 bg-emerald-400/20 blur-md animate-pulse" />
+                            </>
+                        )}
+                        <div className={
+                            "relative w-11 h-11 rounded-2xl bg-white/20 backdrop-blur " +
+                            "flex items-center justify-center shadow-lg transition-all duration-300 " +
+                            (isTyping
+                                ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-violet-700 scale-105"
+                                : "ring-1 ring-white/30")
+                        }>
+                            <span className={
+                                "text-[15px] font-black tracking-tight transition-all " +
+                                (isTyping ? "text-emerald-200" : "")
+                            }>R</span>
                         </div>
                         {/* Indicador "Online" verde */}
                         <span className="absolute -bottom-0.5 -right-0.5
                                          flex h-3.5 w-3.5">
-                            <span className="absolute inline-flex h-full w-full
-                                             rounded-full bg-emerald-400 opacity-60
-                                             animate-ping" />
-                            <span className="relative inline-flex h-3.5 w-3.5
-                                             rounded-full bg-emerald-500
-                                             border-2 border-violet-700" />
+                            <span className={
+                                "absolute inline-flex h-full w-full rounded-full " +
+                                (isTyping ? "bg-amber-400" : "bg-emerald-400") +
+                                " opacity-60 animate-ping"
+                            } />
+                            <span className={
+                                "relative inline-flex h-3.5 w-3.5 rounded-full " +
+                                "border-2 border-violet-700 " +
+                                (isTyping ? "bg-amber-500" : "bg-emerald-500")
+                            } />
                         </span>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -289,8 +342,17 @@ export function AIAssistantModal({
                             Riyad <span className="font-medium opacity-80">| Asistente MOZONA TPV</span>
                         </h3>
                         <p className="text-[10.5px] text-violet-100 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                            Online · Configura tu prueba de 7 días
+                            {isTyping ? (
+                                <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block animate-pulse" />
+                                    <span className="font-bold text-amber-200">Escribiendo</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                                    Online · Configura tu prueba de 7 días
+                                </>
+                            )}
                         </p>
                     </div>
                     <button onClick={onClose}
@@ -319,6 +381,23 @@ export function AIAssistantModal({
                             </div>
                         </div>
                     ))}
+                    {/* ★ v1.9.39: Typing indicator (3 puntos animados) */}
+                    {isTyping && (
+                        <div className="flex justify-start">
+                            <div className="bg-white border border-slate-200/80
+                                            rounded-2xl px-3.5 py-2.5
+                                            flex items-center gap-1.5
+                                            shadow-sm">
+                                <span className="sr-only">Riyad está escribiendo</span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500
+                                                 animate-bounce" style={{ animationDelay: "0ms" }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500
+                                                 animate-bounce" style={{ animationDelay: "150ms" }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500
+                                                 animate-bounce" style={{ animationDelay: "300ms" }} />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Confirmación con resumen */}
@@ -347,7 +426,7 @@ export function AIAssistantModal({
                                 className="input flex-1"
                                 autoFocus
                             />
-                            <button onClick={handleInput} disabled={busy || !inputValue.trim()}
+                            <button onClick={handleInput} disabled={isTyping || busy || !inputValue.trim()}
                                     className="h-10 px-4 rounded-xl bg-blue-600 text-white
                                                text-[12.5px] font-bold active:scale-95 transition
                                                disabled:opacity-50">
@@ -359,7 +438,7 @@ export function AIAssistantModal({
                             {STEPS[currentStep].options!.map((opt, i) => (
                                 <button key={i}
                                         onClick={() => handleOption(opt.value, opt.next)}
-                                        disabled={busy && currentStep === "confirm"}
+                                        disabled={isTyping || (busy && currentStep === "confirm")}
                                         className="w-full h-10 rounded-xl bg-slate-100 hover:bg-slate-200
                                                    text-[12.5px] font-bold text-slate-800
                                                    active:scale-95 transition disabled:opacity-50
