@@ -25,13 +25,13 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus } from "../../lib/chatLeads";
+import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
 import { IconCheck, IconShield } from "../icons";
 
 interface Props {
     open: boolean;
     onClose: () => void;
-    source: "paywall" | "landing" | "onboarding" | "pricing" | "settings";
+    source: AssistantSource;
     ctxEmail?: string;
     ctxName?:  string;
     onSuccess?: (leadId: string) => void;

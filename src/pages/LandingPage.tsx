@@ -15,6 +15,7 @@ import {
 import { Logo } from "../components/Logo";
 import { HeroMockup } from "../components/HeroMockup";
 import { useAuth } from "../lib/auth";
+import { openAssistant } from "../components/assistant/FloatingAssistantButton";
 import { cn } from "../lib/cn";
 
 const FEATURES = [
@@ -57,6 +58,25 @@ export function LandingPage() {
                         <a href="#features"  className="hover:text-slate-900 transition">Características</a>
                         <a href="#pricing"   className="hover:text-slate-900 transition">Planes</a>
                         <a href="#faq"       className="hover:text-slate-900 transition">FAQ</a>
+                        {/* ★ v1.9.38: Asistente / Probar 7 días */}
+                        <button
+                            type="button"
+                            onClick={() => openAssistant({ source: "landing" })}
+                            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full
+                                       bg-violet-50 text-violet-700
+                                       border border-violet-200/80
+                                       hover:bg-violet-100 active:scale-95 transition
+                                       text-[12px] font-bold">
+                            <span className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-600 to-violet-700
+                                             text-white text-[10px] font-black flex items-center justify-center
+                                             relative">
+                                R
+                                <span className="absolute -bottom-0.5 -right-0.5
+                                                 w-1.5 h-1.5 rounded-full bg-emerald-500
+                                                 border border-white" />
+                            </span>
+                            <span>Habla con Riyad</span>
+                        </button>
                     </nav>
                     <div className="flex items-center gap-2">
                         {auth.user ? (
@@ -72,7 +92,7 @@ export function LandingPage() {
                                 <Link to="/auth"
                                       className="h-9 px-3 inline-flex items-center
                                                  text-[12.5px] font-semibold text-slate-700
-                                                 hover:text-slate-900 transition">
+                                                 hover:text-slate-900 transition hidden sm:inline-flex">
                                     Iniciar sesión
                                 </Link>
                                 <Link to="/auth?signup=1"
@@ -80,7 +100,7 @@ export function LandingPage() {
                                                  bg-blue-600 text-white text-[12.5px] font-bold
                                                  shadow-sm shadow-blue-600/30
                                                  active:scale-95 transition">
-                                    Empezar prueba
+                                    Probar 7 días
                                     <IconArrowRight size={14} strokeWidth={2.4} />
                                 </Link>
                             </>

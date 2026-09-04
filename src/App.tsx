@@ -31,6 +31,7 @@ import { WebSocketProvider } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
+import { FloatingAssistantButton } from "./components/assistant/FloatingAssistantButton";
 
 // ★ Spinner reutilizable para Suspense
 function PageLoader({ label = "Cargando…" }: { label?: string }) {
@@ -160,6 +161,9 @@ export function App() {
                             </Routes>
                         </Suspense>
                     </BrowserRouter>
+
+                    {/* ★ v1.9.38: Botón flotante GLOBAL del asistente Riyad */}
+                    <FloatingAssistantButton />
                 </WebSocketProvider>
             </AuthProvider>
         </ErrorBoundary>

@@ -42,6 +42,10 @@ export type LeadStatus =
 
 export type PlanCode = "basic" | "professional" | "premium" | "trial";
 
+/** ★ v1.9.38: union único para todos los puntos de apertura del modal */
+export type AssistantSource =
+    | "paywall" | "landing" | "onboarding" | "pricing" | "settings" | "floating";
+
 export interface ChatMessage {
     role:    "user" | "assistant" | "system";
     content: string;
@@ -57,7 +61,7 @@ export interface LeadRecord {
     trial_ends_at?:   string;
     status:           LeadStatus;
     chat_history:     ChatMessage[];
-    source?:          "paywall" | "landing" | "onboarding" | "pricing" | "settings";
+    source?:          AssistantSource;
     metadata?:        Record<string, any>;
 }
 

@@ -5,7 +5,14 @@
 //
 // Si las variables VITE_FIREBASE_* están configuradas, se inicializa
 // y se exporta `db` (Firestore) y `notifier` (webhook helper).
-// Si NO están, ambos son null y los saves se hacen en Supabase (fallback).
+// Si NO están, `db = null` y `FIREBASE_CONFIGURED = false`. El chatLeads
+// devolverá error claro al usuario y el UI muestra CTA WhatsApp.
+//
+// IMPORTANTE PARA VERCEL BUILD:
+//   Vite nunca falla el build por variables de entorno faltantes —
+//   `import.meta.env.VITE_FIREBASE_*` simplemente es `undefined` en
+//   runtime si no están definidas. Por eso firebase.ts compila
+//   perfectamente tanto con como sin las credenciales.
 //
 // VARIABLES DE ENTORNO REQUERIDAS (en .env.production / Vercel)
 //   VITE_FIREBASE_API_KEY
