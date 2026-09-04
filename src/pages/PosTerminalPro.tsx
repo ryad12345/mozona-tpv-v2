@@ -36,7 +36,7 @@ import { upsertDraft, clearDraft, listOpenDrafts, getOpenDraft, type OpenOrder }
 import { resolveRealTenantId } from "../lib/waiters";
 import { printPreBill as printPreBillUnified } from "../lib/ticketPrinter";
 import { isVipOrAdmin } from "../lib/vip";
-import { SubscriptionBanner, SubscriptionBlocked } from "../components/auth/SubscriptionAlerts";
+import { SubscriptionBanner, SubscriptionPaywall } from "../components/auth/SubscriptionGate";
 import { supabase } from "../lib/supabase";
 import { round2 } from "../lib/format";
 import { fetchCatalog } from "../lib/catalog";
@@ -660,12 +660,8 @@ export function PosTerminalPro() {
     return (
         <div className="h-screen w-screen overflow-hidden flex flex-col bg-slate-100 dark:bg-slate-900">
             <SubscriptionBanner
-                info={{
-                    plan:                 (restaurant as any)?.plan ?? "plus_30",
-                    subscription_status:  (restaurant as any)?.subscription_status ?? "active",
-                    subscription_ends_at: (restaurant as any)?.subscription_ends_at ?? null,
-                    user_email:           saasAuth.user?.email ?? null,
-                }}
+                tenant={restaurant as any}
+                userEmail={saasAuth.user?.email ?? null}
             />
             <PosTopBar
                 restaurant={restaurant ?? {
@@ -1001,14 +997,10 @@ export function PosTerminalPro() {
                 />
             )}
 
-            {/* ★ Bloqueo por suscripción vencida (Fase 2) */}
-            <SubscriptionBlocked
-                info={{
-                    plan:                 (restaurant as any)?.plan ?? "plus_30",
-                    subscription_status:  (restaurant as any)?.subscription_status ?? "active",
-                    subscription_ends_at: (restaurant as any)?.subscription_ends_at ?? null,
-                    user_email:           saasAuth.user?.email ?? null,
-                }}
+            {/* ★ Bloqueo por suscripción vencida (paywall) */}
+            <SubscriptionPaywall
+                tenant={restaurant as any}
+                userEmail={saasAuth.user?.email ?? null}
             />
         </div>
     );

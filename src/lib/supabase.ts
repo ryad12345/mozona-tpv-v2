@@ -97,7 +97,11 @@ export interface Tenant {
     name:                  string;
     owner_id:              string;
     plan:                  "plus_30" | "pro_50" | "lifetime_vip";
-    subscription_status:   "active" | "trialing" | "past_due" | "canceled";
+    subscription_status:   "active" | "trialing" | "past_due" | "canceled"
+                          | "trial" | "expired";
+    trial_started_at?:     string | null;
+    trial_ends_at?:        string | null;
+    cancelled_at?:         string | null;
     stripe_customer_id?:     string | null;
     stripe_subscription_id?: string | null;
     /** Datos fiscales del tenant (rellenados en el wizard) */
