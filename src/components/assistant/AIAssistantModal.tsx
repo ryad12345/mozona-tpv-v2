@@ -52,7 +52,7 @@ const STEPS: Record<string, Step> = {
     welcome: {
         id:      "welcome",
         role:    "assistant",
-        content: "¡Hola! Soy el asistente de MOZONA TPV. Te ayudo a elegir el plan ideal para tu negocio en 30 segundos. ¿Qué tipo de negocio tienes?",
+        content: "¡Hola! Soy Riyad, tu asistente personal. Te ayudo a configurar tu prueba gratuita de 7 días en menos de 30 segundos. ¿Qué tipo de negocio tienes?",
         options: [
             { label: "🍽️  Restaurante",     value: "restaurante",  next: "plan"  },
             { label: "🍺  Bar / Tapas",     value: "bar",          next: "plan"  },
@@ -251,16 +251,34 @@ export function AIAssistantModal({
             <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl
                             shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden
                             border border-slate-200/80">
-                {/* Cabecera */}
+                {/* ★ v1.9.36: Cabecera con avatar Riyad + indicador online */}
                 <div className="bg-gradient-to-br from-violet-600 to-violet-700
                                 text-white px-5 py-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur
-                                    flex items-center justify-center">
-                        <IconShield size={20} strokeWidth={1.8} />
+                    <div className="relative shrink-0">
+                        <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur
+                                        flex items-center justify-center
+                                        ring-1 ring-white/30 shadow-lg">
+                            <span className="text-[15px] font-black tracking-tight">R</span>
+                        </div>
+                        {/* Indicador "Online" verde */}
+                        <span className="absolute -bottom-0.5 -right-0.5
+                                         flex h-3.5 w-3.5">
+                            <span className="absolute inline-flex h-full w-full
+                                             rounded-full bg-emerald-400 opacity-60
+                                             animate-ping" />
+                            <span className="relative inline-flex h-3.5 w-3.5
+                                             rounded-full bg-emerald-500
+                                             border-2 border-violet-700" />
+                        </span>
                     </div>
-                    <div className="flex-1">
-                        <h3 className="text-[14px] font-black">Asistente MOZONA TPV</h3>
-                        <p className="text-[10.5px] text-violet-100">Te ayudo a empezar en 30s</p>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-[14px] font-black tracking-tight">
+                            Riyad <span className="font-medium opacity-80">| Asistente MOZONA TPV</span>
+                        </h3>
+                        <p className="text-[10.5px] text-violet-100 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                            Online · Configura tu prueba de 7 días
+                        </p>
                     </div>
                     <button onClick={onClose}
                             className="w-8 h-8 rounded-xl text-white/80 hover:text-white

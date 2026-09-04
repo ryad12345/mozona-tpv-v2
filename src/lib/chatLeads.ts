@@ -60,6 +60,10 @@ export interface SaveResult {
 
 const COLLECTION = "leads_onboarding";
 
+/** ★ v1.9.36: nombre del asistente embebido en el documento
+ *  para auditoría de qué agente hizo la captura. */
+export const ASSISTANT_NAME = "Riyad";
+
 /** ★★★ FUNCIÓN PRINCIPAL ★★★
  *  Crea o actualiza un lead.
  *  Intenta Firebase primero; si falla o no está configurado, cae a Supabase.
@@ -74,6 +78,8 @@ export async function saveLead(lead: LeadRecord): Promise<SaveResult> {
         status:          lead.status,
         chat_history:    lead.chat_history,
         source:          lead.source          ?? null,
+        assistant_name:  ASSISTANT_NAME,                 // ★ v1.9.36
+        business_type:   (lead.metadata as any)?.business_type ?? null,  // ★ v1.9.36
         metadata:        lead.metadata        ?? {},
     };
 
