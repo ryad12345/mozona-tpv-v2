@@ -16,6 +16,7 @@ import {
     SUPPORT_PHONE_E164,
 } from "../../hooks/useSubscriptionCheck";
 import type { Tenant } from "../../lib/supabase";
+import { AIAssistantModal } from "../assistant/AIAssistantModal";
 
 // ---------------------------------------------------------------------
 // WhatsApp messages
@@ -137,11 +138,42 @@ export function SubscriptionPaywall({
                         📱 Contactar por WhatsApp para activar
                     </a>
 
+                    {/* ★ v1.9.34: botón al asistente IA para captura in-app */}
+                    <PaywallAssistantButton
+                        tenant={tenant}
+                        userEmail={userEmail}
+                    />
+
                     <div className="text-center text-[10.5px] text-slate-400">
                         MOZONA TPV · +34 644 16 51 53 · Soporte directo
                     </div>
                 </div>
             </div>
         </div>
+    );
+}
+
+/** ★ v1.9.34: botón que abre el AIAssistantModal desde el paywall */
+function PaywallAssistantButton({
+    tenant, userEmail,
+}: { tenant: Tenant | null | undefined; userEmail: string | null | undefined }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <button type="button" onClick={() => setOpen(true)}
+                    className="block w-full h-10 rounded-xl bg-violet-50
+                               border border-violet-200/80 text-violet-700
+                               text-[12.5px] font-bold
+                               hover:bg-violet-100 active:scale-95 transition">
+                🤖 Hablar con el asistente IA
+            </button>
+            <AIAssistantModal
+                open={open}
+                onClose={() => setOpen(false)}
+                source="paywall"
+                ctxEmail={userEmail ?? undefined}
+                ctxName={(tenant as any)?.name}
+            />
+        </>
     );
 }
