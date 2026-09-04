@@ -190,20 +190,20 @@ export function AIAssistantModal({
         setMessages(prev => [...prev, { role: "user", content, ts: Date.now() }]);
     };
 
-    // ★ v1.9.41 + v1.9.43: mensaje del paso "done" según modo
-    //    NUNCA devuelve undefined (defensivo contra crashes)
+    // ★ v1.9.45: mensaje final EXACTO del cliente (privado, profesional, claro)
+    //    Se muestra IGUAL tanto si Firebase está configurado como si no,
+    //    porque el flujo de envío es asíncrono y la UI no debe esperar.
+    //    NUNCA devuelve undefined (try-catch defensivo).
     const getDoneMessage = (): string => {
+        const EXACT_MESSAGE =
+            "¡Solicitud enviada con éxito! Hemos registrado tus datos correctamente. " +
+            "Nuestro equipo revisará tu solicitud y te contestaremos muy pronto " +
+            "al correo electrónico que nos has facilitado.";
         try {
-            if (savedOk && backend === "firebase") {
-                return "¡Listo! Hemos activado tu prueba gratuita de 7 días. Te hemos enviado un correo de bienvenida y nos pondremos en contacto contigo brevemente.";
-            }
-            if (savedOk && !FIREBASE_CONFIGURED) {
-                return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas. Te contactaremos por email.";
-            }
-            return "Hemos recibido tu solicitud. Nuestro equipo verificará los datos y activará tu prueba de 7 días en las próximas horas.";
+            return EXACT_MESSAGE;
         } catch (e) {
             console.error("[AIAssistantModal] getDoneMessage error:", e);
-            return "Hemos recibido tu solicitud. Nos pondremos en contacto contigo en breve.";
+            return EXACT_MESSAGE;
         }
     };
 

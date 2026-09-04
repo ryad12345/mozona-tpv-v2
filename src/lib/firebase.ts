@@ -83,40 +83,36 @@ export async function notifyNewLead(lead: NewLeadNotification): Promise<{ ok: bo
     try {
         const to = import.meta.env.VITE_NOTIFY_TO_EMAIL as string | undefined;
         const now = new Date().toLocaleString("es-ES", { dateStyle: "long", timeStyle: "short" });
-        // ★ v1.9.42: plantilla de email con asunto personalizado
-        const subject = `🚀 Nuevo Lead de Prueba 7 Días - ${lead.restaurantName || "(sin nombre)"}`;
+        // ★ v1.9.45: asunto y plantilla según spec final del cliente
+        const subject = `🚀 Nueva Solicitud de Contratación (Prueba 7 días) - ${lead.restaurantName || "(sin nombre)"}`;
         const html = `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto">
                 <div style="background:linear-gradient(135deg,#2563eb 0%,#7c3aed 100%);padding:20px 24px;border-radius:12px 12px 0 0">
-                    <h1 style="margin:0;color:white;font-size:20px">🚀 Nuevo Lead de Prueba 7 Días</h1>
-                    <p style="margin:6px 0 0 0;color:#dbeafe;font-size:13px">${escapeHtml(lead.restaurantName || "(sin nombre)")}</p>
+                    <h1 style="margin:0;color:white;font-size:20px">🚀 Nueva Solicitud de Contratación</h1>
+                    <p style="margin:6px 0 0 0;color:#dbeafe;font-size:13px">Prueba 7 días · ${escapeHtml(lead.restaurantName || "(sin nombre)")}</p>
                 </div>
                 <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-                    <h2 style="margin:0 0 16px 0;font-size:16px;color:#0f172a">Datos del lead</h2>
+                    <h2 style="margin:0 0 16px 0;font-size:16px;color:#0f172a">Datos del contrato</h2>
                     <table style="border-collapse:collapse;width:100%;font-size:13.5px">
-                        <tr><td style="padding:8px 0;color:#64748b;width:140px">Negocio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(lead.restaurantName || "—")}</td></tr>
-                        <tr><td style="padding:8px 0;color:#64748b">Email del cliente</td><td style="padding:8px 0;font-weight:600"><a href="mailto:${escapeHtml(lead.userEmail || "")}" style="color:#2563eb">${escapeHtml(lead.userEmail || "—")}</a></td></tr>
+                        <tr><td style="padding:8px 0;color:#64748b;width:160px">Nombre del Negocio / Local</td><td style="padding:8px 0;font-weight:600">${escapeHtml(lead.restaurantName || "—")}</td></tr>
                         <tr><td style="padding:8px 0;color:#64748b">Plan elegido</td><td style="padding:8px 0;font-weight:600">${escapeHtml(planLabel(lead.selectedPlan))}</td></tr>
-                        <tr><td style="padding:8px 0;color:#64748b">Fecha de alta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(now)}</td></tr>
-                        <tr><td style="padding:8px 0;color:#64748b">Trial hasta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(lead.trialEndsAt ? new Date(lead.trialEndsAt).toLocaleString("es-ES", { dateStyle: "long" }) : "—")}</td></tr>
-                        <tr><td style="padding:8px 0;color:#64748b">Origen</td><td style="padding:8px 0;font-weight:600">${escapeHtml(lead.source || "—")}</td></tr>
-                        <tr><td style="padding:8px 0;color:#64748b">Lead ID</td><td style="padding:8px 0;font-family:monospace;font-size:11px">${escapeHtml(lead.leadId || "—")}</td></tr>
+                        <tr><td style="padding:8px 0;color:#64748b">Email facilitado por el cliente</td><td style="padding:8px 0;font-weight:600"><a href="mailto:${escapeHtml(lead.userEmail || "")}" style="color:#2563eb">${escapeHtml(lead.userEmail || "—")}</a></td></tr>
+                        <tr><td style="padding:8px 0;color:#64748b">Fecha y hora exacta de la solicitud</td><td style="padding:8px 0;font-weight:600">${escapeHtml(now)}</td></tr>
+                        <tr><td style="padding:8px 0;color:#64748b">Lead ID (Firestore)</td><td style="padding:8px 0;font-family:monospace;font-size:11px">${escapeHtml(lead.leadId || "—")}</td></tr>
                     </table>
                     <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">
-                        Capturado por Riyad, asistente IA de MOZONA TPV.
+                        Solicitud capturada por Riyad, asistente IA de MOZONA TPV. Email interno · Confidencial.
                     </div>
                 </div>
             </div>
         `;
-        const text = `🚀 Nuevo Lead de Prueba 7 Días - ${lead.restaurantName || "(sin nombre)"}\n\n`
-                   + `Negocio: ${lead.restaurantName}\n`
-                   + `Email del cliente: ${lead.userEmail}\n`
+        const text = `🚀 Nueva Solicitud de Contratación (Prueba 7 días) - ${lead.restaurantName || "(sin nombre)"}\n\n`
+                   + `Nombre del Negocio / Local: ${lead.restaurantName || "—"}\n`
                    + `Plan elegido: ${planLabel(lead.selectedPlan)}\n`
-                   + `Fecha de alta: ${now}\n`
-                   + `Trial hasta: ${lead.trialEndsAt}\n`
-                   + `Origen: ${lead.source}\n`
-                   + `Lead ID: ${lead.leadId}\n\n`
-                   + `Capturado por Riyad, asistente IA de MOZONA TPV.`;
+                   + `Email facilitado por el cliente: ${lead.userEmail || "—"}\n`
+                   + `Fecha y hora exacta de la solicitud: ${now}\n`
+                   + `Lead ID (Firestore): ${lead.leadId || "—"}\n\n`
+                   + `Solicitud capturada por Riyad, asistente IA de MOZONA TPV. Email interno · Confidencial.`;
 
         // Soporta Resend API y cualquier webhook genérico con JSON {to, subject, html/text}
         const res = await fetch(url, {
