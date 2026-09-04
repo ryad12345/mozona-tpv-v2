@@ -26,6 +26,7 @@
     "@tauri-apps/plugin-shell": "^2.0.1",
     "browserslist": "^4.28.8",
     "caniuse-lite": "^1.0.30001810",
+    "firebase": "^12.18.0",
     "idb": "^8.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

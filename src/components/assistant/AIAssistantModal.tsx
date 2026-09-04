@@ -123,6 +123,7 @@ export function AIAssistantModal({
     const [busy, setBusy] = useState(false);
     const [leadId, setLeadId] = useState<string | null>(null);
     const [savedOk, setSavedOk] = useState(false);
+    const [backend, setBackend]   = useState<"firebase" | "supabase" | "none" | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Reset al abrir
@@ -137,6 +138,7 @@ export function AIAssistantModal({
             setInputValue("");
             setLeadId(null);
             setSavedOk(false);
+            setBackend(null);
         }
     }, [open, ctxName, ctxEmail]);
 
@@ -227,6 +229,7 @@ export function AIAssistantModal({
         });
         if (result.ok) {
             setLeadId(result.id ?? null);
+            setBackend(result.backend);
             setSavedOk(true);
             onSuccess?.(result.id ?? "");
         } else {
@@ -340,7 +343,12 @@ export function AIAssistantModal({
                         <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
                                         font-bold justify-center pt-1">
                             <IconCheck size={12} strokeWidth={2.4} />
-                            <span>Guardado en Supabase · ID: {leadId?.slice(0, 8) ?? "—"}</span>
+                            <span>
+                                Guardado en{" "}
+                                <span className="uppercase">{backend ?? "—"}</span>
+                                {" · ID: "}
+                                {leadId?.slice(0, 8) ?? "—"}
+                            </span>
                         </div>
                     )}
                 </div>
