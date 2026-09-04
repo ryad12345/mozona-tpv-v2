@@ -28,6 +28,7 @@
 import { useEffect, useRef, useState } from "react";
 import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
+import { sendLeadEmail } from "../../lib/notify";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { IconCheck } from "../icons";
@@ -334,6 +335,25 @@ export function AIAssistantModal({
             // Marcamos como "guardado virtual" para que el flujo no se rompa
             setSavedOk(true);
             setBackend("none");
+        }
+        // ★ v1.9.47: Envío de email vía EmailJS (fire-and-forget, no bloquea la UI)
+        try {
+            void sendLeadEmail({
+                leadId:         result.id || `local-${Date.now()}`,
+                restaurantName: name || undefined,
+                userEmail:      email || undefined,
+                selectedPlan:   (plan as string) || "basic",
+                businessType:   businessType || undefined,
+                source:         source,
+                trialEndsAt:    trialEndsAt,
+                status:         status,
+            }).then(r => {
+                console.log("[AIAssistantModal] email notify result:", r);
+            }).catch(e => {
+                console.warn("[AIAssistantModal] email notify error (silenciado):", e);
+            });
+        } catch (_) {
+            // Email totalmente opcional - nunca afecta al flujo
         }
         setBusy(false);
     };
