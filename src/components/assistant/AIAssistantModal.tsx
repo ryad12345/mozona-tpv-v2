@@ -284,6 +284,8 @@ export function AIAssistantModal({
     // ★ v1.9.50: estado temporal del producto (config mode)
     const [pendingPrice, setPendingPrice] = useState<number>(0);
     const [pendingIva,   setPendingIva]   = useState<number>(10);
+    // ★ v1.9.53: error real de EmailJS (si falla, NO fingir éxito)
+    const [emailError, setEmailError] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // ★ v1.9.39 + v1.9.51: Mensaje de bienvenida contextual según el MODE
@@ -323,6 +325,7 @@ export function AIAssistantModal({
             setLeadId(null);
             setSavedOk(false);
             setBackend(null);
+            setEmailError(null);
             setIsTyping(true);
             // Mensaje contextual con typing
             thinkDelay().then(() => {
@@ -670,9 +673,12 @@ export function AIAssistantModal({
             setSavedOk(true);
             setBackend("none");
         }
-        // ★ v1.9.47: Envío de email vía EmailJS (fire-and-forget, no bloquea la UI)
+        // ★ v1.9.53: Envío de email vía EmailJS (AWAIT real, no fire-and-forget)
+        // Si EmailJS falla, NO fingimos éxito: lo registramos y mostramos
+        // un mensaje claro al usuario.
+        let emailResult: { ok: boolean; error?: string; via: string } | null = null;
         try {
-            void sendLeadEmail({
+            emailResult = await sendLeadEmail({
                 leadId:         result.id || `local-${Date.now()}`,
                 restaurantName: name || undefined,
                 userEmail:      email || undefined,
@@ -681,13 +687,15 @@ export function AIAssistantModal({
                 source:         source,
                 trialEndsAt:    trialEndsAt,
                 status:         status,
-            }).then(r => {
-                console.log("[AIAssistantModal] email notify result:", r);
-            }).catch(e => {
-                console.warn("[AIAssistantModal] email notify error (silenciado):", e);
             });
-        } catch (_) {
-            // Email totalmente opcional - nunca afecta al flujo
+            console.log("[AIAssistantModal] email notify result:", emailResult);
+        } catch (e: any) {
+            console.warn("[AIAssistantModal] email notify error:", e?.message ?? e);
+            emailResult = { ok: false, error: e?.message ?? "Error desconocido", via: "exception" };
+        }
+        // ★ v1.9.53: si EmailJS está configurado y falla, no fingir éxito
+        if (emailResult && emailResult.via !== "noop" && !emailResult.ok) {
+            setEmailError(emailResult.error ?? "Error desconocido");
         }
         setBusy(false);
     };
@@ -886,15 +894,24 @@ export function AIAssistantModal({
                     ) : null}
 
                     {savedOk && (
-                        <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
-                                        font-bold justify-center pt-1">
-                            <IconCheck size={12} strokeWidth={2.4} />
-                            <span>
-                                Guardado en{" "}
-                                <span className="uppercase">{backend ?? "—"}</span>
-                                {" · ID: "}
-                                {leadId?.slice(0, 8) ?? "—"}
-                            </span>
+                        <div className="flex flex-col items-center gap-1 pt-1">
+                            <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
+                                            font-bold justify-center">
+                                <IconCheck size={12} strokeWidth={2.4} />
+                                <span>
+                                    Guardado en{" "}
+                                    <span className="uppercase">{backend ?? "—"}</span>
+                                    {" · ID: "}
+                                    {leadId?.slice(0, 8) ?? "—"}
+                                </span>
+                            </div>
+                            {/* ★ v1.9.53: error real de EmailJS si falló */}
+                            {emailError && (
+                                <div className="text-[10px] text-rose-600 font-bold
+                                                text-center px-2">
+                                    ⚠ Email no enviado: {emailError}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
