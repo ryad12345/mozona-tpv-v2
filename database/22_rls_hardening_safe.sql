@@ -13,6 +13,40 @@
 -- ★ ROLLBACK INMEDIATO: 23_rollback_rls.sql
 --   (apaga RLS en 5 segundos sin pérdida de datos)
 --
+-- ★ DRY-RUN DE PRUEBAS: 24_rls_dryrun_test.sql
+--   (verifica aislamiento multi-tenant sin activar nada)
+--
+-- PRINCIPIO DE MÍNIMO PRIVILEGIO
+--   - SELECT: solo autenticados del mismo tenant
+--   - INSERT / UPDATE: solo autenticados del mismo tenant
+--   - DELETE:
+--       * order_items, cash_closures: solo superadmin
+--       * orders: solo superadmin (anulación de ventas)
+--       * products, categories, dining_tables, tickets: solo superadmin
+--       * tenants, tenant_users: solo superadmin
+--
+-- PROHIBIDO
+--   - Ninguna política con USING (true) o WITH CHECK (true)
+--   - Ningún GRANT EXECUTE a anon en funciones de auth
+--   - Ningún ALTER sobre auth.users (lo gestiona Supabase)
+--
+-- TABLAS CUBIERTAS
+--   - public.tenants, tenant_users
+--   - public.orders, order_items
+--   - public.products, categories
+--   - public.dining_tables, tickets
+--   - public.cash_closures
+--
+-- TABLAS EXCLUIDAS (deliberadamente)
+--   - auth.users          → gestionada por Supabase, no se toca
+--   - auth.sessions       → gestionada por Supabase
+--   - public.free_invitations → invitaciones, se gestiona aparte
+--                              (acceso desde admin service_role)
+--   - public.ticket_settings → single-row por tenant, lectura libre
+--                              intencional, escritura solo superadmin
+--   - storage.objects     → Storage de Supabase, políticas aparte
+-- =====================================================================
+
 -- POLÍTICA GENERAL
 --   - Usuarios autenticados: leen/escriben SOLO filas cuyo
 --     tenant_id coincida con el de su tenant_users

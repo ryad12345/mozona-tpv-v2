@@ -8,6 +8,16 @@
 -- ★ SEGURO: no borra datos ni políticas (solo desactiva RLS)
 -- ★ REVERSIBLE: puedes reactivar con 22_rls_hardening_safe.sql
 --
+-- QUÉ TOCA ESTE SCRIPT
+--   - DISABLE ROW LEVEL SECURITY en 9 tablas de negocio
+--   - DROP todas las políticas creadas por el 22
+--   - NO toca auth.users, auth.sessions, ni storage.objects
+--   - NO borra datos de las tablas
+--   - Mantiene las funciones auxiliares (inertes hasta reactivar):
+--     * public.get_user_tenant_id(UUID)
+--     * public.is_superadmin_email(TEXT)
+--     * public.current_user_is_superadmin()
+--
 -- CÓMO EJECUTAR
 --   Opción A — desde Supabase SQL Editor:
 --     1) New query
@@ -20,6 +30,7 @@
 -- VERIFICACIÓN TRAS EJECUTAR
 --   SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='public';
 --   -- Todas las tablas deben tener rowsecurity = false
+--   -- (excepto auth.users que NO se toca)
 -- =====================================================================
 
 -- ============================================================
