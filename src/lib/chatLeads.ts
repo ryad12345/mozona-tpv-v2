@@ -42,7 +42,7 @@ export type LeadStatus =
 
 export type PlanCode = "basic" | "professional" | "premium" | "trial";
 
-/** ★ v1.9.38: union único para todos los puntos de apertura del modal */
+/** ★ v1.9.38 + v1.9.50: union único para todos los puntos de apertura del modal */
 export type AssistantSource =
     | "paywall" | "landing" | "onboarding" | "pricing" | "settings" | "floating";
 

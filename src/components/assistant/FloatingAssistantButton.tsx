@@ -24,6 +24,7 @@
 // =====================================================================
 
 import { useEffect, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { AIAssistantModal } from "./AIAssistantModal";
 import type { AssistantSource } from "../../lib/chatLeads";
 
@@ -36,6 +37,11 @@ interface OpenDetail {
     ctxPlan?:  import("../../lib/chatLeads").PlanCode;
 }
 
+// ★ v1.9.50: rutas donde el asistente se OCULTA (POS, operativa de cobro)
+const HIDDEN_ROUTES: string[] = ["/app"];
+// ★ rutas donde el asistente actúa como copiloto de configuración
+const CONFIG_ROUTES: string[] = ["/settings"];
+
 /** ★ API pública: abre el modal del asistente */
 export function openAssistant(detail: OpenDetail = {}) {
     window.dispatchEvent(new CustomEvent("mozona:open-assistant", { detail }));
@@ -46,12 +52,18 @@ export function closeAssistant() {
 }
 
 export function FloatingAssistantButton() {
+    const location = useLocation();
     const [open, setOpen] = useState(false);
     const [source, setSource] = useState<Source>("floating");
     const [ctxEmail, setCtxEmail] = useState<string | undefined>();
     const [ctxName,  setCtxName]  = useState<string | undefined>();
     const [ctxPlan,  setCtxPlan]  = useState<import("../../lib/chatLeads").PlanCode | undefined>();
     const [hovered, setHovered] = useState(false);
+
+    // ★ v1.9.50: visibilidad por ruta
+    const isHiddenRoute  = HIDDEN_ROUTES.some(r  => location.pathname === r || location.pathname.startsWith(r + "/"));
+    const isConfigRoute  = CONFIG_ROUTES.some(r  => location.pathname === r || location.pathname.startsWith(r + "/"));
+    const mode: "floating" | "config" = isConfigRoute ? "config" : "floating";
 
     // Escuchar eventos globales
     useEffect(() => {
@@ -73,9 +85,12 @@ export function FloatingAssistantButton() {
     }, []);
 
     const handleClick = useCallback(() => {
-        setSource("floating");
+        setSource(isConfigRoute ? "settings" : "floating");
         setOpen(true);
-    }, []);
+    }, [isConfigRoute]);
+
+    // ★ v1.9.50: ocultar en POS para no estorbar la operativa
+    if (isHiddenRoute) return null;
 
     return (
         <>
@@ -151,6 +166,7 @@ export function FloatingAssistantButton() {
                 ctxEmail={ctxEmail}
                 ctxName={ctxName}
                 ctxPlan={ctxPlan}
+                mode={mode}
             />
         </>
     );

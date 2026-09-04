@@ -32,6 +32,7 @@ import { sendLeadEmail } from "../../lib/notify";
 import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit, LEAD_RATE_LIMIT_MS } from "../../lib/leadGuard";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { saveProduct as saveProductCatalog, type ProductInput } from "../../lib/catalog";
 import { IconCheck } from "../icons";
 
 interface Props {
@@ -42,6 +43,8 @@ interface Props {
     ctxName?:  string;
     ctxPlan?:  PlanCode;
     onSuccess?: (leadId: string) => void;
+    /** ★ v1.9.50: 'floating' (lead-gen normal) | 'config' (copiloto en /settings) */
+    mode?: "floating" | "config";
 }
 const PHONE_E164 = "34644165153";
 const PHONE_DISPLAY = "+34 644 16 51 53";
@@ -56,6 +59,63 @@ interface Step {
     options?: Array<{ label: string; value: string; next: string }>;
     input?:   "email" | "name" | "restaurant";
 }
+
+const STEPS_CONFIG: Record<string, Step> = {
+    // ★ v1.9.50: copiloto de configuración en /settings
+    welcome: {
+        id:      "welcome",
+        role:    "assistant",
+        content: "¡Hola! Soy Riyad, tu copiloto de configuración. ¿En qué te ayudo?",
+        options: [
+            { label: "➕  Añadir producto",      value: "add-product", next: "add-product" },
+            { label: "🏷️  Crear categoría",     value: "add-category", next: "add-category" },
+            { label: "🖨️  Ajustar datos de ticket", value: "ticket",    next: "ticket" },
+            { label: "←  Volver al modo general",  value: "back",     next: "__close__" },
+        ],
+    },
+    "add-product": {
+        id:      "add-product",
+        role:    "assistant",
+        content: "Perfecto. Vamos a crear un producto nuevo. ¿Cómo se llama?",
+        input:   "name",
+    },
+    "add-category": {
+        id:      "add-category",
+        role:    "assistant",
+        content: "Genial. ¿Qué nombre quieres darle a la categoría? (Por ejemplo: 'Tapas', 'Bebidas', 'Postres'.)",
+        input:   "name",
+    },
+    ticket: {
+        id:      "ticket",
+        role:    "assistant",
+        content: "Para configurar los datos de tu ticket (nombre del local, NIF, dirección, etc.), ve a Configuración → Empresa. ¿Quieres que te abra esa sección?",
+        options: [
+            { label: "✓  Abrir Configuración → Empresa", value: "go-empresa", next: "__close__" },
+            { label: "←  Volver",                          value: "back",      next: "welcome" },
+        ],
+    },
+    // ★ v1.9.50: sub-pasos para crear producto
+    "add-product-price": {
+        id:      "add-product-price",
+        role:    "assistant",
+        content: "Anota el precio de venta (IVA INCLUIDO, como se muestra en la carta). Por ejemplo: 12.50",
+    },
+    "add-product-iva": {
+        id:      "add-product-iva",
+        role:    "assistant",
+        content: "¿Qué tipo de IVA quieres aplicarle? (En hostelería España suele ser 10%. Si es alcohol, 21%. Si es 0% como el pan, 0.)",
+    },
+    "add-product-done": {
+        id:      "add-product-done",
+        role:    "assistant",
+        content: "Producto creado. ¿Quieres hacer algo más?",
+        options: [
+            { label: "➕  Añadir otro producto",  value: "add-product", next: "add-product" },
+            { label: "←  Volver al menú",         value: "back",        next: "welcome" },
+            { label: "✓  Cerrar",                  value: "end",         next: "__close__" },
+        ],
+    },
+};
 
 const STEPS: Record<string, Step> = {
     welcome: {
@@ -119,6 +179,11 @@ const PLAN_LABEL: Record<PlanCode, string> = {
     premium:        "Premium (99€/mes)",
     trial:         "Trial 7 días",
 };
+
+/** ★ v1.9.50: devuelve el árbol de steps según el modo (floating/config) */
+function getStepsFor(mode: "floating" | "config"): Record<string, Step> {
+    return mode === "config" ? STEPS_CONFIG : STEPS;
+}
 
 /** ★ v1.9.49: vista cuando el usuario ya envió un lead desde este dispositivo */
 function AlreadySubmittedView({
@@ -194,7 +259,7 @@ function AlreadySubmittedView({
 }
 
 export function AIAssistantModal({
-    open, onClose, source, ctxEmail, ctxName, ctxPlan, onSuccess,
+    open, onClose, source, ctxEmail, ctxName, ctxPlan, onSuccess, mode = "floating",
 }: Props) {
     const navigate = useNavigate();
     const auth = useAuth();
@@ -215,6 +280,9 @@ export function AIAssistantModal({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [alreadySubmitted] = useState<boolean>(() => isLeadAlreadySubmitted());
     const [rateLimitedUntil, setRateLimitedUntil] = useState<number>(0);
+    // ★ v1.9.50: estado temporal del producto (config mode)
+    const [pendingPrice, setPendingPrice] = useState<number>(0);
+    const [pendingIva,   setPendingIva]   = useState<number>(10);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // ★ v1.9.39: Mensaje de bienvenida contextual
@@ -288,7 +356,7 @@ export function AIAssistantModal({
 
     // ★ v1.9.39 + v1.9.41: goToStep con typing + mensaje dinámico en "done"
     const goToStep = async (stepId: string) => {
-        const step = STEPS[stepId];
+        const step = getStepsFor(mode)[stepId];
         if (!step) return;
         setCurrentStep(stepId);
         setIsTyping(true);
@@ -300,9 +368,37 @@ export function AIAssistantModal({
 
     // ★ v1.9.39 + v1.9.41: handleOption con typing + flujo defensivo
     const handleOption = async (value: string, next: string) => {
-        const step = STEPS[currentStep];
+        const steps = getStepsFor(mode);
+        const step = steps[currentStep];
         if (!step) return;
         const opt = step.options?.find(o => o.value === value);
+
+        // ★ v1.9.50: acciones del modo config
+        if (mode === "config") {
+            if (value === "go-empresa") {
+                try { navigate("/settings?section=empresa"); } catch (_) {
+                    try { location.href = "/settings?section=empresa"; } catch (_) {}
+                }
+                try { onClose(); } catch (_) {}
+                return;
+            }
+            if (value === "add-product") {
+                await goToStep("add-product");
+                return;
+            }
+            if (value === "add-category") {
+                await goToStep("add-category");
+                return;
+            }
+            if (value === "ticket") {
+                await goToStep("ticket");
+                return;
+            }
+            if (value === "back" && next === "welcome") {
+                await goToStep("welcome");
+                return;
+            }
+        }
         if (opt) pushUser(opt.label);
 
         if (currentStep === "welcome") {
@@ -370,6 +466,65 @@ export function AIAssistantModal({
         const v = inputValue.trim();
         if (!v) return;
         pushUser(v);
+
+        // ★ v1.9.50: flujo config — creación de producto conversacional
+        if (mode === "config" && currentStep === "add-product") {
+            setName(v);
+            setInputValue("");
+            await goToStep("add-product-price");
+            return;
+        }
+        if (mode === "config" && currentStep === "add-product-price") {
+            const num = parseFloat(v.replace(",", "."));
+            if (isNaN(num) || num <= 0) {
+                setIsTyping(true);
+                await thinkDelay();
+                pushAssistant("Eso no parece un precio válido. Escribe un número, por ejemplo: 12.50");
+                setIsTyping(false);
+                return;
+            }
+            // Guardamos el precio en metadata temporal via businessType hack? No.
+            // Mejor usamos un state temporal: lo guardamos en "name" concatenado no, lo guardamos aparte
+            setPendingPrice(num);
+            setInputValue("");
+            await goToStep("add-product-iva");
+            return;
+        }
+        if (mode === "config" && currentStep === "add-product-iva") {
+            const iva = parseFloat(v.replace(",", "."));
+            if (isNaN(iva) || iva < 0 || iva > 100) {
+                setIsTyping(true);
+                await thinkDelay();
+                pushAssistant("Escribe un % de IVA entre 0 y 100. Por defecto, hostelería ES = 10.");
+                setIsTyping(false);
+                return;
+            }
+            setPendingIva(iva);
+            setInputValue("");
+            // ★ v1.9.50: persistir vía saveProduct del catálogo existente
+            try {
+                const payload: ProductInput = {
+                    name:       name || "Producto sin nombre",
+                    price:      pendingPrice || 0,
+                    tax_rate:   iva,
+                    category:   null,
+                    is_active:  true,
+                };
+                setIsTyping(true);
+                const r = await saveProductCatalog(payload);
+                setIsTyping(false);
+                if (r.ok) {
+                    pushAssistant(`✅ Listo! He dado de alta "${payload.name}" a ${payload.price.toFixed(2)} € (IVA ${iva}%).`);
+                } else {
+                    pushAssistant(`⚠️ No pude guardar el producto: ${r.error ?? "Error"}.`);
+                }
+            } catch (e: any) {
+                try { pushAssistant(`⚠️ Error al guardar: ${e?.message ?? e}`); } catch (_) {}
+            }
+            await goToStep("add-product-done");
+            return;
+        }
+
         if (currentStep === "name") {
             setName(v);
             await goToStep("email");
@@ -513,7 +668,7 @@ export function AIAssistantModal({
                     </div>
                     <div className="flex-1 min-w-0">
                         <h3 className="text-[14px] font-black tracking-tight">
-                            Riyad <span className="font-medium opacity-80">| Asistente MOZONA TPV</span>
+                            Riyad <span className="font-medium opacity-80">| {mode === "config" ? "Copiloto de Configuración" : "Asistente MOZONA TPV"}</span>
                         </h3>
                         <p className="text-[10.5px] text-violet-100 flex items-center gap-1">
                             {isTyping ? (
@@ -587,15 +742,15 @@ export function AIAssistantModal({
                 {/* Acciones: input o botones */}
                 <div className="border-t border-slate-200/80 bg-white px-4 py-3 space-y-2">
                     {/* Si el step tiene input, mostrar input */}
-                    {STEPS[currentStep]?.input ? (
+                    {getStepsFor(mode)[currentStep]?.input ? (
                         <div className="flex gap-2">
                             <input
-                                type={STEPS[currentStep].input === "email" ? "email" : "text"}
+                                type={getStepsFor(mode)[currentStep].input === "email" ? "email" : "text"}
                                 value={inputValue}
                                 onChange={e => setInputValue(e.target.value)}
                                 onKeyDown={e => e.key === "Enter" && handleInput()}
                                 placeholder={
-                                    STEPS[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca"
+                                    getStepsFor(mode)[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca"
                                 }
                                 className="input flex-1"
                                 autoFocus
@@ -607,9 +762,9 @@ export function AIAssistantModal({
                                 →
                             </button>
                         </div>
-                    ) : STEPS[currentStep]?.options ? (
+                    ) : getStepsFor(mode)[currentStep]?.options ? (
                         <div className="grid grid-cols-1 gap-2">
-                            {STEPS[currentStep].options!.map((opt, i) => {
+                            {getStepsFor(mode)[currentStep].options!.map((opt, i) => {
                                 // ★ v1.9.49: el botón "yes" muestra "Enviando..." durante el submit
                                 const isYesSubmitting = isSubmitting
                                     && currentStep === "confirm"
