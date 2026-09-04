@@ -469,10 +469,88 @@ export function AIAssistantModal({
         await goToStep(next);
     };
 
+    // ★ v1.9.52: parser de texto libre para el copiloto de configuración
+    //    Detecta comandos naturales como "Añadir bocadillo a 4.50"
+    //    o "Crear categoría Postres" y arranca el flujo adecuado.
+    const parseFreeTextCommand = (text: string): { intent: "add-product" | "add-category" | "ticket" | "unknown"; data: any } | null => {
+        const t = text.toLowerCase().trim();
+        if (!t) return null;
+        // ── Crear producto: "añadir X a Y" / "crear X a Y" / "nuevo X por Y"
+        const addProd = t.match(/(?:a[ñn]ad(?:ir|o)|crear?|nuevo|nueva|poner?|meter?)\s+(?:un|una|el|la|los|las)?\s*(.+?)\s+(?:a|por|de)\s+(\d+(?:[.,]\d+)?)\s*(?:€|eur|euros?)?\s*(?:€|eur|euros?)?/i);
+        if (addProd) {
+            const name = addProd[1].trim().replace(/\s+/g, " ");
+            const price = parseFloat(addProd[2].replace(",", "."));
+            if (name && !isNaN(price) && price > 0) {
+                return { intent: "add-product", data: { name, price } };
+            }
+        }
+        // Variante: "X a Y euros"
+        const addProd2 = t.match(/^(.+?)\s+(?:a|por|de)\s+(\d+(?:[.,]\d+)?)\s*(?:€|eur|euros?)?/i);
+        if (addProd2) {
+            const name = addProd2[1].trim().replace(/\s+/g, " ");
+            const price = parseFloat(addProd2[2].replace(",", "."));
+            // Solo si la primera palabra parece de comida/producto
+            if (name && !isNaN(price) && price > 0 && /^[a-záéíóúñ]+/i.test(name) && name.length < 40) {
+                return { intent: "add-product", data: { name, price } };
+            }
+        }
+        // ── Crear categoría: "crear categoría X" / "nueva categoría X"
+        const addCat = t.match(/(?:crear?|nueva?)\s+categor[íi]a\s+(.+)/i);
+        if (addCat) {
+            const name = addCat[1].trim().replace(/\s+/g, " ");
+            if (name && name.length < 30) {
+                return { intent: "add-category", data: { name } };
+            }
+        }
+        // ── Configurar ticket
+        if (/ticket|impresora|cabecera|datos.*empresa/.test(t)) {
+            return { intent: "ticket", data: {} };
+        }
+        return null;
+    };
+
     const handleInput = async () => {
         const v = inputValue.trim();
         if (!v) return;
         pushUser(v);
+
+        // ★ v1.9.52: parser de texto libre (solo en mode=config y steps sin input)
+        if (mode === "config" && currentStep === "welcome") {
+            const parsed = parseFreeTextCommand(v);
+            if (parsed) {
+                if (parsed.intent === "add-product") {
+                    setName(parsed.data.name);
+                    setPendingPrice(parsed.data.price);
+                    setInputValue("");
+                    setIsTyping(true);
+                    await thinkDelay();
+                    pushAssistant(`Perfecto, "${parsed.data.name}" a ${parsed.data.price.toFixed(2)} €. ¿Qué tipo de IVA le aplico? (10% hostelería, 21% alcohol, 0% exento.)`);
+                    setIsTyping(false);
+                    await goToStep("add-product-iva");
+                    return;
+                }
+                if (parsed.intent === "add-category") {
+                    pushAssistant(`Entendido: quieres crear la categoría "${parsed.data.name}". Lo añado al menú.`);
+                    // (Aquí podrías llamar a saveCategory si existiera)
+                    await goToStep("welcome");
+                    return;
+                }
+                if (parsed.intent === "ticket") {
+                    await goToStep("ticket");
+                    return;
+                }
+            } else {
+                // Texto no reconocido
+                setIsTyping(true);
+                await thinkDelay();
+                pushAssistant("No he entendido lo que quieres hacer. Prueba con frases como:");
+                pushAssistant('• "Añadir bocadillo a 4.50"');
+                pushAssistant('• "Crear categoría Postres"');
+                pushAssistant('• "Ajustar datos de ticket"');
+                setIsTyping(false);
+                return;
+            }
+        }
 
         // ★ v1.9.50: flujo config — creación de producto conversacional
         if (mode === "config" && currentStep === "add-product") {
@@ -748,16 +826,22 @@ export function AIAssistantModal({
 
                 {/* Acciones: input o botones */}
                 <div className="border-t border-slate-200/80 bg-white px-4 py-3 space-y-2">
-                    {/* Si el step tiene input, mostrar input */}
-                    {getStepsFor(mode)[currentStep]?.input ? (
+                    {/* ★ v1.9.52: en mode='config' el input SIEMPRE visible
+                        (texto libre con parser). En mode='floating' solo si
+                        el step actual tiene 'input' definido. */}
+                    {(mode === "config" || getStepsFor(mode)[currentStep]?.input) ? (
                         <div className="flex gap-2">
                             <input
-                                type={getStepsFor(mode)[currentStep].input === "email" ? "email" : "text"}
+                                type={mode === "config" ? "text" : (getStepsFor(mode)[currentStep].input === "email" ? "email" : "text")}
                                 value={inputValue}
                                 onChange={e => setInputValue(e.target.value)}
                                 onKeyDown={e => e.key === "Enter" && handleInput()}
                                 placeholder={
-                                    getStepsFor(mode)[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca"
+                                    mode === "config"
+                                        ? (currentStep === "add-product-price" ? "Precio (IVA incl.)..."
+                                          : currentStep === "add-product-iva" ? "% IVA (ej: 10)..."
+                                          : 'Escribe: "Anadir bocadillo a 4.50" o "Crear categoria Postres"')
+                                        : (getStepsFor(mode)[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca")
                                 }
                                 className="input flex-1"
                                 autoFocus
