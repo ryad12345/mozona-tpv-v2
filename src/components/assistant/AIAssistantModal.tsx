@@ -233,7 +233,20 @@ export function AIAssistantModal({
             setSavedOk(true);
             onSuccess?.(result.id ?? "");
         } else {
-            pushAssistant("No pude guardar tus datos ahora mismo. ¿Me das unos segundos y vuelves a intentarlo?");
+            // ★ v1.9.37: mensaje específico para Firebase no configurado
+            const isConfigErr = (result.error ?? "").toLowerCase().includes("firebase")
+                || result.backend === "none";
+            const msg = isConfigErr
+                ? `⚠️ Firebase no está configurado todavía.\n\n` +
+                  `El equipo de MOZONA TPV aún no ha activado el almacenamiento de leads.\n\n` +
+                  `Mientras tanto, te ayudo por WhatsApp directo:`
+                : `No pude guardar tus datos ahora mismo. ¿Me das unos segundos y vuelves a intentarlo?\n\n` +
+                  `(${result.error ?? "Error desconocido"})`;
+            pushAssistant(msg);
+            // Si es error de config, mostrar CTA WhatsApp como acción
+            if (isConfigErr) {
+                pushAssistant("📱 Contacta con soporte para que activen tu prueba de 7 días.");
+            }
         }
         setBusy(false);
     };
