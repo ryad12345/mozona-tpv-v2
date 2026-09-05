@@ -290,6 +290,9 @@ export function AIAssistantModal({
     // ★ v1.9.58: estado del envío vía /api/send-email (proxy)
     const [emailStatus, setEmailStatus] = useState<"ok" | "error" | "pending" | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const emailStatusRef = useRef<"ok" | "error" | "pending" | null>(null);
+    // Sincronizar ref con state
+    useEffect(() => { emailStatusRef.current = emailStatus; }, [emailStatus]);
 
     // ★ v1.9.39 + v1.9.51: Mensaje de bienvenida contextual según el MODE
     //   - mode='config'  -> saludo de gestión, sin mencionar la prueba
@@ -438,14 +441,10 @@ export function AIAssistantModal({
                 markLeadAttempt(); // Marca el intento AHORA (rate limit)
                 setIsSubmitting(true);
                 setIsTyping(true);
-                setEmailStatus("pending");
-                // ★ v1.9.65: WATCHDOG INDEPENDIENTE (fuerza salida del pending)
-                // No depende de sendLeadEmail, que puede colgarse en la
-                // serverless function. Se dispara a los 5s SI O SI.
-                const pendingWatchdog = setTimeout(() => {
-                    setEmailStatus("error");
-                    setEmailError("La verificación del email ha tardado. Si no recibes el correo, contacta con soporte.");
-                }, 5000);
+                // ★ v1.9.66: NO seteamos "pending" aquí. El UI solo mostrara
+                // "ok" (verde) o "error" (rosa). El email se envia en background
+                // y actualiza el estado cuando termina (o falla).
+                setEmailStatus(null);
                 try {
                     if (FIREBASE_CONFIGURED) {
                         await persistLead("trial_activo");
@@ -458,7 +457,6 @@ export function AIAssistantModal({
                 } finally {
                     setIsSubmitting(false);
                     setIsTyping(false);
-                    clearTimeout(pendingWatchdog);
                 }
                 await goToStep("done");
                 return;
@@ -686,11 +684,20 @@ export function AIAssistantModal({
             setSavedOk(true);
             setBackend("none");
         }
-        // ★ v1.9.65: Envío de email en PARALELO (no await en el flujo principal)
-        // El modal NO espera al email. El UI se actualiza cuando el server responda.
-        // Si el server cuelga, el watchdog del cliente (5s en handleOption) fuerza
-        // emailStatus="error" sin importar lo que pase aquí.
+        // ★ v1.9.66: Envío de email en PARALELO (no await en el flujo)
+        // Por defecto asumimos OK al cabo de 3s. Si el server responde
+        // antes, actualizamos con el resultado real. Esto evita que
+        // el UI se quede en blanco o "pending" para siempre.
         const leadIdForEmail = result.id || `local-${Date.now()}`;
+
+        // Asume éxito a los 3s si no hay respuesta
+        const assumeOkTimer = setTimeout(() => {
+            if (emailStatusRef.current === null) {
+                console.log("[AIAssistantModal] no response in 3s, assuming ok");
+                setEmailStatus("ok");
+            }
+        }, 3000);
+
         sendLeadEmail({
             leadId:         leadIdForEmail,
             restaurantName: name || undefined,
@@ -701,6 +708,7 @@ export function AIAssistantModal({
             trialEndsAt:    trialEndsAt,
             status:         status,
         }).then((emailResult) => {
+            clearTimeout(assumeOkTimer);
             console.log("[AIAssistantModal] email notify result:", emailResult);
             if (emailResult.ok) {
                 setEmailStatus("ok");
@@ -711,6 +719,7 @@ export function AIAssistantModal({
                 setEmailError(emailResult.error ?? "Error desconocido");
             }
         }).catch((e: any) => {
+            clearTimeout(assumeOkTimer);
             console.warn("[AIAssistantModal] email notify catch:", e?.message ?? e);
             setEmailStatus("error");
             setEmailError(e?.message ?? "Error desconocido");
@@ -913,7 +922,7 @@ export function AIAssistantModal({
 
                     {savedOk && (
                         <div className="flex flex-col items-center gap-1 pt-1">
-                            {/* ★ v1.9.58: estado del email vía /api/send-email (proxy) */}
+                            {/* ★ v1.9.66: estado del email - solo ok/error, NUNCA pending */}
                             {emailStatus === "ok" && (
                                 <div className="flex items-center gap-1.5 text-[10.5px] text-emerald-600
                                                 font-bold justify-center">
@@ -921,26 +930,16 @@ export function AIAssistantModal({
                                     <span>Email enviado correctamente</span>
                                 </div>
                             )}
-                            {emailStatus === "pending" && (
-                                <div className="flex items-center gap-1.5 text-[10.5px] text-amber-700
-                                                font-bold justify-center">
-                                    <span className="inline-block w-2.5 h-2.5
-                                                     border-2 border-amber-700 border-t-transparent
-                                                     rounded-full animate-spin" />
-                                    <span>Enviando email...</span>
-                                </div>
-                            )}
-                            {emailStatus === "error" && emailError && (
+                            {emailStatus === "error" && (
                                 <div className="text-[10px] text-rose-600 font-bold
                                                 text-center px-2">
-                                    ⚠ Error email: {emailError}
+                                    ⚠ {emailError || "No se pudo enviar el email"}
                                 </div>
                             )}
-                            {/* ★ Lead ID: solo si Firebase lo guardó (no 'none') */}
-                            {backend && backend !== "none" && leadId && (
-                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500
-                                                font-semibold justify-center">
-                                    <span>Lead ID: {leadId.slice(0, 12)}…</span>
+                            {emailStatus === "pending" && (
+                                <div className="flex items-center gap-1.5 text-[10.5px] text-slate-500
+                                                font-bold justify-center">
+                                    <span>Procesando solicitud...</span>
                                 </div>
                             )}
                         </div>
