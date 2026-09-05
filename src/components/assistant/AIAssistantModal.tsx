@@ -439,6 +439,13 @@ export function AIAssistantModal({
                 setIsSubmitting(true);
                 setIsTyping(true);
                 setEmailStatus("pending");
+                // ★ v1.9.65: WATCHDOG INDEPENDIENTE (fuerza salida del pending)
+                // No depende de sendLeadEmail, que puede colgarse en la
+                // serverless function. Se dispara a los 5s SI O SI.
+                const pendingWatchdog = setTimeout(() => {
+                    setEmailStatus("error");
+                    setEmailError("La verificación del email ha tardado. Si no recibes el correo, contacta con soporte.");
+                }, 5000);
                 try {
                     if (FIREBASE_CONFIGURED) {
                         await persistLead("trial_activo");
@@ -451,6 +458,7 @@ export function AIAssistantModal({
                 } finally {
                     setIsSubmitting(false);
                     setIsTyping(false);
+                    clearTimeout(pendingWatchdog);
                 }
                 await goToStep("done");
                 return;
@@ -678,46 +686,35 @@ export function AIAssistantModal({
             setSavedOk(true);
             setBackend("none");
         }
-        // ★ v1.9.53/62: Envío de email vía /api/send-email (AWAIT real)
-        // Si falla, NO fingimos éxito: lo registramos y mostramos
-        // un mensaje claro al usuario. SIEMPRE actualiza emailStatus.
-        let emailResult: Awaited<ReturnType<typeof sendLeadEmail>> | null = null;
-        try {
-            emailResult = await sendLeadEmail({
-                leadId:         result.id || `local-${Date.now()}`,
-                restaurantName: name || undefined,
-                userEmail:      email || undefined,
-                selectedPlan:   (plan as string) || "basic",
-                businessType:   businessType || undefined,
-                source:         source,
-                trialEndsAt:    trialEndsAt,
-                status:         status,
-            });
+        // ★ v1.9.65: Envío de email en PARALELO (no await en el flujo principal)
+        // El modal NO espera al email. El UI se actualiza cuando el server responda.
+        // Si el server cuelga, el watchdog del cliente (5s en handleOption) fuerza
+        // emailStatus="error" sin importar lo que pase aquí.
+        const leadIdForEmail = result.id || `local-${Date.now()}`;
+        sendLeadEmail({
+            leadId:         leadIdForEmail,
+            restaurantName: name || undefined,
+            userEmail:      email || undefined,
+            selectedPlan:   (plan as string) || "basic",
+            businessType:   businessType || undefined,
+            source:         source,
+            trialEndsAt:    trialEndsAt,
+            status:         status,
+        }).then((emailResult) => {
             console.log("[AIAssistantModal] email notify result:", emailResult);
-        } catch (e: any) {
-            console.warn("[AIAssistantModal] email notify error:", e?.message ?? e);
-            emailResult = {
-                ok: false,
-                error: e?.message ?? "Error desconocido",
-                via: "network-error",
-            };
-        }
-        // ★ v1.9.62: clasificación robusta del resultado
-        if (emailResult) {
             if (emailResult.ok) {
                 setEmailStatus("ok");
                 setEmailNotConfigured(false);
                 setEmailError(null);
             } else {
-                // Cualquier fallo (timeout cliente, network-error, http error)
                 setEmailStatus("error");
                 setEmailError(emailResult.error ?? "Error desconocido");
             }
-        } else {
-            // Caso imposible pero defensivo
+        }).catch((e: any) => {
+            console.warn("[AIAssistantModal] email notify catch:", e?.message ?? e);
             setEmailStatus("error");
-            setEmailError("Sin respuesta del servidor");
-        }
+            setEmailError(e?.message ?? "Error desconocido");
+        });
         setBusy(false);
     };
 
