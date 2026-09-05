@@ -26,7 +26,7 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { saveLead, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
+import { saveLead, saveLeadToLocal, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource, type LeadRecord } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
 import { sendLeadEmail } from "../../lib/notify";
 import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit } from "../../lib/leadGuard";
@@ -690,11 +690,27 @@ export function AIAssistantModal({
         // el UI se quede en blanco o "pending" para siempre.
         const leadIdForEmail = result.id || `local-${Date.now()}`;
 
+        // ★ v1.9.67: GUARDAR SIEMPRE en localStorage (independiente del email)
+        // El admin puede recuperar leads aunque fallen todos los servicios externos.
+        const lsPayload: LeadRecord = {
+            id:               leadIdForEmail,
+            user_email:       email || undefined,
+            restaurant_name:  name || undefined,
+            selected_plan:    (plan as PlanCode) || undefined,
+            trial_ends_at:    trialEndsAt,
+            status,
+            chat_history:     history,
+            source,
+            metadata:         { business_type: businessType, source, ctxPlan: ctxPlan ?? null },
+        };
+        saveLeadToLocal(lsPayload, false, "pending");
+
         // Asume éxito a los 3s si no hay respuesta
         const assumeOkTimer = setTimeout(() => {
             if (emailStatusRef.current === null) {
                 console.log("[AIAssistantModal] no response in 3s, assuming ok");
                 setEmailStatus("ok");
+                saveLeadToLocal(lsPayload, true, "assumed-ok");
             }
         }, 3000);
 
@@ -714,15 +730,18 @@ export function AIAssistantModal({
                 setEmailStatus("ok");
                 setEmailNotConfigured(false);
                 setEmailError(null);
+                saveLeadToLocal(lsPayload, true, emailResult.via ?? "ok");
             } else {
                 setEmailStatus("error");
                 setEmailError(emailResult.error ?? "Error desconocido");
+                saveLeadToLocal(lsPayload, false, emailResult.via ?? "error");
             }
         }).catch((e: any) => {
             clearTimeout(assumeOkTimer);
             console.warn("[AIAssistantModal] email notify catch:", e?.message ?? e);
             setEmailStatus("error");
             setEmailError(e?.message ?? "Error desconocido");
+            saveLeadToLocal(lsPayload, false, "exception");
         });
         setBusy(false);
     };
@@ -942,6 +961,41 @@ export function AIAssistantModal({
                                     <span>Procesando solicitud...</span>
                                 </div>
                             )}
+                            {/* ★ v1.9.67: Fallback contacto directo (SI EmailJS falla) */}
+                            <div className="w-full flex flex-col gap-1.5 pt-1.5 border-t
+                                            border-slate-200/60 mt-1.5">
+                                <div className="text-[10px] text-slate-500 text-center font-semibold">
+                                    ¿No te contactamos? Escríbenos directo:
+                                </div>
+                                <div className="flex gap-1.5">
+                                    <a
+                                        href={`https://wa.me/34644165153?text=${encodeURIComponent(
+                                            `Hola! Soy ${name || "cliente"}. Acabo de solicitar la prueba de 7 días de MOZONA TPV para "${name || "mi restaurante"}". Mi email: ${email || "(no proporcionado)"}`
+                                        )}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 h-8 rounded-lg bg-emerald-500 text-white
+                                                   text-[10.5px] font-black flex items-center justify-center
+                                                   gap-1 active:scale-95 transition hover:bg-emerald-600">
+                                        💬 WhatsApp
+                                    </a>
+                                    <a
+                                        href={`mailto:rofixinsta@gmail.com?subject=${encodeURIComponent(
+                                            `Solicitud MOZONA TPV - ${name || "Restaurante"}`
+                                        )}&body=${encodeURIComponent(
+                                            `Hola,\n\nAcabo de solicitar la prueba de 7 días.\n\n` +
+                                            `Restaurante: ${name || "(no proporcionado)"}\n` +
+                                            `Email: ${email || "(no proporcionado)"}\n` +
+                                            `Plan: ${plan || "basic"}\n\n` +
+                                            `Quedo a la espera de vuestra respuesta.\n\nGracias.`
+                                        )}`}
+                                        className="flex-1 h-8 rounded-lg bg-slate-700 text-white
+                                                   text-[10.5px] font-black flex items-center justify-center
+                                                   gap-1 active:scale-95 transition hover:bg-slate-800">
+                                        ✉ Email
+                                    </a>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

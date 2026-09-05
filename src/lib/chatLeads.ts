@@ -173,3 +173,66 @@ export async function appendMessage(
         return { ok: false, error: e?.message ?? "Error" };
     }
 }
+
+/** ★ v1.9.67: Backup SIEMPRE en localStorage (independiente de Firebase/EmailJS)
+ *  Permite al admin recuperar leads aunque fallen todos los servicios externos. */
+const LS_KEY = "mozona.assistant.leads.backup";
+
+export interface LocalLead {
+    id: string;
+    user_email: string | null;
+    restaurant_name: string | null;
+    selected_plan: string | null;
+    business_type: string | null;
+    status: string;
+    trial_ends_at: string | null;
+    source: string | null;
+    chat_history: ChatMessage[];
+    metadata: Record<string, any>;
+    created_at: string;
+    notif_sent: boolean;
+    notif_via: string | null;
+}
+
+export function saveLeadToLocal(lead: LeadRecord, notifSent: boolean, notifVia: string | null): LocalLead {
+    const id = lead.id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const rec: LocalLead = {
+        id,
+        user_email:      lead.user_email      ?? null,
+        restaurant_name: lead.restaurant_name ?? null,
+        selected_plan:   lead.selected_plan   ?? null,
+        business_type:   (lead.metadata as any)?.business_type ?? null,
+        status:          lead.status,
+        trial_ends_at:   lead.trial_ends_at   ?? null,
+        source:          lead.source          ?? null,
+        chat_history:    lead.chat_history    ?? [],
+        metadata:        (lead.metadata as Record<string, any>) ?? {},
+        created_at:      new Date().toISOString(),
+        notif_sent:      notifSent,
+        notif_via:       notifVia,
+    };
+    try {
+        const list: LocalLead[] = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+        list.push(rec);
+        // Mantener solo los últimos 50
+        const trimmed = list.slice(-50);
+        localStorage.setItem(LS_KEY, JSON.stringify(trimmed));
+    } catch (e) {
+        console.warn("[chatLeads] localStorage backup failed:", e);
+    }
+    return rec;
+}
+
+export function getLocalLeads(): LocalLead[] {
+    try {
+        return JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    } catch {
+        return [];
+    }
+}
+
+export function clearLocalLeads(): void {
+    try {
+        localStorage.removeItem(LS_KEY);
+    } catch {}
+}
