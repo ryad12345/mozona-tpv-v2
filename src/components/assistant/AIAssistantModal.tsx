@@ -288,6 +288,28 @@ export function AIAssistantModal({
     // ★ v1.9.54: EmailJS no configurado (env vars faltan, modo defensivo)
     const [emailNotConfigured, setEmailNotConfigured] = useState<boolean>(false);
     // ★ v1.9.58: estado del envío vía /api/send-email (proxy)
+
+    // ★ v1.9.68: helper de diagnóstico en window (para debug desde consola)
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            (window as any).__mozonaDiag = async () => {
+                try {
+                    const r = await fetch("/api/send-email?diag=1");
+                    const j = await r.json();
+                    console.log("[__mozonaDiag] /api/send-email?diag=1 →", j);
+                    return j;
+                } catch (e) {
+                    console.error("[__mozonaDiag] error:", e);
+                    return { ok: false, error: String(e) };
+                }
+            };
+            console.log(
+                "%c[AIAssistantModal] v1.9.68",
+                "background:#7c3aed;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
+                "Para diagnóstico del email, abre la consola y ejecuta: __mozonaDiag()"
+            );
+        }
+    }, []);
     const [emailStatus, setEmailStatus] = useState<"ok" | "error" | "pending" | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const emailStatusRef = useRef<"ok" | "error" | "pending" | null>(null);

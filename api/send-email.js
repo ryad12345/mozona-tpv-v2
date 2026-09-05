@@ -1,14 +1,19 @@
 // =====================================================================
-// MOZONA TPV — /api/send-email  (v1.9.63 - DEFINITIVO)
+// MOZONA TPV — /api/send-email  (v1.9.68 - DIAGNOSTICO + MEJORAS)
 // =====================================================================
 // Vercel Serverless Function. CommonJS puro. Sin imports externos.
 // Hard timer 4s + AbortController 3s + try-catch global.
+// Endpoint /api/send-email?diag=1 muestra estado de env vars sin enviar email.
 //
 // ENV VARS (en Vercel Dashboard, SIN prefijo VITE_):
 //   EMAILJS_SERVICE_ID   = service_xxx
 //   EMAILJS_TEMPLATE_ID  = template_xxx
 //   EMAILJS_PUBLIC_KEY   = xxx
 //   EMAILJS_TO_EMAIL     = rofixinsta@gmail.com (opcional)
+//
+// ENDPOINTS:
+//   GET  /api/send-email?diag=1  → Estado sin enviar email
+//   POST /api/send-email         → Envía email via EmailJS
 // =====================================================================
 
 "use strict";
@@ -129,8 +134,33 @@ module.exports = async function handler(req, res) {
         try { res.status(200).end(); } catch (e) {}
         return;
     }
+
+    // ★ v1.9.68: Endpoint de diagnóstico (?diag=1)
+    // Muestra el estado de las env vars sin enviar email.
+    if (req.url && req.url.indexOf("diag=1") !== -1) {
+        var diagServiceId  = process.env.EMAILJS_SERVICE_ID  || "";
+        var diagTemplateId = process.env.EMAILJS_TEMPLATE_ID || "";
+        var diagPublicKey  = process.env.EMAILJS_PUBLIC_KEY  || "";
+        var diagToEmail    = process.env.EMAILJS_TO_EMAIL    || TO_EMAIL_DEFAULT;
+        return safeJson(res, 200, {
+            ok: true,
+            diag: true,
+            runtime: process.version,
+            env: {
+                EMAILJS_SERVICE_ID:  { set: !!diagServiceId,  length: diagServiceId.length,  preview: diagServiceId ? diagServiceId.substring(0, 8) + "..." : "(vacío)" },
+                EMAILJS_TEMPLATE_ID: { set: !!diagTemplateId, length: diagTemplateId.length, preview: diagTemplateId ? diagTemplateId.substring(0, 8) + "..." : "(vacío)" },
+                EMAILJS_PUBLIC_KEY:  { set: !!diagPublicKey,  length: diagPublicKey.length,  preview: diagPublicKey ? diagPublicKey.substring(0, 8) + "..." : "(vacío)" },
+                EMAILJS_TO_EMAIL:    { set: !!process.env.EMAILJS_TO_EMAIL, value: diagToEmail },
+            },
+            status: (diagServiceId && diagTemplateId && diagPublicKey) ? "READY" : "MISSING_ENV_VARS",
+            instructions: (diagServiceId && diagTemplateId && diagPublicKey)
+                ? "EmailJS configurado. Los emails se enviarán correctamente."
+                : "Configura las env vars en Vercel Dashboard → Settings → Environment Variables. SIN prefijo VITE_.",
+        });
+    }
+
     if (req.method !== "POST") {
-        return safeJson(res, 405, { ok: false, error: "Method not allowed" });
+        return safeJson(res, 405, { ok: false, error: "Method not allowed. Use POST para enviar email, o GET con ?diag=1 para diagnóstico." });
     }
 
     var timedOut = false;

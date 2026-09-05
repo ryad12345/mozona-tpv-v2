@@ -60,6 +60,7 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
 
     const mainPromise = (async (): Promise<SendResult> => {
         try {
+            console.log("[notify] POST /api/send-email", data);
             const resp = await fetch("/api/send-email", {
                 method: "POST",
                 headers: {
@@ -70,13 +71,20 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
                 signal: controller.signal,
             });
             clearTimeout(abortId);
+            console.log("[notify] response status:", resp.status, "CT:", resp.headers.get("content-type"));
 
             // ★ Si la respuesta no es JSON, error claro
             const contentType = resp.headers.get("content-type") || "";
             if (!contentType.includes("application/json")) {
+                // ★ v1.9.68: el rewrite está interceptando /api/* (devuelve HTML)
+                // El cliente debe hacer hard refresh o esperar al deploy
+                const body = await resp.text().catch(() => "");
+                console.error("[notify] non-JSON response, first 200 chars:", body.substring(0, 200));
                 return {
                     ok: false,
-                    error: `Respuesta no-JSON (Content-Type: ${contentType || "vacío"}, HTTP ${resp.status}). El endpoint /api/send-email probablemente no se está ejecutando.`,
+                    error: `El endpoint /api/send-email devolvió ${contentType || "HTML"} en vez de JSON. ` +
+                           `Esto significa que Vercel aún no detectó la serverless function. ` +
+                           `Espera al deploy y haz hard refresh.`,
                     via: "network-error",
                     statusCode: resp.status,
                 };
@@ -91,6 +99,8 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
                     statusCode: resp.status,
                 };
             }
+
+            console.log("[notify] response json:", json);
 
             if (!resp.ok || !json?.ok) {
                 return {
