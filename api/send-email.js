@@ -1,22 +1,14 @@
 // =====================================================================
-// MOZONA TPV — /api/send-email  (v1.9.62 - versión definitiva)
+// MOZONA TPV — /api/send-email  (v1.9.63 - DEFINITIVO)
 // =====================================================================
-// Vercel Serverless Function. CommonJS puro. Sin imports.
+// Vercel Serverless Function. CommonJS puro. Sin imports externos.
+// Hard timer 4s + AbortController 3s + try-catch global.
 //
-// Variables de entorno REQUERIDAS en Vercel (sin prefijo VITE_):
+// ENV VARS (en Vercel Dashboard, SIN prefijo VITE_):
 //   EMAILJS_SERVICE_ID   = service_xxx
 //   EMAILJS_TEMPLATE_ID  = template_xxx
 //   EMAILJS_PUBLIC_KEY   = xxx
 //   EMAILJS_TO_EMAIL     = rofixinsta@gmail.com (opcional)
-//
-// Garantías:
-//   - Log inmediato al primer statement
-//   - OPTIONS preflight responde sin lógica
-//   - Hard timer 4s fuerza 504 si todo cuelga
-//   - AbortController 3s para EmailJS
-//   - try-catch en cada await
-//   - safeJson evita double-respond
-//   - Devuelve SIEMPRE una respuesta HTTP
 // =====================================================================
 
 "use strict";
@@ -32,9 +24,7 @@ function safeJson(res, status, body) {
         if (res.headersSent || res.writableEnded) return false;
         res.status(status).json(body);
         return true;
-    } catch (e) {
-        return false;
-    }
+    } catch (e) { return false; }
 }
 
 function setCors(res, origin) {
@@ -59,14 +49,7 @@ function setCors(res, origin) {
 
 function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[<>&"']/g, function (c) {
-        switch (c) {
-            case "<": return "&lt;";
-            case ">": return "&gt;";
-            case "&": return "&amp;";
-            case '"': return "&quot;";
-            case "'": return "&#39;";
-        }
-        return c;
+        return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[c] || c;
     });
 }
 
@@ -142,17 +125,14 @@ module.exports = async function handler(req, res) {
     var origin = req.headers.origin || (req.headers.referer ? req.headers.referer.replace(/\/$/, "") : "") || "";
     setCors(res, origin);
 
-    // Preflight CORS: responde inmediatamente
     if (req.method === "OPTIONS") {
         try { res.status(200).end(); } catch (e) {}
         return;
     }
-
     if (req.method !== "POST") {
         return safeJson(res, 405, { ok: false, error: "Method not allowed" });
     }
 
-    // Hard timer 4s
     var timedOut = false;
     var hardTimer = setTimeout(function () {
         timedOut = true;
@@ -163,27 +143,30 @@ module.exports = async function handler(req, res) {
         })) {
             console.error("[api/send-email] HARD TIMEOUT (>4s) - 504 forzado");
         }
-        if (!res.writableEnded) {
-            try { res.end(); } catch (e) {}
-        }
+        if (!res.writableEnded) { try { res.end(); } catch (e) {} }
     }, MAX_HARD_TIMER_MS);
 
     try {
         if (timedOut) return;
+
         var SERVICE_ID  = process.env.EMAILJS_SERVICE_ID;
         var TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
         var PUBLIC_KEY  = process.env.EMAILJS_PUBLIC_KEY;
         var TO_EMAIL    = process.env.EMAILJS_TO_EMAIL || TO_EMAIL_DEFAULT;
 
         if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
-            console.error("[api/send-email] EmailJS env vars missing on server");
+            console.error("[api/send-email] EmailJS env vars missing on server",
+                "SERVICE_ID:", !!SERVICE_ID,
+                "TEMPLATE_ID:", !!TEMPLATE_ID,
+                "PUBLIC_KEY:", !!PUBLIC_KEY);
             return safeJson(res, 500, {
                 ok: false,
-                error: "Server misconfiguration: EMAILJS_SERVICE_ID/TEMPLATE_ID/PUBLIC_KEY no están configuradas en Vercel.",
+                error: "Server misconfiguration: EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY no están configuradas en Vercel. Sin prefijo VITE_.",
             });
         }
 
         if (timedOut) return;
+
         var data = req.body;
         if (typeof data === "string") {
             try { data = JSON.parse(data); } catch (e) {
@@ -213,6 +196,7 @@ module.exports = async function handler(req, res) {
         };
 
         if (timedOut) return;
+
         var controller = (typeof AbortController === "function") ? new AbortController() : null;
         var emailTimer = setTimeout(function () {
             if (controller) { try { controller.abort(); } catch (e) {} }

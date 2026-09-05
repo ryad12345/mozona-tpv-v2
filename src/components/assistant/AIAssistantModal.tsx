@@ -26,10 +26,10 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { saveLead, appendMessage, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
+import { saveLead, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
 import { sendLeadEmail } from "../../lib/notify";
-import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit, LEAD_RATE_LIMIT_MS } from "../../lib/leadGuard";
+import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit } from "../../lib/leadGuard";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { saveProduct as saveProductCatalog, type ProductInput } from "../../lib/catalog";
@@ -283,7 +283,6 @@ export function AIAssistantModal({
     const [rateLimitedUntil, setRateLimitedUntil] = useState<number>(0);
     // ★ v1.9.50: estado temporal del producto (config mode)
     const [pendingPrice, setPendingPrice] = useState<number>(0);
-    const [pendingIva,   setPendingIva]   = useState<number>(10);
     // ★ v1.9.53: error real de EmailJS (si falla, NO fingir éxito)
     const [emailError, setEmailError] = useState<string | null>(null);
     // ★ v1.9.54: EmailJS no configurado (env vars faltan, modo defensivo)
@@ -594,7 +593,6 @@ export function AIAssistantModal({
                 setIsTyping(false);
                 return;
             }
-            setPendingIva(iva);
             setInputValue("");
             // ★ v1.9.50: persistir vía saveProduct del catálogo existente
             try {
