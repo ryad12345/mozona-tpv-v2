@@ -680,10 +680,10 @@ export function AIAssistantModal({
             setSavedOk(true);
             setBackend("none");
         }
-        // ★ v1.9.53: Envío de email vía EmailJS (AWAIT real, no fire-and-forget)
-        // Si EmailJS falla, NO fingimos éxito: lo registramos y mostramos
-        // un mensaje claro al usuario.
-        let emailResult: { ok: boolean; error?: string; via: string } | null = null;
+        // ★ v1.9.53/62: Envío de email vía /api/send-email (AWAIT real)
+        // Si falla, NO fingimos éxito: lo registramos y mostramos
+        // un mensaje claro al usuario. SIEMPRE actualiza emailStatus.
+        let emailResult: Awaited<ReturnType<typeof sendLeadEmail>> | null = null;
         try {
             emailResult = await sendLeadEmail({
                 leadId:         result.id || `local-${Date.now()}`,
@@ -698,23 +698,27 @@ export function AIAssistantModal({
             console.log("[AIAssistantModal] email notify result:", emailResult);
         } catch (e: any) {
             console.warn("[AIAssistantModal] email notify error:", e?.message ?? e);
-            emailResult = { ok: false, error: e?.message ?? "Error desconocido", via: "exception" };
+            emailResult = {
+                ok: false,
+                error: e?.message ?? "Error desconocido",
+                via: "network-error",
+            };
         }
-        // ★ v1.9.53/54/58: clasificar el resultado del envío
+        // ★ v1.9.62: clasificación robusta del resultado
         if (emailResult) {
             if (emailResult.ok) {
                 setEmailStatus("ok");
                 setEmailNotConfigured(false);
                 setEmailError(null);
-            } else if (emailResult.via === "noop" || emailResult.via === "network-error") {
-                // Error de red o servidor no configurado
-                setEmailStatus("error");
-                setEmailError(emailResult.error ?? "Sin respuesta del servidor");
             } else {
-                // Error de EmailJS (HTTP 4xx/5xx)
+                // Cualquier fallo (timeout cliente, network-error, http error)
                 setEmailStatus("error");
                 setEmailError(emailResult.error ?? "Error desconocido");
             }
+        } else {
+            // Caso imposible pero defensivo
+            setEmailStatus("error");
+            setEmailError("Sin respuesta del servidor");
         }
         setBusy(false);
     };

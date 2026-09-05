@@ -1,28 +1,13 @@
 // =====================================================================
-// MOZONA TPV — notify.ts (cliente)
+// MOZONA TPV — notify.ts (cliente, v1.9.62)
 // =====================================================================
 // Wrapper cliente para envío de emails de leads.
-//
-// v1.9.57: CAMBIO ARQUITECTÓNICO IMPORTANTE
-//   ANTES: el cliente llamaba directamente a EmailJS con credenciales
-//          en el bundle (expuestas en repo público)
-//   AHORA: el cliente hace POST a /api/send-email (Vercel serverless)
-//          Las credenciales viven SOLO en el servidor de Vercel.
-//
-//   Cliente (browser)  -->  /api/send-email  -->  EmailJS API
-//                                  ^
-//                                  |
-//                          Vercel Serverless Function
-//                          (env vars EMAILJS_* en Vercel Dashboard)
-//
-// SEGURIDAD:
-//   - Cero credenciales en el bundle
-//   - CORS restringido a mozonatpv.site y localhost
-//   - EmailJS nunca se llama desde el navegador
-//   - Repo público sin riesgo de phishing
+// Hace POST a /api/send-email (Vercel Serverless Function).
+// CERO credenciales en el bundle del cliente.
 // =====================================================================
 
 const ADMIN_EMAIL_DEFAULT = "rofixinsta@gmail.com";
+const CLIENT_TIMEOUT_MS = 8000;
 
 export interface LeadEmailData {
     leadId?:         string;
@@ -36,22 +21,19 @@ export interface LeadEmailData {
 }
 
 export interface SendResult {
-    ok:         boolean;
-    error?:     string;
-    via:        "vercel-proxy" | "noop" | "network-error";
+    ok:          boolean;
+    error?:      string;
+    via:         "vercel-proxy" | "network-error" | "client-timeout";
     statusCode?: number;
-    to?:        string;
-    leadId?:    string;
+    to?:         string;
+    leadId?:     string;
 }
 
 /** ★★★ FUNCIÓN PRINCIPAL ★★★
- *  Hace POST a /api/send-email. La Vercel Serverless Function
- *  lee las credenciales del servidor y llama a EmailJS. */
+ *  POST a /api/send-email con AbortController (8s timeout cliente) */
 export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
-    // ★ v1.9.59: timeout del cliente (10s) por si el serverless cuelga
-    const TIMEOUT_MS = 10000;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
 
     try {
         const resp = await fetch("/api/send-email", {
@@ -98,8 +80,8 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
         if (e?.name === "AbortError") {
             return {
                 ok: false,
-                error: "Timeout: el servidor no respondió en 10s",
-                via: "network-error",
+                error: "Timeout: el servidor no respondió en 8 segundos",
+                via: "client-timeout",
             };
         }
         console.error("[notify] network error:", e);
@@ -111,14 +93,11 @@ export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
     }
 }
 
-/** Helper: email del admin (privado, no se muestra en UI) */
 export function getAdminEmail(): string {
     return ADMIN_EMAIL_DEFAULT;
 }
 
-/** ★ v1.9.57: función eliminada — ya no usamos EmailJS en el cliente
- *  Mantenemos EMAILJS_CONFIGURED exportado para compatibilidad,
- *  pero siempre retorna false (las credenciales viven en el servidor). */
+// Compatibilidad legacy
 export const EMAILJS_CONFIGURED = false;
 
 export interface EmailJSConfigStatus {
@@ -141,12 +120,11 @@ export function checkEmailJSConfig(): EmailJSConfigStatus {
     };
 }
 
-// ★ v1.9.57: log informativo al cargar el módulo
 if (typeof window !== "undefined") {
     console.log(
-        "%c[notify] v1.9.57",
+        "%c[notify] v1.9.62",
         "background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
-        "Cliente usa /api/send-email (Vercel Serverless). " +
-        "Credenciales en el SERVIDOR, no en el bundle."
+        "POST /api/send-email (Vercel Serverless). " +
+        "Credenciales SOLO en el servidor. Timeout cliente: 8s."
     );
 }

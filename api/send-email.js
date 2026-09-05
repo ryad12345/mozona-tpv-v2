@@ -1,27 +1,31 @@
 // =====================================================================
-// MOZONA TPV — /api/send-email  (v1.9.61 - CommonJS)
+// MOZONA TPV — /api/send-email  (v1.9.62 - versión definitiva)
 // =====================================================================
-// Serverless Function SIMPLE y ROBUSTA.
-// Convertida a CommonJS para maxima compatibilidad con Vercel runtime.
-// Sin imports externos, todo inline.
+// Vercel Serverless Function. CommonJS puro. Sin imports.
 //
-// Garantias:
+// Variables de entorno REQUERIDAS en Vercel (sin prefijo VITE_):
+//   EMAILJS_SERVICE_ID   = service_xxx
+//   EMAILJS_TEMPLATE_ID  = template_xxx
+//   EMAILJS_PUBLIC_KEY   = xxx
+//   EMAILJS_TO_EMAIL     = rofixinsta@gmail.com (opcional)
+//
+// Garantías:
 //   - Log inmediato al primer statement
-//   - OPTIONS preflight responde inmediatamente
-//   - Hard timer de 4s fuerza respuesta 504 si algo cuelga
+//   - OPTIONS preflight responde sin lógica
+//   - Hard timer 4s fuerza 504 si todo cuelga
 //   - AbortController 3s para EmailJS
-//   - try-catch global
+//   - try-catch en cada await
 //   - safeJson evita double-respond
+//   - Devuelve SIEMPRE una respuesta HTTP
 // =====================================================================
 
-// ★ Log de carga del modulo (aparece en Vercel logs al deploy)
+"use strict";
+
 console.log("[api/send-email] module loaded, runtime:", process.version);
 
-const MAX_HARD_TIMER_MS = 4000;   // 4s absoluto
-const EMAILJS_TIMEOUT_MS = 3000;  // 3s para EmailJS
-const TO_EMAIL_DEFAULT   = "rofixinsta@gmail.com";
-
-// ────────── HELPERS ──────────
+var MAX_HARD_TIMER_MS = 4000;
+var EMAILJS_TIMEOUT_MS = 3000;
+var TO_EMAIL_DEFAULT   = "rofixinsta@gmail.com";
 
 function safeJson(res, status, body) {
     try {
@@ -36,7 +40,7 @@ function safeJson(res, status, body) {
 function setCors(res, origin) {
     try {
         if (res.headersSent) return;
-        const allowed = [
+        var allowed = [
             "https://mozonatpv.site",
             "https://www.mozonatpv.site",
             "https://mozonatpv.vercel.app",
@@ -46,6 +50,7 @@ function setCors(res, origin) {
         if (allowed.indexOf(origin) !== -1) {
             res.setHeader("Access-Control-Allow-Origin", origin);
         }
+        res.setHeader("Vary", "Origin");
         res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type");
         res.setHeader("Access-Control-Max-Age", "86400");
@@ -72,13 +77,13 @@ var PLAN_LABELS = {
     trial:        "Trial 7 días",
 };
 var SOURCE_LABELS = {
-    landing:    "Landing Page", pricing:    "Página de Planes",
-    paywall:    "Bloqueo de Trial", onboarding: "Onboarding inicial",
-    settings:   "Ajustes", floating:  "Botón flotante",
+    landing: "Landing Page", pricing: "Página de Planes",
+    paywall: "Bloqueo de Trial", onboarding: "Onboarding inicial",
+    settings: "Ajustes", floating: "Botón flotante",
 };
 var BUSINESS_LABELS = {
-    restaurante: "Restaurante", bar:     "Bar / Tapas",
-    cafeteria:   "Cafetería", otro:     "Otro",
+    restaurante: "Restaurante", bar: "Bar / Tapas",
+    cafeteria: "Cafetería", otro: "Otro",
 };
 
 function buildHtmlBody(d) {
@@ -87,8 +92,8 @@ function buildHtmlBody(d) {
     var source = SOURCE_LABELS[d.source] || d.source || "—";
     var biz = BUSINESS_LABELS[d.businessType] || d.businessType || "—";
     return '<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto">' +
-        '<div style="background:linear-gradient(135deg,#2563eb 0%,#7c3aed 100%);padding:20px 24px;border-radius:12px 12px 0 0">' +
-        '<h1 style="margin:0;color:white;font-size:20px">🚀 Nueva Solicitud de Contratación</h1>' +
+        '<div style="background:linear-gradient(135deg,#2563eb,#7c3aed);padding:20px 24px;border-radius:12px 12px 0 0">' +
+        '<h1 style="margin:0;color:#fff;font-size:20px">🚀 Nueva Solicitud de Contratación</h1>' +
         '<p style="margin:6px 0 0 0;color:#dbeafe;font-size:13px">Prueba 7 días · ' + escapeHtml(d.restaurantName || "(sin nombre)") + '</p>' +
         '</div>' +
         '<div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">' +
@@ -104,8 +109,7 @@ function buildHtmlBody(d) {
         '<tr><td style="padding:8px 0;color:#64748b">Lead ID</td><td style="padding:8px 0;font-family:monospace;font-size:11px">' + escapeHtml(d.leadId || "—") + '</td></tr>' +
         '</table>' +
         '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">Solicitud capturada por Riyad, asistente IA de MOZONA TPV. Email interno · Confidencial.</div>' +
-        '</div>' +
-        '</div>';
+        '</div></div>';
 }
 
 function buildTextBody(d) {
@@ -133,22 +137,22 @@ function buildSubject(d) {
 // ────────── HANDLER (CommonJS) ──────────
 
 module.exports = async function handler(req, res) {
-    // ★ Log INMEDIATO: prueba que la función entró
     console.log("[api/send-email] hit, method:", req.method, "url:", req.url);
 
     var origin = req.headers.origin || (req.headers.referer ? req.headers.referer.replace(/\/$/, "") : "") || "";
     setCors(res, origin);
 
-    // ★ Preflight CORS: responde INMEDIATAMENTE sin más lógica
+    // Preflight CORS: responde inmediatamente
     if (req.method === "OPTIONS") {
-        return res.status(200).end();
+        try { res.status(200).end(); } catch (e) {}
+        return;
     }
 
     if (req.method !== "POST") {
-        return res.status(405).json({ ok: false, error: "Method not allowed" });
+        return safeJson(res, 405, { ok: false, error: "Method not allowed" });
     }
 
-    // ★ Hard timer 4s en paralelo
+    // Hard timer 4s
     var timedOut = false;
     var hardTimer = setTimeout(function () {
         timedOut = true;
@@ -157,7 +161,7 @@ module.exports = async function handler(req, res) {
             error: "Server timeout: la función tardó más de 4 segundos",
             statusCode: 504,
         })) {
-            console.error("[api/send-email] HARD TIMEOUT (>4s) - respuesta forzada 504");
+            console.error("[api/send-email] HARD TIMEOUT (>4s) - 504 forzado");
         }
         if (!res.writableEnded) {
             try { res.end(); } catch (e) {}
@@ -165,7 +169,6 @@ module.exports = async function handler(req, res) {
     }, MAX_HARD_TIMER_MS);
 
     try {
-        // Env vars
         if (timedOut) return;
         var SERVICE_ID  = process.env.EMAILJS_SERVICE_ID;
         var TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
@@ -176,11 +179,10 @@ module.exports = async function handler(req, res) {
             console.error("[api/send-email] EmailJS env vars missing on server");
             return safeJson(res, 500, {
                 ok: false,
-                error: "Server misconfiguration: EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY not set in Vercel.",
+                error: "Server misconfiguration: EMAILJS_SERVICE_ID/TEMPLATE_ID/PUBLIC_KEY no están configuradas en Vercel.",
             });
         }
 
-        // Body
         if (timedOut) return;
         var data = req.body;
         if (typeof data === "string") {
@@ -189,10 +191,9 @@ module.exports = async function handler(req, res) {
             }
         }
         if (!data || (!data.userEmail && !data.leadId)) {
-            return safeJson(res, 400, { ok: false, error: "Missing required fields" });
+            return safeJson(res, 400, { ok: false, error: "Missing required fields (userEmail or leadId)" });
         }
 
-        // Construir template
         var subject = buildSubject(data);
         var html    = buildHtmlBody(data);
         var text    = buildTextBody(data);
@@ -211,13 +212,10 @@ module.exports = async function handler(req, res) {
             trial_until:   data.trialEndsAt    || "",
         };
 
-        // ★ AbortController para EmailJS
         if (timedOut) return;
         var controller = (typeof AbortController === "function") ? new AbortController() : null;
         var emailTimer = setTimeout(function () {
-            if (controller) {
-                try { controller.abort(); } catch (e) {}
-            }
+            if (controller) { try { controller.abort(); } catch (e) {} }
         }, EMAILJS_TIMEOUT_MS);
 
         var fetchOpts = {
