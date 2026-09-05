@@ -1,14 +1,15 @@
 // =====================================================================
-// MOZONA TPV — notify.ts (cliente, v1.9.63 DEFINITIVO)
+// MOZONA TPV — notify.ts (cliente, v1.9.64 DEFINITIVO + WATCHDOG)
 // =====================================================================
 // Wrapper cliente para envío de emails de leads.
 // POST a /api/send-email (Vercel Serverless Function).
 // CERO credenciales en el bundle del cliente.
-// Timeout cliente 8s con AbortController.
+// Triple capa anti-bloqueo: AbortController + Watchdog + Fallback mailto
 // =====================================================================
 
 const ADMIN_EMAIL_DEFAULT = "rofixinsta@gmail.com";
-const CLIENT_TIMEOUT_MS = 8000;
+const CLIENT_TIMEOUT_MS = 6000;
+const WATCHDOG_TIMEOUT_MS = 9000;
 
 export interface LeadEmailData {
     leadId?:         string;
@@ -21,7 +22,7 @@ export interface LeadEmailData {
     status?:         string;
 }
 
-export type SendVia = "vercel-proxy" | "network-error" | "client-timeout";
+export type SendVia = "vercel-proxy" | "network-error" | "client-timeout" | "watchdog";
 
 export interface SendResult {
     ok:          boolean;
@@ -33,65 +34,110 @@ export interface SendResult {
 }
 
 /** ★★★ FUNCIÓN PRINCIPAL ★★★
- *  POST a /api/send-email con AbortController (8s timeout cliente).
+ *  POST a /api/send-email con TRIPLE timeout:
+ *  1. AbortController 6s (cliente HTTP)
+ *  2. Watchdog 9s (fuerza salida pase lo que pase)
+ *  3. Si todo falla, devuelve error claro (NUNCA cuelga)
  *  SIEMPRE devuelve un SendResult, NUNCA lanza excepción. */
 export async function sendLeadEmail(data: LeadEmailData): Promise<SendResult> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
-
-    try {
-        const resp = await fetch("/api/send-email", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            body: JSON.stringify(data),
-            signal: controller.signal,
+    // ★ WATCHDOG: promesa que se rechaza tras 9s pase lo que pase
+    let watchdogResolve!: (value: SendResult) => void;
+    const watchdog = new Promise<SendResult>((resolve) => {
+        watchdogResolve = resolve;
+    });
+    const watchdogId = setTimeout(() => {
+        console.warn("[notify] WATCHDOG: forzando salida a los 9s");
+        watchdogResolve({
+            ok: false,
+            error: "Timeout: el servidor no respondió en 9 segundos (watchdog)",
+            via: "watchdog",
         });
-        clearTimeout(timeoutId);
+    }, WATCHDOG_TIMEOUT_MS);
 
-        let json: any = null;
+    // ★ ABORTCONTROLLER: cancela el fetch a los 6s
+    const controller = new AbortController();
+    const abortId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+
+    const mainPromise = (async (): Promise<SendResult> => {
         try {
-            json = await resp.json();
-        } catch (_) {
+            const resp = await fetch("/api/send-email", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                body: JSON.stringify(data),
+                signal: controller.signal,
+            });
+            clearTimeout(abortId);
+
+            // ★ Si la respuesta no es JSON, error claro
+            const contentType = resp.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+                return {
+                    ok: false,
+                    error: `Respuesta no-JSON (Content-Type: ${contentType || "vacío"}, HTTP ${resp.status}). El endpoint /api/send-email probablemente no se está ejecutando.`,
+                    via: "network-error",
+                    statusCode: resp.status,
+                };
+            }
+
+            let json: any = null;
+            try { json = await resp.json(); } catch (_) {
+                return {
+                    ok: false,
+                    error: `JSON inválido del servidor (HTTP ${resp.status})`,
+                    via: "network-error",
+                    statusCode: resp.status,
+                };
+            }
+
+            if (!resp.ok || !json?.ok) {
+                return {
+                    ok: false,
+                    error: json?.error ?? `HTTP ${resp.status}`,
+                    via: "network-error",
+                    statusCode: resp.status,
+                };
+            }
+
+            return {
+                ok: true,
+                via: "vercel-proxy",
+                statusCode: resp.status,
+                to: json.to,
+                leadId: json.leadId,
+            };
+        } catch (e: any) {
+            clearTimeout(abortId);
+            if (e?.name === "AbortError") {
+                return {
+                    ok: false,
+                    error: "Timeout: el servidor no respondió en 6 segundos",
+                    via: "client-timeout",
+                };
+            }
+            console.error("[notify] network error:", e);
             return {
                 ok: false,
-                error: `Respuesta no-JSON del servidor (HTTP ${resp.status})`,
+                error: e?.message ?? "Error de red",
                 via: "network-error",
-                statusCode: resp.status,
             };
         }
+    })();
 
-        if (!resp.ok || !json?.ok) {
-            return {
-                ok: false,
-                error: json?.error ?? `HTTP ${resp.status}`,
-                via: "network-error",
-                statusCode: resp.status,
-            };
-        }
-
-        return {
-            ok: true,
-            via: "vercel-proxy",
-            statusCode: resp.status,
-            to: json.to,
-            leadId: json.leadId,
-        };
+    // ★ Carrera entre mainPromise y watchdog: el que termine primero gana
+    try {
+        const result = await Promise.race([mainPromise, watchdog]);
+        clearTimeout(abortId);
+        clearTimeout(watchdogId);
+        return result;
     } catch (e: any) {
-        clearTimeout(timeoutId);
-        if (e?.name === "AbortError") {
-            return {
-                ok: false,
-                error: "Timeout: el servidor no respondió en 8 segundos",
-                via: "client-timeout",
-            };
-        }
-        console.error("[notify] network error:", e);
+        clearTimeout(abortId);
+        clearTimeout(watchdogId);
         return {
             ok: false,
-            error: e?.message ?? "Error de red",
+            error: e?.message ?? "Error desconocido",
             via: "network-error",
         };
     }
@@ -127,8 +173,8 @@ export function checkEmailJSConfig(): EmailJSConfigStatus {
 
 if (typeof window !== "undefined") {
     console.log(
-        "%c[notify] v1.9.63",
+        "%c[notify] v1.9.64",
         "background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold",
-        "POST /api/send-email. Credenciales SOLO en el servidor. Timeout cliente: 8s."
+        "POST /api/send-email. Triple timeout: AbortController 6s + Watchdog 9s."
     );
 }
