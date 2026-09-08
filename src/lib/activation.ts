@@ -104,32 +104,10 @@ export async function createTenantWithGrace(
             // Silent: NUNCA debe bloquear el registro
         }
 
-        // ★ v1.9.77: Disparar WhatsApp al SuperAdmin (Green API)
-        // Capa adicional: además de admin_notifications, llega un WhatsApp
-        // al móvil del admin. Si falla, el trigger SQL ya guardó la notif.
-        try {
-            void fetch("/api/notify-whatsapp", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    tenantId:     createdTenantId,
-                    businessName: input.businessName,
-                    contactEmail: input.contactEmail,
-                    planSelected: input.planSelected,
-                    businessType: input.businessType,
-                    address:      input.restaurantAddress,
-                    phone:        input.restaurantPhone,
-                    source:       "client-direct",
-                }),
-            }).catch((e) => {
-                console.warn("[activation] webhook notify-whatsapp falló (no bloqueante):", e?.message);
-            });
-        } catch (_) {
-            // Silent: NUNCA debe bloquear el registro
-        }
-
-        // ★ v1.9.78: Disparar Telegram al SuperAdmin (canal principal)
-        // Telegram es GRATIS e ILIMITADO. Canal principal de notificación.
+        // ★ v1.9.78/79: Canal principal de notificación = TELEGRAM
+        //   - Gratis e ilimitado
+        //   - Push instantáneo al móvil del SuperAdmin
+        //   - NUNCA bloquea el registro
         try {
             void fetch("/api/notify-telegram", {
                 method: "POST",

@@ -226,7 +226,7 @@ function AlreadySubmittedView({
                         contigo a la brevedad al correo electrónico que nos facilitaste.
                     </p>
                     <p className="text-[11.5px] text-slate-400">
-                        Si necesitas modificar algún dato, escríbenos por WhatsApp.
+                        Si necesitas modificar algún dato, accede a tu panel.
                     </p>
                 </div>
 
@@ -983,39 +983,12 @@ export function AIAssistantModal({
                                     <span>Procesando solicitud...</span>
                                 </div>
                             )}
-                            {/* ★ v1.9.67: Fallback contacto directo (SI EmailJS falla) */}
-                            <div className="w-full flex flex-col gap-1.5 pt-1.5 border-t
-                                            border-slate-200/60 mt-1.5">
-                                <div className="text-[10px] text-slate-500 text-center font-semibold">
-                                    ¿No te contactamos? Escríbenos directo:
-                                </div>
-                                <div className="flex gap-1.5">
-                                    <a
-                                        href={`https://wa.me/34644165153?text=${encodeURIComponent(
-                                            `Hola! Soy ${name || "cliente"}. Acabo de solicitar la prueba de 7 días de MOZONA TPV para "${name || "mi restaurante"}". Mi email: ${email || "(no proporcionado)"}`
-                                        )}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex-1 h-8 rounded-lg bg-emerald-500 text-white
-                                                   text-[10.5px] font-black flex items-center justify-center
-                                                   gap-1 active:scale-95 transition hover:bg-emerald-600">
-                                        💬 WhatsApp
-                                    </a>
-                                    <a
-                                        href={`mailto:rofixinsta@gmail.com?subject=${encodeURIComponent(
-                                            `Solicitud MOZONA TPV - ${name || "Restaurante"}`
-                                        )}&body=${encodeURIComponent(
-                                            `Hola,\n\nAcabo de solicitar la prueba de 7 días.\n\n` +
-                                            `Restaurante: ${name || "(no proporcionado)"}\n` +
-                                            `Email: ${email || "(no proporcionado)"}\n` +
-                                            `Plan: ${plan || "basic"}\n\n` +
-                                            `Quedo a la espera de vuestra respuesta.\n\nGracias.`
-                                        )}`}
-                                        className="flex-1 h-8 rounded-lg bg-slate-700 text-white
-                                                   text-[10.5px] font-black flex items-center justify-center
-                                                   gap-1 active:scale-95 transition hover:bg-slate-800">
-                                        ✉ Email
-                                    </a>
+                            {/* ★ v1.9.79: Mensaje de confirmación limpio
+                                (sin botones externos: Telegram es el canal del admin) */}
+                            <div className="w-full pt-1.5 border-t border-slate-200/60 mt-1.5">
+                                <div className="text-[10.5px] text-slate-600 text-center font-semibold leading-relaxed">
+                                    Tu solicitud ha sido registrada.
+                                    Te avisaremos por los canales internos.
                                 </div>
                             </div>
                         </div>
