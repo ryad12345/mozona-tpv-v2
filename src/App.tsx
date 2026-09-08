@@ -25,6 +25,7 @@ const OnboardingWizardPage = lazy(() => import("./pages/OnboardingWizardPage").t
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const WaitingActivationPage = lazy(() => import("./pages/WaitingActivationPage").then(m => ({ default: m.WaitingActivationPage })));
 const WelcomePage = lazy(() => import("./pages/WelcomePage").then(m => ({ default: m.WelcomePage })));
+const AdminApprovePage = lazy(() => import("./pages/AdminApprovePage").then(m => ({ default: m.AdminApprovePage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -150,6 +151,9 @@ export function App() {
                                 {/* ★ v1.9.87: /waiting-activation (alias legacy)
                                     SIN ProtectedRoute, funciona con o sin sesion */}
                                 <Route path="/waiting-activation" element={<Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense>} />
+                                {/* ★ v3.0.2: /admin/approve (panel admin)
+                                    Acceso con ?token=mozona-approve-2025 */}
+                                <Route path="/admin/approve" element={<Suspense fallback={<PageLoader label="Cargando…" />}><AdminApprovePage /></Suspense>} />
 
                                 {/* ★ Canje de invitación y onboarding inicial */}
                                 <Route path="/invite/:token"   element={<Suspense fallback={<PageLoader label="Cargando invitación…" />}><InviteRedeemPage /></Suspense>} />
