@@ -105,23 +105,36 @@ export function PosTopBar({
                     tracking-tight
                     whitespace-nowrap
                 ">
-                    Plataforma creada por{" "}
-                    <a
-                        href="https://mozona.online"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="
-                            text-slate-500
-                            font-semibold
-                            hover:text-blue-600
-                            transition
-                            pointer-events-auto
-                        "
-                    >
-                        Mozona.online
-                    </a>
-                    {" · "}
-                    <span className="text-slate-400">Riyad Mouzouna</span>
+                    {/* ★ v1.9.73: en móvil solo "Mozona.online" para no saturar */}
+                    <span className="sm:hidden">
+                        <a
+                            href="https://mozona.online"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-slate-500 font-semibold pointer-events-auto"
+                        >
+                            Mozona.online
+                        </a>
+                    </span>
+                    <span className="hidden sm:inline">
+                        Plataforma creada por{" "}
+                        <a
+                            href="https://mozona.online"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="
+                                text-slate-500
+                                font-semibold
+                                hover:text-blue-600
+                                transition
+                                pointer-events-auto
+                            "
+                        >
+                            Mozona.online
+                        </a>
+                        {" · "}
+                        <span className="text-slate-400">Riyad Mouzouna</span>
+                    </span>
                 </span>
             </div>
 
@@ -139,10 +152,29 @@ export function PosTopBar({
                         <IconCash size={18} strokeWidth={1.8} />
                     </IconButton>
                 )}
+                {/* ★ v1.9.73: Botón de login/logout SIEMPRE visible (móvil + desktop)
+                     - En móvil: solo icono (44x44px - mínimo táctil recomendado)
+                     - En desktop: icono + label "Salir" para mayor claridad */}
                 {onLogout && (
-                    <IconButton onClick={onLogout} title="Cerrar sesión">
-                        <IconUser size={18} strokeWidth={1.8} />
-                    </IconButton>
+                    <button
+                        onClick={onLogout}
+                        title="Cerrar sesión / Cambiar de usuario"
+                        aria-label="Cerrar sesión"
+                        className="
+                            h-9 px-2 sm:px-3 rounded-xl
+                            flex items-center justify-center gap-1.5
+                            text-slate-600
+                            bg-slate-100 hover:bg-rose-50 hover:text-rose-600
+                            active:scale-95
+                            transition touch-manipulation
+                            border border-slate-200/80
+                        "
+                    >
+                        <IconUser size={16} strokeWidth={1.8} />
+                        <span className="hidden sm:inline text-[11px] font-bold tracking-tight">
+                            Salir
+                        </span>
+                    </button>
                 )}
             </div>
 

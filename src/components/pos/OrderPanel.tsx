@@ -1,11 +1,17 @@
 // =====================================================================
 // MOZONA TPV — OrderPanel: columna central (comanda fiscal)
 // =====================================================================
+// ★ v1.9.73: SCROLL HÍBRIDO (gesto + botones) INFALIBLE EN TÁCTIL
+//   - Scroll nativo optimizado (touch, momentum, momentum scrolling)
+//   - Botones de scroll rápido (▲▼) más grandes y con salto de bloque
+//   - Posicionamiento lateral, no intrusivos
+//   - Soporte para mantener pulsado (mousedown/touchstart con auto-repeat)
+// =====================================================================
 
 import type { OrderItem } from "../../lib/types";
 import { fmtEUR, fmtNum } from "../../lib/format";
 import { IconMinus, IconPlus, IconX, IconReceipt } from "../icons";
-import { useRef } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -35,13 +41,79 @@ export function OrderPanel({
     onIncrement, onDecrement, onRemove, onClear, onPrintPreBill,
 }: OrderPanelProps) {
     const itemsContainerRef = useRef<HTMLDivElement>(null);
+    const [canScrollUp, setCanScrollUp] = useState(false);
+    const [canScrollDown, setCanScrollDown] = useState(false);
+    const holdTimerRef = useRef<number | null>(null);
+    const holdIntervalRef = useRef<number | null>(null);
 
-    const scrollItems = (direction: 'up' | 'down') => {
-        if (itemsContainerRef.current) {
-            const amount = direction === 'up' ? -150 : 150;
-            itemsContainerRef.current.scrollBy({ top: amount, behavior: 'smooth' });
+    /**
+     * ★ v1.9.73: SCROLL HÍBRIDO
+     * - 'block': salto de 1 viewport (scroll completo)
+     * - 'line':  salto pequeño (60px, para ajuste fino)
+     * - 'start'/'end': ir al principio/final
+     */
+    const scrollItems = useCallback((direction: 'up' | 'down', mode: 'block' | 'line' = 'block') => {
+        if (!itemsContainerRef.current) return;
+        const el = itemsContainerRef.current;
+        let amount = mode === 'block' ? el.clientHeight * 0.8 : 60;
+        if (direction === 'up') amount = -amount;
+        el.scrollBy({ top: amount, behavior: 'smooth' });
+    }, []);
+
+    const scrollToStart = useCallback(() => {
+        itemsContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }, []);
+    const scrollToEnd = useCallback(() => {
+        const el = itemsContainerRef.current;
+        if (!el) return;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }, []);
+
+    // ★ v1.9.73: Auto-repeat al mantener pulsado el botón
+    const startHold = useCallback((direction: 'up' | 'down') => {
+        scrollItems(direction, 'line');
+        holdTimerRef.current = window.setTimeout(() => {
+            // Tras 400ms, repite cada 100ms con salto mayor
+            holdIntervalRef.current = window.setInterval(() => {
+                scrollItems(direction, 'line');
+            }, 100);
+        }, 400);
+    }, [scrollItems]);
+
+    const stopHold = useCallback(() => {
+        if (holdTimerRef.current) {
+            clearTimeout(holdTimerRef.current);
+            holdTimerRef.current = null;
         }
-    };
+        if (holdIntervalRef.current) {
+            clearInterval(holdIntervalRef.current);
+            holdIntervalRef.current = null;
+        }
+    }, []);
+
+    // ★ v1.9.73: Cleanup al desmontar
+    useEffect(() => {
+        return () => stopHold();
+    }, [stopHold]);
+
+    // ★ v1.9.73: Detecta si se puede hacer scroll (mostrar/ocultar botones)
+    useEffect(() => {
+        const el = itemsContainerRef.current;
+        if (!el) return;
+        const update = () => {
+            setCanScrollUp(el.scrollTop > 4);
+            setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+        };
+        update();
+        el.addEventListener("scroll", update, { passive: true });
+        // Recalcular al cambiar items
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => {
+            el.removeEventListener("scroll", update);
+            ro.disconnect();
+        };
+    }, [items.length]);
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200/80 shadow-sm min-h-0">
@@ -76,8 +148,12 @@ export function OrderPanel({
                 )}
             </header>
 
-            {/* Lista de líneas con scroll fluido y botones táctiles */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0 relative">
+            {/* ★ v1.9.73: Lista de líneas con scroll híbrido INFALIBLE
+                 - Gestos táctiles nativos optimizados
+                 - Botones de scroll rápido (mantener = auto-repeat) */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0 relative
+                            touch-pan-y overscroll-behavior-contain
+                            [-webkit-overflow-scrolling:touch]">
                 <div
                     ref={itemsContainerRef}
                     className="h-full"
@@ -122,26 +198,100 @@ export function OrderPanel({
                     )}
                 </div>
 
-                {/* Botones flotantes de scroll táctil - vertical */}
-                {items.length > 4 && (
-                    <>
+                {/* ★ v1.9.73: BOTONES DE SCROLL RÁPIDO HÍBRIDOS
+                     - Más grandes (44x44px) para táctil
+                     - Mantener pulsado = auto-repeat cada 100ms
+                     - Tap simple = salto de bloque (80% viewport)
+                     - Botones inicio/fin de lista */}
+                {items.length > 3 && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
                         <button
                             type="button"
-                            onClick={() => scrollItems('up')}
-                            className="absolute top-1 right-1 w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition text-sm"
-                            title="Desplazar arriba"
+                            aria-label="Ir al inicio de la comanda"
+                            onClick={scrollToStart}
+                            onTouchStart={(e) => { e.preventDefault(); scrollToStart(); }}
+                            className="w-9 h-9 rounded-lg bg-slate-700/90 hover:bg-slate-800
+                                       text-white text-[14px] font-black
+                                       flex items-center justify-center
+                                       shadow-md active:scale-90 transition
+                                       touch-manipulation select-none"
+                            title="Inicio"
+                        >
+                            ⤒
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Desplazar arriba (mantener para auto-repetir)"
+                            onClick={() => scrollItems('up', 'block')}
+                            onMouseDown={() => startHold('up')}
+                            onMouseUp={stopHold}
+                            onMouseLeave={stopHold}
+                            onTouchStart={(e) => { e.preventDefault(); startHold('up'); }}
+                            onTouchEnd={stopHold}
+                            onTouchCancel={stopHold}
+                            disabled={!canScrollUp}
+                            className="w-9 h-9 rounded-lg bg-blue-600/95 hover:bg-blue-700
+                                       text-white text-[16px] font-black
+                                       flex items-center justify-center
+                                       shadow-md active:scale-90 transition
+                                       touch-manipulation select-none
+                                       disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Arriba (mantener para auto-repetir)"
                         >
                             ▲
                         </button>
                         <button
                             type="button"
-                            onClick={() => scrollItems('down')}
-                            className="absolute bottom-1 right-1 w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center justify-center shadow-md active:scale-95 transition text-sm"
-                            title="Desplazar abajo"
+                            aria-label="Desplazar abajo (mantener para auto-repetir)"
+                            onClick={() => scrollItems('down', 'block')}
+                            onMouseDown={() => startHold('down')}
+                            onMouseUp={stopHold}
+                            onMouseLeave={stopHold}
+                            onTouchStart={(e) => { e.preventDefault(); startHold('down'); }}
+                            onTouchEnd={stopHold}
+                            onTouchCancel={stopHold}
+                            disabled={!canScrollDown}
+                            className="w-9 h-9 rounded-lg bg-blue-600/95 hover:bg-blue-700
+                                       text-white text-[16px] font-black
+                                       flex items-center justify-center
+                                       shadow-md active:scale-90 transition
+                                       touch-manipulation select-none
+                                       disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Abajo (mantener para auto-repetir)"
                         >
                             ▼
                         </button>
-                    </>
+                        <button
+                            type="button"
+                            aria-label="Ir al final de la comanda"
+                            onClick={scrollToEnd}
+                            onTouchStart={(e) => { e.preventDefault(); scrollToEnd(); }}
+                            className="w-9 h-9 rounded-lg bg-slate-700/90 hover:bg-slate-800
+                                       text-white text-[14px] font-black
+                                       flex items-center justify-center
+                                       shadow-md active:scale-90 transition
+                                       touch-manipulation select-none"
+                            title="Final"
+                        >
+                            ⤓
+                        </button>
+                    </div>
+                )}
+
+                {/* Indicador de posición (línea fina lateral) */}
+                {items.length > 8 && (canScrollUp || canScrollDown) && (
+                    <div className="absolute left-0.5 top-0 bottom-0 w-1 bg-slate-200/60 rounded-full overflow-hidden">
+                        <div
+                            className="absolute left-0 right-0 bg-blue-500/70 rounded-full transition-all duration-200"
+                            style={{
+                                top: `${(itemsContainerRef.current?.scrollTop ?? 0) /
+                                       Math.max(1, (itemsContainerRef.current?.scrollHeight ?? 1) -
+                                                  (itemsContainerRef.current?.clientHeight ?? 1)) * 100}%`,
+                                height: `${((itemsContainerRef.current?.clientHeight ?? 1) /
+                                            Math.max(1, itemsContainerRef.current?.scrollHeight ?? 1)) * 100}%`,
+                            }}
+                        />
+                    </div>
                 )}
             </div>
 
