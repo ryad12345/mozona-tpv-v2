@@ -2,7 +2,6 @@
   "name": "mozona-tpv-api",
   "version": "3.0.5",
   "type": "commonjs",
-  "private": true,
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0"
   }

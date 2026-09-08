@@ -24,10 +24,23 @@ try {
     console.warn("[register-tenant] @supabase/supabase-js not available, using fetch fallback");
 }
 
-// ★ Rate limiting
-const { rateLimit, getClientIp } = require("./_rateLimit.js");
-// ★ Headers de seguridad
-const { applySecurityHeaders } = require("./_security.js");
+// ★ Rate limiting (carga tolerante)
+let rateLimit = null, getClientIp = null;
+try {
+    const rl = require("./_rateLimit.js");
+    rateLimit = rl.rateLimit;
+    getClientIp = rl.getClientIp;
+} catch (e) {
+    console.warn("[register-tenant] _rateLimit not available, skipping rate limit");
+}
+// ★ Headers de seguridad (carga tolerante)
+let applySecurityHeaders = null;
+try {
+    const sec = require("./_security.js");
+    applySecurityHeaders = sec.applySecurityHeaders;
+} catch (e) {
+    console.warn("[register-tenant] _security not available, skipping security headers");
+}
 
 // ★ Helper: enviar Telegram (reutilizable)
 async function sendTelegram(botToken, chatId, text) {
@@ -59,7 +72,7 @@ function escapeMd(s) {
 
 module.exports = async (req, res) => {
     // ★ Headers de seguridad
-    try { applySecurityHeaders(res); } catch (_) {}
+    try { if (applySecurityHeaders) applySecurityHeaders(res); } catch (_) {}
 
     // CORS
     try {
@@ -131,16 +144,18 @@ module.exports = async (req, res) => {
         }
 
         // ★ Rate limit: 5 registros por IP cada 10 minutos
-        const ip = getClientIp(req);
-        const limit = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
-        if (!limit.allowed) {
-            log("rate limit exceeded for", ip);
-            return safeJson(200, {
-                ok: false,
-                step: "rate_limit",
-                error: "Demasiados intentos. Espera unos minutos.",
-                retryAfterMs: limit.resetIn,
-            });
+        if (rateLimit && getClientIp) {
+            const ip = getClientIp(req);
+            const limit = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
+            if (!limit.allowed) {
+                log("rate limit exceeded for", ip);
+                return safeJson(200, {
+                    ok: false,
+                    step: "rate_limit",
+                    error: "Demasiados intentos. Espera unos minutos.",
+                    retryAfterMs: limit.resetIn,
+                });
+            }
         }
 
         // ★ Configurar Supabase
