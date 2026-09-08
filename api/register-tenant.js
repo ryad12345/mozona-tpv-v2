@@ -15,31 +15,42 @@
 // y el admin puede completar el registro manualmente desde Telegram.
 // =====================================================================
 
-// ★ Carga tolerante: si @supabase no está disponible, sigue funcionando
-let createClient = null;
-try {
-    const supabaseLib = require("@supabase/supabase-js");
-    createClient = supabaseLib.createClient;
-} catch (e) {
-    console.warn("[register-tenant] @supabase/supabase-js not available, using fetch fallback");
+// ★ Carga LAZY (dentro de la función) para que un fallo no
+//   impida que el handler se cargue
+let _supabase = null;
+function getSupabaseCreate() {
+    if (_supabase !== null) return _supabase;
+    try {
+        _supabase = require("@supabase/supabase-js").createClient;
+    } catch (e) {
+        console.warn("[register-tenant] @supabase/supabase-js not available");
+        _supabase = false; // marcar como intentado
+    }
+    return _supabase || null;
 }
 
-// ★ Rate limiting (carga tolerante)
-let rateLimit = null, getClientIp = null;
-try {
-    const rl = require("./_rateLimit.js");
-    rateLimit = rl.rateLimit;
-    getClientIp = rl.getClientIp;
-} catch (e) {
-    console.warn("[register-tenant] _rateLimit not available, skipping rate limit");
+let _rateLimit = null;
+function getRateLimit() {
+    if (_rateLimit !== null) return _rateLimit;
+    try {
+        _rateLimit = require("./_rateLimit.js");
+    } catch (e) {
+        console.warn("[register-tenant] _rateLimit not available");
+        _rateLimit = false;
+    }
+    return _rateLimit || null;
 }
-// ★ Headers de seguridad (carga tolerante)
-let applySecurityHeaders = null;
-try {
-    const sec = require("./_security.js");
-    applySecurityHeaders = sec.applySecurityHeaders;
-} catch (e) {
-    console.warn("[register-tenant] _security not available, skipping security headers");
+
+let _security = null;
+function getSecurity() {
+    if (_security !== null) return _security;
+    try {
+        _security = require("./_security.js");
+    } catch (e) {
+        console.warn("[register-tenant] _security not available");
+        _security = false;
+    }
+    return _security || null;
 }
 
 // ★ Helper: enviar Telegram (reutilizable)
@@ -72,7 +83,8 @@ function escapeMd(s) {
 
 module.exports = async (req, res) => {
     // ★ Headers de seguridad
-    try { if (applySecurityHeaders) applySecurityHeaders(res); } catch (_) {}
+    const sec = getSecurity();
+    try { if (sec) sec.applySecurityHeaders(res); } catch (_) {}
 
     // CORS
     try {
@@ -144,9 +156,10 @@ module.exports = async (req, res) => {
         }
 
         // ★ Rate limit: 5 registros por IP cada 10 minutos
-        if (rateLimit && getClientIp) {
-            const ip = getClientIp(req);
-            const limit = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
+        const rl = getRateLimit();
+        if (rl) {
+            const ip = rl.getClientIp(req);
+            const limit = rl.rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
             if (!limit.allowed) {
                 log("rate limit exceeded for", ip);
                 return safeJson(200, {
@@ -177,6 +190,7 @@ module.exports = async (req, res) => {
         }
 
         // ★ Cliente admin (necesario para crear users) — solo si SERVICE_ROLE + módulo
+        const createClient = getSupabaseCreate();
         const adminClient = (serviceKey && createClient)
             ? createClient(supabaseUrl, serviceKey, {
                 auth: { autoRefreshToken: false, persistSession: false },
@@ -252,8 +266,10 @@ module.exports = async (req, res) => {
                     message: "Hemos recibido tu solicitud. Te contactaremos por email en breve.",
                 });
             }
+            // Reuse createClient from earlier
+            const anonCreate = createClient;
             log("WARNING: sin SERVICE_ROLE, usando anon key");
-            const anonClient = createClient(supabaseUrl, anonKey, {
+            const anonClient = anonCreate(supabaseUrl, anonKey, {
                 auth: { autoRefreshToken: false, persistSession: false },
             });
             try {
