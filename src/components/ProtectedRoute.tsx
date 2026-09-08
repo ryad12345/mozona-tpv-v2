@@ -95,8 +95,16 @@ export function SubscriptionGuard({ children }: { children: ReactNode }) {
 
     // Sin tenant → pricing
     if (!auth.tenant) return <Navigate to="/pricing" state={{ from: location.pathname }} replace />;
-    // Suscripción inactiva
+    // ★ v1.9.75: Suscripción pending_activation → sala de espera
+    //    (24h de cortesía + aprobación del SuperAdmin)
     const status = auth.tenant.subscription_status;
+    if (status === "pending_activation") {
+        if (!location.pathname.startsWith("/waiting-activation")) {
+            return <Navigate to="/waiting-activation" state={{ from: location.pathname }} replace />;
+        }
+        return <>{children}</>;
+    }
+    // Suscripción inactiva
     if (status !== "active" && status !== "trialing") {
         return <Navigate to="/pricing" state={{ from: location.pathname }} replace />;
     }

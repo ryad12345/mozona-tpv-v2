@@ -23,6 +23,7 @@ const SetupCajaPage   = lazy(() => import("./pages/SetupCajaPage").then(m => ({ 
 const InviteRedeemPage  = lazy(() => import("./pages/InviteRedeemPage").then(m => ({ default: m.InviteRedeemPage })));
 const OnboardingWizardPage = lazy(() => import("./pages/OnboardingWizardPage").then(m => ({ default: m.OnboardingWizardPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
+const WaitingActivationPage = lazy(() => import("./pages/WaitingActivationPage").then(m => ({ default: m.WaitingActivationPage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -142,6 +143,7 @@ export function App() {
                                 <Route path="/waiter/login"    element={<Suspense fallback={<PageLoader />}><WaiterLoginPage /></Suspense>} />
                                 <Route path="/setup-caja"      element={<Suspense fallback={<PageLoader />}><SetupCajaPage /></Suspense>} />
                                 <Route path="/admin/invites"   element={<Suspense fallback={<PageLoader />}><AdminInvitesPage /></Suspense>} />
+                                <Route path="/waiting-activation" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense></ProtectedRoute>} />
 
                                 {/* ★ Canje de invitación y onboarding inicial */}
                                 <Route path="/invite/:token"   element={<Suspense fallback={<PageLoader label="Cargando invitación…" />}><InviteRedeemPage /></Suspense>} />
