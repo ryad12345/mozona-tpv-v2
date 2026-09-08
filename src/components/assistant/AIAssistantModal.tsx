@@ -499,6 +499,16 @@ export function AIAssistantModal({
                             userId = upResult.user.id;
                             userCreated = true;
                             console.log("[AIAssistantModal] signUp OK, userId:", userId);
+                            // ★ v1.9.89: Auto-confirmar email con TODOS los metodos
+                            void fetch("/api/auto-confirm-robust", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    userId: userId,
+                                    email: email.trim().toLowerCase(),
+                                }),
+                            }).then((r) => r.json().then((j) => console.log("[AIAssistantModal] auto-confirm-robust:", j)))
+                              .catch((e) => console.warn("[AIAssistantModal] auto-confirm-robust error:", e?.message));
                         } else if (upResult?.error) {
                             console.warn("[AIAssistantModal] signUp error:", upResult.error);
                             // Si el usuario ya existe, intentar signIn
