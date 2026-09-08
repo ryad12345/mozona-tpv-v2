@@ -551,18 +551,33 @@ export function AIAssistantModal({
                     if (signupError) localStorage.setItem("mozona.lastSignupError", signupError);
                 } catch (_) {}
 
-                // ★ v1.9.91: NAVEGACION DIRECTA CON location.href
-                //   Evita cualquier middleware de React Router o useEffect
-                //   que pueda redirigir a /pricing. location.href es la forma
-                //   mas garantizada de llegar a /waiting-activation.
+                // ★ v1.9.95: NAVEGACION NUCLEAR
+                //   El problema: la página actual (/auth, /) tiene useEffect
+                //   que detecta algo y redirige. location.href se ejecuta pero
+                //   el useEffect de la página actual lo intercepta antes.
+                //   Solución: cerrar el modal, esperar 100ms a que la página
+                //   "se estabilice", y luego navegar con location.assign.
+                //   Tambien: usar un parametro ?src=signup para que la página
+                //   de /waiting-activation sepa que viene de un signup.
                 try { onClose(); } catch (_) {}
-                console.log("[AIAssistantModal] navegando a /waiting-activation via location.href, userId:", userId);
-                try {
-                    location.href = "/waiting-activation";
-                } catch (e) {
-                    console.error("[AIAssistantModal] location.href fallo, fallback navigate:", e);
-                    try { navigate("/waiting-activation", { replace: true }); } catch (_) {}
-                }
+                console.log("[AIAssistantModal] v1.9.95: navegando a /waiting-activation en 100ms");
+
+                // ★ Esperar a que el modal termine de desmontarse y los
+                //   useEffects de la página actual se ejecuten ANTES de navegar
+                setTimeout(() => {
+                    try {
+                        // Usar location.assign con timestamp unico para evitar cache
+                        const ts = Date.now();
+                        window.location.assign("/waiting-activation?src=signup&t=" + ts);
+                    } catch (e) {
+                        console.error("[AIAssistantModal] location.assign fallo, fallback window.open:", e);
+                        try {
+                            window.open("/waiting-activation?src=signup", "_self");
+                        } catch (e2) {
+                            try { navigate("/waiting-activation", { replace: true }); } catch (_) {}
+                        }
+                    }
+                }, 100);
                 return;
             }
         } else if (currentStep === "done") {
