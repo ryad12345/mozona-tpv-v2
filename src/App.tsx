@@ -143,7 +143,9 @@ export function App() {
                                 <Route path="/waiter/login"    element={<Suspense fallback={<PageLoader />}><WaiterLoginPage /></Suspense>} />
                                 <Route path="/setup-caja"      element={<Suspense fallback={<PageLoader />}><SetupCajaPage /></Suspense>} />
                                 <Route path="/admin/invites"   element={<Suspense fallback={<PageLoader />}><AdminInvitesPage /></Suspense>} />
-                                <Route path="/waiting-activation" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense></ProtectedRoute>} />
+                                {/* ★ v1.9.87: /waiting-activation SIN ProtectedRoute
+                                    Funciona con o sin sesion (lee email de localStorage) */}
+                                <Route path="/waiting-activation" element={<Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense>} />
 
                                 {/* ★ Canje de invitación y onboarding inicial */}
                                 <Route path="/invite/:token"   element={<Suspense fallback={<PageLoader label="Cargando invitación…" />}><InviteRedeemPage /></Suspense>} />

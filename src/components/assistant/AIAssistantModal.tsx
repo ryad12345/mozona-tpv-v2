@@ -602,14 +602,13 @@ export function AIAssistantModal({
                 //   - SIEMPRE navega a /waiting-activation
                 console.log("[AIAssistantModal] navegando a /waiting-activation, userId:", userId, "signupError:", signupError);
 
-                // Guardar email para que WaitingActivation lo pueda usar
+                // Guardar email/nombre/plan para que WaitingActivation lo use
+                // (sin necesidad de sesion activa)
                 try {
-                    if (email) {
-                        localStorage.setItem("mozona.lastSignupEmail", email);
-                    }
-                    if (signupError) {
-                        localStorage.setItem("mozona.lastSignupError", signupError);
-                    }
+                    if (email) localStorage.setItem("mozona.lastSignupEmail", email);
+                    if (name)  localStorage.setItem("mozona.lastSignupName", name);
+                    if (plan)  localStorage.setItem("mozona.lastSignupPlan", String(plan));
+                    if (signupError) localStorage.setItem("mozona.lastSignupError", signupError);
                 } catch (_) {}
 
                 // ★ v1.9.83: cambiar a step "redirecting" que muestra spinner
