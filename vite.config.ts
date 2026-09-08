@@ -54,7 +54,7 @@ export default defineConfig({
                 name: "MOZONA TPV",
                 short_name: "MozonaTPV",
                 description: "Sistema TPV Local-First para hostelería con VeriFactu",
-                version: "1.9.95-delayed-nav",
+                version: "2.0.0-no-swc-cache",
                 lang: "es-ES",
                 dir: "ltr",
                 scope: "/",
@@ -74,12 +74,20 @@ export default defineConfig({
 
             // Estrategias de caché en tiempo de ejecución
             workbox: {
-                // Precachear todos los assets de la build
-                globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2,webp,avif}"],
+                // ★ v2.0.0: NUNCA precachear el index.html ni los bundles JS.
+                //   El problema era que el SW servia el index.html viejo
+                //   y eso causaba redirects a /auth cuando el usuario
+                //   intentaba ir a /waiting-activation.
+                //   Solo cacheamos assets estáticos pesados (imágenes, fuentes).
+                globPatterns: ["**/*.{svg,png,ico,woff,woff2,webp,avif}"],
                 // Limpiar caches antiguas
                 cleanupOutdatedCaches: true,
-                // NO cachear el index.html (para que las actualizaciones lleguen)
-                navigateFallbackDenylist: [/^\/api\//],
+                // NO cachear el index.html
+                navigateFallbackDenylist: [/^\/api\//, /^\/waiting-activation/, /\.html$/],
+                // NO servir fallback del SW para navegación
+                // (el navegador hace full request cada vez)
+                // (deshabilitamos navigateFallback por completo)
+                navigateFallback: null,
                 // ★ Forzar skipWaiting para que el SW nuevo tome el control
                 //    sin esperar a cerrar todas las pestañas
                 skipWaiting: true,
