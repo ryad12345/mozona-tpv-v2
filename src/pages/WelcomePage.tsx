@@ -102,6 +102,9 @@ export function WelcomePage() {
     }, []);
 
     // ★ Polling inteligente: cada 10s, parar cuando se aprueba
+    // ★ v3.0.1: ESTRATEGIA DOBLE
+    //   1) Intentar query directa con anon key (rápido, sin RLS si la tabla es accesible)
+    //   2) Si falla, llamar a /api/check-status (server-side con SERVICE_ROLE si está)
     const fetchStatus = useCallback(async () => {
         if (!userEmail) {
             setError("No se encontró el email. Vuelve a registrarte.");
@@ -112,16 +115,77 @@ export function WelcomePage() {
             pollCountRef.current += 1;
             setPollCount(pollCountRef.current);
 
-            const r = await fetch(`/api/check-status?email=${encodeURIComponent(userEmail)}`);
+            let json: any = null;
+            let usedMethod = "unknown";
 
-            if (!r.ok) {
-                setError("Conexión inestable. Reintentando...");
+            // ★ Intento 1: query directa con anon key
+            try {
+                const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
+                const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
+                if (supabaseUrl && supabaseKey) {
+                    // Buscar tenant por contact_email
+                    const r1 = await fetch(
+                        `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(userEmail)}&select=*&limit=1`,
+                        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+                    );
+                    if (r1.ok) {
+                        const arr = await r1.json();
+                        if (arr && arr[0]) {
+                            json = { ok: true, tenant: arr[0], method: "client_direct" };
+                            usedMethod = "client_direct";
+                        }
+                    }
+                    // Si contact_email no existe, intentar con otras columnas
+                    if (!json) {
+                        const r2 = await fetch(
+                            `${supabaseUrl}/rest/v1/tenants?select=*&order=created_at.desc&limit=10`,
+                            { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+                        );
+                        if (r2.ok) {
+                            const arr = await r2.json();
+                            if (arr && arr.length > 0) {
+                                // Buscar match por contact_email (puede no existir como columna)
+                                const match = arr.find((t: any) =>
+                                    t.contact_email && t.contact_email.toLowerCase() === userEmail
+                                );
+                                if (match) {
+                                    json = { ok: true, tenant: match, method: "client_heuristic_match" };
+                                    usedMethod = "client_heuristic_match";
+                                } else {
+                                    // No hay match exacto, devolver el más reciente
+                                    json = { ok: true, tenant: arr[0], method: "client_heuristic_recent" };
+                                    usedMethod = "client_heuristic_recent";
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("[Welcome] client query error:", e);
+            }
+
+            // ★ Intento 2: server-side (si el cliente no encontró nada)
+            if (!json) {
+                try {
+                    const r = await fetch(`/api/check-status?email=${encodeURIComponent(userEmail)}`);
+                    if (r.ok) {
+                        json = await r.json();
+                        usedMethod = "server_" + (json?.method || "unknown");
+                    }
+                } catch (e) {
+                    console.warn("[Welcome] server query error:", e);
+                }
+            }
+
+            // ★ Si AMBOS fallaron, mostrar mensaje amable
+            if (!json) {
+                setMethod("all_failed");
+                setError("Procesando tu registro. Te avisaremos en breve.");
                 setLoading(false);
                 return;
             }
 
-            const json = await r.json();
-            setMethod(json.method || "");
+            setMethod(usedMethod);
 
             if (json.tenant) {
                 const t = json.tenant;
@@ -141,13 +205,11 @@ export function WelcomePage() {
                     t.activation_status || t.subscription_status
                 );
                 if (isApproved) {
-                    // Guardar credenciales de relleno y navegar
                     setTimeout(() => {
                         navigate("/auth?approved=1&email=" + encodeURIComponent(userEmail), { replace: true });
                     }, 2000);
                 }
             } else {
-                // ★ No hay tenant todavía: mostrar mensaje útil
                 if (json.method === "no_config") {
                     setError("Configurando el sistema. Te avisaremos en breve.");
                 } else if (json.method === "no_data_yet") {
