@@ -23,6 +23,7 @@ END $$;
 ALTER TABLE tenants
     ADD COLUMN IF NOT EXISTS activation_status subscription_status DEFAULT 'pending_activation',
     ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS approved_by TEXT,
     ADD COLUMN IF NOT EXISTS plan_selected TEXT,

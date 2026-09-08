@@ -15,7 +15,7 @@ interface TenantStatus {
     status: "pending_activation" | "active_trial" | "active" | "expired" | "vip";
     grace_period_ends_at?: string;
     trial_ends_at?: string;
-    business_name?: string;
+    business_name?: string; // alias de "name" (para compatibilidad con código viejo)
     plan_selected?: string;
 }
 
@@ -144,7 +144,7 @@ export function WaitingActivationPage() {
             }
             // ★ Buscar el tenant por contact_email
             const r = await fetch(
-                `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(userEmail.trim().toLowerCase())}&select=id,activation_status,grace_period_ends_at,trial_ends_at,business_name,plan_selected&order=created_at.desc&limit=1`,
+                `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(userEmail.trim().toLowerCase())}&select=id,activation_status,grace_period_ends_at,name,plan_selected&order=created_at.desc&limit=1`,
                 { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
             );
             if (!r.ok) {
@@ -159,7 +159,7 @@ export function WaitingActivationPage() {
                     status: t.activation_status,
                     grace_period_ends_at: t.grace_period_ends_at,
                     trial_ends_at: t.trial_ends_at,
-                    business_name: t.business_name,
+                    business_name: t.name, // ★ columna real es "name", no "business_name"
                     plan_selected: t.plan_selected,
                 };
                 setStatus(newStatus);
