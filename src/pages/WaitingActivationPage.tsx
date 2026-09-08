@@ -170,14 +170,22 @@ export function WaitingActivationPage() {
                     id: t.id,
                     status: newStatus.status,
                     name: newStatus.business_name,
+                    method: json.method,
                 });
                 // ★ Si el SuperAdmin ya aprobo, redirigir al panel
                 if (newStatus.status === "active_trial" || newStatus.status === "active" || newStatus.status === "vip") {
                     navigate("/app", { replace: true });
                 }
             } else {
-                console.log("[WaitingActivation] no hay tenant todavia para:", userEmail);
-                setError(null);
+                console.log("[WaitingActivation] no hay tenant todavia, method:", json.method);
+                // ★ Si el user existe pero no tiene tenant, mostrar mensaje útil
+                if (json.method === "user_no_tenant") {
+                    setError("Tu cuenta está creada. Estamos creando tu espacio de trabajo...");
+                } else if (json.method === "no_data_yet") {
+                    setError("Procesando tu registro. Esto puede tardar unos segundos...");
+                } else {
+                    setError(null); // No mostrar error, solo el spinner
+                }
             }
             setLoading(false);
         } catch (e) {
