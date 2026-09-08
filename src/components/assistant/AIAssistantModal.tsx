@@ -489,10 +489,36 @@ export function AIAssistantModal({
                         if (upResult?.user) {
                             userId = upResult.user.id;
                             console.log("[AIAssistantModal] signUp OK, userId:", userId);
+                            // ★ v1.9.84: si signUp devolvio user pero el caller
+                            //   no tiene sesion, intentar signIn inmediatamente
+                            //   para activar la sesion. El AuthContext ya hace
+                            //   esto internamente, pero por si acaso lo forzamos aqui.
+                            if (!auth?.user) {
+                                console.log("[AIAssistantModal] signUp sin sesion activa, intentando signIn forzado...");
+                                if (auth?.signIn) {
+                                    try {
+                                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                                        if (inResult?.user) {
+                                            console.log("[AIAssistantModal] signIn forzado OK");
+                                        } else {
+                                            console.warn("[AIAssistantModal] signIn forzado fallo:", inResult?.error);
+                                        }
+                                    } catch (signInErr) {
+                                        console.warn("[AIAssistantModal] signIn forzado exception:", signInErr);
+                                    }
+                                }
+                            }
                         } else if (upResult?.error) {
                             if (/confirm|verification|email/i.test(upResult.error)) {
                                 console.warn("[AIAssistantModal] signUp requiere confirmacion, seguimos");
                                 signupError = "Email confirmation requerida";
+                                // ★ v1.9.84: intentar signIn de todos modos
+                                if (auth?.signIn) {
+                                    try {
+                                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                                        if (inResult?.user) userId = inResult.user.id;
+                                    } catch (_) {}
+                                }
                             } else if (/already|exists|registered/i.test(upResult.error) && auth?.signIn) {
                                 const inResult = await auth.signIn(email.trim().toLowerCase(), password);
                                 if (inResult?.user) {

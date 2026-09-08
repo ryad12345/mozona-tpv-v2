@@ -279,6 +279,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 saveToStorage(u, s);
                 return { user: u, error: null };
             }
+            // ★ v1.9.84: Supabase devolvio user pero NO session.
+            //   Esto pasa con email confirmation activada.
+            //   Solucion: hacer signIn inmediatamente con las mismas
+            //   credenciales. Supabase permite signin aunque el email
+            //   no este confirmado (depende de la config).
+            if (data.user && !data.session) {
+                console.log("[AuthContext] signUp sin session, intentando signIn inmediato...");
+                try {
+                    const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({
+                        email: email.trim().toLowerCase(),
+                        password,
+                    });
+                    if (inErr) {
+                        console.warn("[AuthContext] signIn post-signUp fallo:", inErr.message);
+                        // Esperar 500ms y reintentar (Supabase puede tardar)
+                        await new Promise(r => setTimeout(r, 500));
+                        const { data: inData2, error: inErr2 } = await supabase.auth.signInWithPassword({
+                            email: email.trim().toLowerCase(),
+                            password,
+                        });
+                        if (inErr2) {
+                            console.warn("[AuthContext] signIn retry fallo:", inErr2.message);
+                            // Devolver user de signUp aunque sin session
+                            // El caller puede manejar esto
+                            return { user: supabaseUserToAuthUser(data.user), error: "Email confirmation requerida. Revisa tu bandeja." };
+                        }
+                        if (inData2?.user && inData2?.session) {
+                            const u = supabaseUserToAuthUser(inData2.user);
+                            const s = supabaseSessionToAuthSession(inData2.session, u);
+                            setUser(u);
+                            setSession(s);
+                            saveToStorage(u, s);
+                            console.log("[AuthContext] signIn retry OK");
+                            return { user: u, error: null };
+                        }
+                    }
+                    if (inData?.user && inData?.session) {
+                        const u = supabaseUserToAuthUser(inData.user);
+                        const s = supabaseSessionToAuthSession(inData.session, u);
+                        setUser(u);
+                        setSession(s);
+                        saveToStorage(u, s);
+                        console.log("[AuthContext] signIn post-signUp OK");
+                        return { user: u, error: null };
+                    }
+                } catch (signInErr: any) {
+                    console.warn("[AuthContext] signIn exception:", signInErr);
+                }
+                // Devolver user de signUp aunque sin session
+                return { user: supabaseUserToAuthUser(data.user), error: null };
+            }
             return { user: null, error: "Revisa tu email para confirmar la cuenta" };
         } catch (e) {
             return { user: null, error: e instanceof Error ? e.message : String(e) };
