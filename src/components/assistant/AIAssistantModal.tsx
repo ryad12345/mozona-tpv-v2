@@ -489,6 +489,20 @@ export function AIAssistantModal({
                         if (upResult?.user) {
                             userId = upResult.user.id;
                             console.log("[AIAssistantModal] signUp OK, userId:", userId);
+                            // ★ v1.9.85: AUTO-CONFIRMAR el email via serverless endpoint
+                            //   Esto usa la SERVICE_ROLE_KEY para saltarse la confirmacion.
+                            try {
+                                void fetch("/api/auto-confirm-user", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        userId: userId,
+                                        email: email.trim().toLowerCase(),
+                                    }),
+                                }).then((r) => r.json().then((j) => console.log("[AIAssistantModal] auto-confirm:", j)))
+                                  .catch((e) => console.warn("[AIAssistantModal] auto-confirm error:", e?.message));
+                            } catch (_) { /* silent */ }
+
                             // ★ v1.9.84: si signUp devolvio user pero el caller
                             //   no tiene sesion, intentar signIn inmediatamente
                             //   para activar la sesion. El AuthContext ya hace

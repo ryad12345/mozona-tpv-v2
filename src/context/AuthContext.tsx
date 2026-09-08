@@ -286,6 +286,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
             //   no este confirmado (depende de la config).
             if (data.user && !data.session) {
                 console.log("[AuthContext] signUp sin session, intentando signIn inmediato...");
+
+                // ★ v1.9.85: AUTO-CONFIRMAR el email via serverless endpoint
+                //   Esto usa la SERVICE_ROLE_KEY para saltarse la confirmacion.
+                //   Si el endpoint no esta configurado, falla silenciosamente.
+                try {
+                    const acResp = await fetch("/api/auto-confirm-user", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            userId: data.user.id,
+                            email: email.trim().toLowerCase(),
+                        }),
+                    });
+                    const acJson = await acResp.json().catch(() => ({}));
+                    console.log("[AuthContext] auto-confirm result:", acJson);
+                } catch (acErr) {
+                    console.warn("[AuthContext] auto-confirm exception (sigue):", acErr);
+                }
+
                 try {
                     const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({
                         email: email.trim().toLowerCase(),
