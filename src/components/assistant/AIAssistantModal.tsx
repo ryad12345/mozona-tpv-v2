@@ -493,8 +493,10 @@ export function AIAssistantModal({
                     } catch (_) {}
                 }
 
-                // ★ Un solo fetch que hace TODO
+                // ★ Un solo fetch que hace TODO (con timeout 8s)
                 try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 8000);
                     const resp = await fetch("/api/register-tenant", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -505,7 +507,9 @@ export function AIAssistantModal({
                             plan: plan || "basic",
                             businessType,
                         }),
+                        signal: controller.signal,
                     });
+                    clearTimeout(timeoutId);
                     const json = await resp.json().catch(() => ({}));
                     console.log("[AIAssistantModal] /api/register-tenant result:", json);
 
@@ -518,8 +522,9 @@ export function AIAssistantModal({
                         setSavedOk(true);
                         setBackend("none");
                     }
-                } catch (e) {
-                    console.warn("[AIAssistantModal] /api/register-tenant error (sigue):", e);
+                } catch (e: any) {
+                    // ★ Timeout o error de red: navegamos IGUAL
+                    console.warn("[AIAssistantModal] /api/register-tenant error (sigue):", e?.message || e);
                     setSavedOk(true);
                     setBackend("none");
                 }

@@ -11,7 +11,7 @@
 // =====================================================================
 
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, isSuperAdmin, supabase } from "../lib/supabase";
 import { IconShield, IconLock, IconArrowRight, IconSparkles } from "../components/icons";
@@ -29,6 +29,16 @@ export function AuthPage() {
     const [magicSent, setMagicSent] = useState(false);
 
     const rate = useRateLimit({ key: "auth_login", maxAttempts: 5, windowMs: 60_000 });
+    const [searchParams] = useSearchParams();
+    const justApproved = searchParams.get("approved") === "1";
+    const prefilledEmail = searchParams.get("email") || "";
+
+    // ★ Si viene aprobado de /welcome, pre-rellenar el email
+    useEffect(() => {
+        if (prefilledEmail && !email) {
+            setEmail(prefilledEmail);
+        }
+    }, [prefilledEmail, email]);
 
     // Si ya está autenticado, redirigir
     useEffect(() => {
@@ -147,7 +157,7 @@ export function AuthPage() {
     }
 
     return (
-        <AuthShell>
+        <AuthShell justApproved={justApproved}>
             <h1 className="text-[26px] font-black tracking-tight text-center">
                 Inicia sesión
             </h1>
@@ -264,7 +274,7 @@ export function AuthPage() {
 // AuthShell — layout
 // ---------------------------------------------------------------------
 
-function AuthShell({ children }: { children: React.ReactNode }) {
+function AuthShell({ children, justApproved }: { children: React.ReactNode; justApproved?: boolean }) {
     return (
         <div className="min-h-dvh bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-4">
             <div className="w-full max-w-md">
@@ -273,6 +283,17 @@ function AuthShell({ children }: { children: React.ReactNode }) {
                         <Logo variant="mark" size="md" />
                     </Link>
                 </div>
+
+                {/* ★ v3.0.4: Banner si viene aprobado de /welcome */}
+                {justApproved && (
+                    <div className="mb-4 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-2xl flex items-center gap-2">
+                        <span className="text-2xl">🎉</span>
+                        <div>
+                            <p className="text-[12.5px] font-black text-emerald-900">¡Tu cuenta ha sido aprobada!</p>
+                            <p className="text-[10.5px] text-emerald-700">Inicia sesión para acceder a tu TPV</p>
+                        </div>
+                    </div>
+                )}
                 <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl
                                 p-6 sm:p-8">
                     {children}

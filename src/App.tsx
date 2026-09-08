@@ -26,6 +26,7 @@ const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m 
 const WaitingActivationPage = lazy(() => import("./pages/WaitingActivationPage").then(m => ({ default: m.WaitingActivationPage })));
 const WelcomePage = lazy(() => import("./pages/WelcomePage").then(m => ({ default: m.WelcomePage })));
 const AdminApprovePage = lazy(() => import("./pages/AdminApprovePage").then(m => ({ default: m.AdminApprovePage })));
+const HealthPage = lazy(() => import("./pages/HealthPage").then(m => ({ default: m.HealthPage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -154,6 +155,8 @@ export function App() {
                                 {/* ★ v3.0.2: /admin/approve (panel admin)
                                     Acceso con ?token=mozona-approve-2025 */}
                                 <Route path="/admin/approve" element={<Suspense fallback={<PageLoader label="Cargando…" />}><AdminApprovePage /></Suspense>} />
+                                {/* ★ v3.0.4: /health (estado del sistema) */}
+                                <Route path="/health" element={<Suspense fallback={<PageLoader label="Verificando…" />}><HealthPage /></Suspense>} />
 
                                 {/* ★ Canje de invitación y onboarding inicial */}
                                 <Route path="/invite/:token"   element={<Suspense fallback={<PageLoader label="Cargando invitación…" />}><InviteRedeemPage /></Suspense>} />
