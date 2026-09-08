@@ -24,6 +24,7 @@ const InviteRedeemPage  = lazy(() => import("./pages/InviteRedeemPage").then(m =
 const OnboardingWizardPage = lazy(() => import("./pages/OnboardingWizardPage").then(m => ({ default: m.OnboardingWizardPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const WaitingActivationPage = lazy(() => import("./pages/WaitingActivationPage").then(m => ({ default: m.WaitingActivationPage })));
+const WelcomePage = lazy(() => import("./pages/WelcomePage").then(m => ({ default: m.WelcomePage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -143,8 +144,11 @@ export function App() {
                                 <Route path="/waiter/login"    element={<Suspense fallback={<PageLoader />}><WaiterLoginPage /></Suspense>} />
                                 <Route path="/setup-caja"      element={<Suspense fallback={<PageLoader />}><SetupCajaPage /></Suspense>} />
                                 <Route path="/admin/invites"   element={<Suspense fallback={<PageLoader />}><AdminInvitesPage /></Suspense>} />
-                                {/* ★ v1.9.87: /waiting-activation SIN ProtectedRoute
-                                    Funciona con o sin sesion (lee email de localStorage) */}
+                                {/* ★ v3.0.0: /welcome (sala de espera profesional)
+                                    SIN ProtectedRoute, funciona con o sin sesion */}
+                                <Route path="/welcome" element={<Suspense fallback={<PageLoader label="Cargando…" />}><WelcomePage /></Suspense>} />
+                                {/* ★ v1.9.87: /waiting-activation (alias legacy)
+                                    SIN ProtectedRoute, funciona con o sin sesion */}
                                 <Route path="/waiting-activation" element={<Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense>} />
 
                                 {/* ★ Canje de invitación y onboarding inicial */}

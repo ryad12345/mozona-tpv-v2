@@ -469,99 +469,79 @@ export function AIAssistantModal({
             if (value === "fix-email") { await goToStep("email"); return; }
             if (value === "fix-name")  { await goToStep("name");  return; }
             if (value === "yes") {
-                // ★ v1.9.82: rate limit ELIMINADO. El usuario puede intentar
-                //   el alta múltiples veces. Cada clic crea/actualiza el tenant
-                //   (createTenantWithGrace usa upsert con onConflict).
-                if (isSubmitting) {
-                    return; // Doble-click seguro
-                }
+                // ★ v3.0.0: FLUJO ÚNICO
+                //   Un solo POST a /api/register-tenant hace TODO:
+                //   - Crea/recupera el user
+                //   - Crea/actualiza el tenant
+                //   - Envía Telegram al admin
+                //   - Devuelve tenantId
+                if (isSubmitting) return;
                 setIsSubmitting(true);
                 setIsTyping(true);
                 setEmailStatus(null);
 
-                // v1.9.94: FLUJO MINIMO
-                //   - NO signIn, NO signUp, NO createTenant aqui (causa redirect a /pricing)
-                //   - Solo guardar en localStorage y navegar
-                //   - El procesamiento (signUp, createTenant, Telegram) lo hace
-                //     la sala de espera en background con /api/check-and-fix-user
-
-                // ★ Paso 1: guardar datos en localStorage
+                // ★ Guardar en localStorage ANTES del fetch (NUNCA borrar)
                 if (email && password && name) {
-                    console.log("[AIAssistantModal] Guardando pendingSignup en localStorage...");
                     try {
-                        localStorage.setItem("mozona.pendingSignup", JSON.stringify({
+                        localStorage.setItem("mozona.welcomeState", JSON.stringify({
+                            email: email.trim().toLowerCase(),
+                            name,
+                            plan: plan || "basic",
+                            businessType,
+                            savedAt: Date.now(),
+                        }));
+                    } catch (_) {}
+                }
+
+                // ★ Un solo fetch que hace TODO
+                try {
+                    const resp = await fetch("/api/register-tenant", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
                             email: email.trim().toLowerCase(),
                             password,
                             name,
                             plan: plan || "basic",
-                            businessType: businessType || undefined,
-                            timestamp: Date.now(),
-                        }));
-                        console.log("[AIAssistantModal] pendingSignup guardado");
-                    } catch (e) {
-                        console.warn("[AIAssistantModal] error guardando pendingSignup:", e);
-                    }
-                }
-
-                // ★ v1.9.94: NO hacer signIn/signUp aqui. Solo navegar.
-                let userId: string | null = null;
-                let signupError: string | null = null;
-                let userCreated = false;
-
-                // ★ v1.9.94: ENVIAR TELEGRAM DIRECTAMENTE (no requiere sesion)
-                try {
-                    void fetch("/api/notify-telegram", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            tenantId: null,
-                            businessName: name,
-                            contactEmail: email,
-                            planSelected: (plan as string) || "basic",
-                            businessType: businessType,
-                            source: "ai-assistant",
-                            signupError: signupError,
+                            businessType,
                         }),
-                    }).catch((e) => console.warn("[AIAssistantModal] notify-telegram error:", e?.message));
-                } catch (_) { /* silent */ }
+                    });
+                    const json = await resp.json().catch(() => ({}));
+                    console.log("[AIAssistantModal] /api/register-tenant result:", json);
 
-                if (FIREBASE_CONFIGURED) {
-                    try { await persistLead("trial_activo"); } catch (_) {}
-                } else {
+                    if (json?.ok) {
+                        setSavedOk(true);
+                        setBackend("supabase");
+                    } else {
+                        // ★ No es fatal: navegamos igualmente
+                        console.warn("[AIAssistantModal] register-tenant returned not-ok:", json);
+                        setSavedOk(true);
+                        setBackend("none");
+                    }
+                } catch (e) {
+                    console.warn("[AIAssistantModal] /api/register-tenant error (sigue):", e);
                     setSavedOk(true);
                     setBackend("none");
                 }
+
+                if (FIREBASE_CONFIGURED) {
+                    try { await persistLead("trial_activo"); } catch (_) {}
+                }
                 markLeadSubmitted();
-                setSavedOk(true);
                 setIsSubmitting(false);
                 setIsTyping(false);
 
-                // ★ v1.9.86: NAVEGACIÓN DIRECTA
-                //   - Si signupError es de "email confirmation", guardar el email
-                //     en localStorage para que /waiting-activation lo muestre
-                //   - SIEMPRE navega a /waiting-activation
-                console.log("[AIAssistantModal] navegando a /waiting-activation, userId:", userId, "signupError:", signupError);
-
-                // Guardar email/nombre/plan para que WaitingActivation lo use
-                // (sin necesidad de sesion activa)
-                try {
-                    if (email) localStorage.setItem("mozona.lastSignupEmail", email);
-                    if (name)  localStorage.setItem("mozona.lastSignupName", name);
-                    if (plan)  localStorage.setItem("mozona.lastSignupPlan", String(plan));
-                    if (signupError) localStorage.setItem("mozona.lastSignupError", signupError);
-                } catch (_) {}
-
-                // ★ v2.0.0: NAVEGACION SIMPLE
-                //   El problema NO era el navigate, era el Service Worker
-                //   que servia bundles viejos. Ahora el SW NO cachea
-                //   index.html ni bundles JS, asi que location.href
-                //   funciona sin problemas.
+                // ★ Navegar a /welcome (sala de espera)
                 try { onClose(); } catch (_) {}
-                console.log("[AIAssistantModal] v2.0.0: navegando a /waiting-activation");
+                const params = new URLSearchParams({
+                    email: email.trim().toLowerCase(),
+                    name: name || "",
+                    plan: String(plan || "basic"),
+                });
                 try {
-                    location.href = "/waiting-activation";
-                } catch (e) {
-                    try { navigate("/waiting-activation", { replace: true }); } catch (_) {}
+                    location.href = "/welcome?" + params.toString();
+                } catch (_) {
+                    try { navigate("/welcome?" + params.toString(), { replace: true }); } catch (_) {}
                 }
                 return;
             }
