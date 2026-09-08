@@ -8,14 +8,14 @@
 let _rateLimitLib = undefined;
 function getRateLimit() {
     if (_rateLimitLib !== undefined) return _rateLimitLib;
-    try { _rateLimitLib = require("./_rateLimit.cjs"); } catch (_) { _rateLimitLib = null; }
+    try { _rateLimitLib = require("./_rateLimit.js"); } catch (_) { _rateLimitLib = null; }
     return _rateLimitLib;
 }
 
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.cjs"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 

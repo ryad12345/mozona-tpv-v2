@@ -10,7 +10,7 @@ const VALID_TOKENS = new Set(["mozona-approve-2025", "mozona-ryad-2025"]);
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.cjs"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
