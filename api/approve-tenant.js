@@ -17,7 +17,13 @@ const VALID_TOKENS = new Set([
     "mozona-ryad-2025",
 ]);
 
+// ★ Headers de seguridad
+const { applySecurityHeaders } = require("./_security.js");
+
 module.exports = async (req, res) => {
+    // ★ Headers de seguridad
+    try { applySecurityHeaders(res); } catch (_) {}
+
     // CORS
     try {
         const origin = (req.headers && req.headers.origin) || "";

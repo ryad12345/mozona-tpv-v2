@@ -15,7 +15,19 @@
 // y el admin puede completar el registro manualmente desde Telegram.
 // =====================================================================
 
-const { createClient } = require("@supabase/supabase-js");
+// ★ Carga tolerante: si @supabase no está disponible, sigue funcionando
+let createClient = null;
+try {
+    const supabaseLib = require("@supabase/supabase-js");
+    createClient = supabaseLib.createClient;
+} catch (e) {
+    console.warn("[register-tenant] @supabase/supabase-js not available, using fetch fallback");
+}
+
+// ★ Rate limiting
+const { rateLimit, getClientIp } = require("./_rateLimit.js");
+// ★ Headers de seguridad
+const { applySecurityHeaders } = require("./_security.js");
 
 // ★ Helper: enviar Telegram (reutilizable)
 async function sendTelegram(botToken, chatId, text) {
@@ -46,6 +58,9 @@ function escapeMd(s) {
 }
 
 module.exports = async (req, res) => {
+    // ★ Headers de seguridad
+    try { applySecurityHeaders(res); } catch (_) {}
+
     // CORS
     try {
         const origin = (req.headers && req.headers.origin) || "";
@@ -96,6 +111,38 @@ module.exports = async (req, res) => {
             });
         }
 
+        // ★ Validar formato email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return safeJson(200, {
+                ok: false,
+                step: "validation",
+                error: "Formato de email inválido",
+            });
+        }
+
+        // ★ Validar password (mínimo 6 chars)
+        if (password.length < 6) {
+            return safeJson(200, {
+                ok: false,
+                step: "validation",
+                error: "La contraseña debe tener al menos 6 caracteres",
+            });
+        }
+
+        // ★ Rate limit: 5 registros por IP cada 10 minutos
+        const ip = getClientIp(req);
+        const limit = rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
+        if (!limit.allowed) {
+            log("rate limit exceeded for", ip);
+            return safeJson(200, {
+                ok: false,
+                step: "rate_limit",
+                error: "Demasiados intentos. Espera unos minutos.",
+                retryAfterMs: limit.resetIn,
+            });
+        }
+
         // ★ Configurar Supabase
         const supabaseUrl = process.env.SUPABASE_URL
                          || process.env.VITE_SUPABASE_URL
@@ -114,8 +161,8 @@ module.exports = async (req, res) => {
             });
         }
 
-        // ★ Cliente admin (necesario para crear users)
-        const adminClient = serviceKey
+        // ★ Cliente admin (necesario para crear users) — solo si SERVICE_ROLE + módulo
+        const adminClient = (serviceKey && createClient)
             ? createClient(supabaseUrl, serviceKey, {
                 auth: { autoRefreshToken: false, persistSession: false },
             })
@@ -181,6 +228,15 @@ module.exports = async (req, res) => {
             }
         } else {
             // ★ Sin SERVICE_ROLE: intentar signUp con anon (puede fallar)
+            if (!createClient) {
+                log("WARNING: sin @supabase y sin SERVICE_ROLE, no se puede crear user");
+                return safeJson(200, {
+                    ok: false,
+                    step: "no_client",
+                    error: "Sistema no configurado completamente. El admin procesará tu solicitud manualmente.",
+                    message: "Hemos recibido tu solicitud. Te contactaremos por email en breve.",
+                });
+            }
             log("WARNING: sin SERVICE_ROLE, usando anon key");
             const anonClient = createClient(supabaseUrl, anonKey, {
                 auth: { autoRefreshToken: false, persistSession: false },

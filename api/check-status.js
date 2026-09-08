@@ -1,14 +1,29 @@
 // =====================================================================
-// MOZONA TPV — /api/check-status (v3.0.0)
+// MOZONA TPV — /api/check-status (v3.0.5)
 // =====================================================================
 // Polling endpoint para la sala de espera.
 // Devuelve el estado del tenant por email.
 // SIEMPRE devuelve 200, NUNCA 500.
 // =====================================================================
 
-const { createClient } = require("@supabase/supabase-js");
+// ★ Carga tolerante: si @supabase no está disponible, sigue funcionando
+let createClient = null;
+try {
+    const supabaseLib = require("@supabase/supabase-js");
+    createClient = supabaseLib.createClient;
+} catch (e) {
+    console.warn("[check-status] @supabase/supabase-js not available, using fetch fallback");
+}
+
+// ★ Rate limiting
+const { rateLimit, getClientIp } = require("./_rateLimit.js");
+// ★ Headers de seguridad
+const { applySecurityHeaders } = require("./_security.js");
 
 module.exports = async (req, res) => {
+    // ★ Headers de seguridad
+    try { applySecurityHeaders(res); } catch (_) {}
+
     // CORS
     try {
         const origin = (req.headers && req.headers.origin) || "";
@@ -54,6 +69,24 @@ module.exports = async (req, res) => {
             return safeJson(200, { ok: false, error: "email required" });
         }
 
+        // ★ Validar formato email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return safeJson(200, { ok: false, error: "Formato de email inválido" });
+        }
+
+        // ★ Rate limit: 30 consultas por IP cada minuto (polling normal)
+        const ip = getClientIp(req);
+        const limit = rateLimit(`status:${ip}:${email}`, 30, 60 * 1000);
+        if (!limit.allowed) {
+            return safeJson(200, {
+                ok: false,
+                step: "rate_limit",
+                error: "Demasiadas consultas. Espera un momento.",
+                retryAfterMs: limit.resetIn,
+            });
+        }
+
         // ★ Sin email
         const supabaseUrl = process.env.SUPABASE_URL
                          || process.env.VITE_SUPABASE_URL
@@ -85,8 +118,8 @@ module.exports = async (req, res) => {
         let userId = null;
         let method = "not_found";
 
-        // ★ Si tenemos SERVICE_ROLE, podemos usar auth.admin
-        if (serviceKey) {
+        // ★ Si tenemos SERVICE_ROLE Y el módulo cargado, podemos usar auth.admin
+        if (serviceKey && createClient) {
             const adminClient = createClient(supabaseUrl, serviceKey, {
                 auth: { autoRefreshToken: false, persistSession: false },
             });
