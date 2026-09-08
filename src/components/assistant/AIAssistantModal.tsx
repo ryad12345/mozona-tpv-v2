@@ -656,18 +656,17 @@ export function AIAssistantModal({
                     if (signupError) localStorage.setItem("mozona.lastSignupError", signupError);
                 } catch (_) {}
 
-                // ★ v1.9.83: cambiar a step "redirecting" que muestra spinner
-                setCurrentStep("redirecting");
-                // ★ v1.9.83: CERRAR EL MODAL primero, luego navegar
+                // ★ v1.9.91: NAVEGACION DIRECTA CON location.href
+                //   Evita cualquier middleware de React Router o useEffect
+                //   que pueda redirigir a /pricing. location.href es la forma
+                //   mas garantizada de llegar a /waiting-activation.
                 try { onClose(); } catch (_) {}
+                console.log("[AIAssistantModal] navegando a /waiting-activation via location.href, userId:", userId);
                 try {
-                    if (auth?.refresh) {
-                        try { await auth.refresh(); } catch (_) {}
-                    }
-                    navigate("/waiting-activation");
+                    location.href = "/waiting-activation";
                 } catch (e) {
-                    console.error("[AIAssistantModal] navigate error, fallback:", e);
-                    try { location.href = "/waiting-activation"; } catch (_) {}
+                    console.error("[AIAssistantModal] location.href fallo, fallback navigate:", e);
+                    try { navigate("/waiting-activation", { replace: true }); } catch (_) {}
                 }
                 return;
             }
