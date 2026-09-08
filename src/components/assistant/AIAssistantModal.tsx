@@ -470,63 +470,111 @@ export function AIAssistantModal({
                 if (isSubmitting) {
                     return; // Doble-click seguro
                 }
-                markLeadAttempt(); // Marca el intento AHORA (rate limit)
+                markLeadAttempt();
                 setIsSubmitting(true);
                 setIsTyping(true);
-                // ★ v1.9.66: NO seteamos "pending" aquí. El UI solo mostrara
-                // "ok" (verde) o "error" (rosa). El email se envia en background
-                // y actualiza el estado cuando termina (o falla).
                 setEmailStatus(null);
-                // v1.9.80: FLUJO COMPLETO DE ALTA
-                try {
-                    let userId: string | null = auth?.user?.id ?? null;
-                    if (!userId && auth?.signUp && email && password) {
-                        try {
-                            const upResult = await auth.signUp(email.trim().toLowerCase(), password, name || undefined);
-                            if (upResult?.user) {
-                                userId = upResult.user.id;
-                            } else if (upResult?.error) {
-                                if (/already|exists|registered/i.test(upResult.error) && auth?.signIn) {
-                                    const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                    if (inResult?.user) userId = inResult.user.id;
-                                    else throw new Error(inResult?.error || "No se pudo iniciar sesion");
+
+                // v1.9.81: FLUJO COMPLETO + SIEMPRE NAVEGA
+                let userId: string | null = auth?.user?.id ?? null;
+                let signupError: string | null = null;
+
+                if (!userId && auth?.signUp && email && password) {
+                    try {
+                        const upResult = await auth.signUp(email.trim().toLowerCase(), password, name || undefined);
+                        if (upResult?.user) {
+                            userId = upResult.user.id;
+                            console.log("[AIAssistantModal] signUp OK, userId:", userId);
+                        } else if (upResult?.error) {
+                            if (/confirm|verification|email/i.test(upResult.error)) {
+                                console.warn("[AIAssistantModal] signUp requiere confirmacion, seguimos");
+                                signupError = "Email confirmation requerida";
+                            } else if (/already|exists|registered/i.test(upResult.error) && auth?.signIn) {
+                                const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                                if (inResult?.user) {
+                                    userId = inResult.user.id;
                                 } else {
-                                    throw new Error(upResult.error);
+                                    signupError = inResult?.error || "No se pudo iniciar sesion";
                                 }
+                            } else {
+                                signupError = upResult.error;
                             }
-                        } catch (signupErr: any) {
-                            try { pushAssistant(`Error al crear la cuenta: ${signupErr?.message ?? signupErr}.`); } catch (_) {}
-                            setIsSubmitting(false);
-                            setIsTyping(false);
-                            return;
                         }
+                    } catch (signupErr: any) {
+                        console.warn("[AIAssistantModal] signUp error (sigue):", signupErr);
+                        signupError = signupErr?.message ?? String(signupErr);
                     }
-                    if (userId && name) {
-                        try {
-                            const { createTenantWithGrace } = await import("../../lib/activation");
-                            await createTenantWithGrace({
-                                ownerId:      userId,
-                                businessName: name,
-                                planSelected: (plan as string) || "basic",
-                                contactEmail: email,
-                                businessType: businessType || undefined,
-                            });
-                        } catch (tenantErr) {
-                            console.warn("[AIAssistantModal] tenant exception:", tenantErr);
-                        }
-                    }
-                    try { void fetch("/api/notify-telegram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: userId, businessName: name, contactEmail: email, planSelected: (plan as string) || "basic", businessType: businessType, source: "ai-assistant" }) }).catch(() => {}); } catch (_) {}
-                    try { void fetch("/api/notify-admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: userId, businessName: name, contactEmail: email, planSelected: (plan as string) || "basic", businessType: businessType, source: "ai-assistant" }) }).catch(() => {}); } catch (_) {}
-                    if (FIREBASE_CONFIGURED) { try { await persistLead("trial_activo"); } catch (_) {} } else { setSavedOk(true); setBackend("none"); }
-                    markLeadSubmitted();
-                    setSavedOk(true);
-                } catch (e) {
-                    console.error("[AIAssistantModal] yes flow error:", e);
-                } finally {
-                    setIsSubmitting(false);
-                    setIsTyping(false);
                 }
-                try { if (auth?.refresh) { try { await auth.refresh(); } catch (_) {} } navigate("/waiting-activation"); } catch (e) { try { location.href = "/waiting-activation"; } catch (_) {} }
+
+                if (userId && name) {
+                    try {
+                        const { createTenantWithGrace } = await import("../../lib/activation");
+                        const tenantResult = await createTenantWithGrace({
+                            ownerId:      userId,
+                            businessName: name,
+                            planSelected: (plan as string) || "basic",
+                            contactEmail: email,
+                            businessType: businessType || undefined,
+                        });
+                        console.log("[AIAssistantModal] tenant:", tenantResult.ok ? tenantResult.tenantId : tenantResult.error);
+                    } catch (tenantErr) {
+                        console.warn("[AIAssistantModal] tenant exception (no bloqueante):", tenantErr);
+                    }
+                }
+
+                try {
+                    void fetch("/api/notify-telegram", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            tenantId: userId,
+                            businessName: name,
+                            contactEmail: email,
+                            planSelected: (plan as string) || "basic",
+                            businessType: businessType,
+                            source: "ai-assistant",
+                            signupError: signupError,
+                        }),
+                    }).catch((e) => console.warn("[AIAssistantModal] notify-telegram error:", e?.message));
+                } catch (_) { /* silent */ }
+
+                try {
+                    void fetch("/api/notify-admin", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            tenantId: userId,
+                            businessName: name,
+                            contactEmail: email,
+                            planSelected: (plan as string) || "basic",
+                            businessType: businessType,
+                            source: "ai-assistant",
+                        }),
+                    }).catch((e) => console.warn("[AIAssistantModal] notify-admin error:", e?.message));
+                } catch (_) { /* silent */ }
+
+                if (FIREBASE_CONFIGURED) {
+                    try { await persistLead("trial_activo"); } catch (_) {}
+                } else {
+                    setSavedOk(true);
+                    setBackend("none");
+                }
+                markLeadSubmitted();
+                setSavedOk(true);
+                setIsSubmitting(false);
+                setIsTyping(false);
+
+                // SIEMPRE navega aunque signUp falle
+                console.log("[AIAssistantModal] navegando a /waiting-activation, userId:", userId, "signupError:", signupError);
+                try {
+                    if (auth?.refresh) {
+                        try { await auth.refresh(); } catch (_) {}
+                    }
+                    navigate("/waiting-activation");
+                } catch (e) {
+                    console.error("[AIAssistantModal] navigate error, fallback:", e);
+                    try { location.href = "/waiting-activation"; } catch (_) {}
+                }
                 return;
             }
         } else if (currentStep === "done") {
