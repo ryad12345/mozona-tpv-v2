@@ -179,6 +179,12 @@ const STEPS: Record<string, Step> = {
             { label: "🚀  Entrar al Panel", value: "enter", next: "__close__" },
         ],
     },
+    // ★ v1.9.83: step transitorio durante la redirección a /waiting-activation
+    redirecting: {
+        id:     "redirecting",
+        role:   "assistant",
+        content: "✓ Solicitud enviada. Redirigiendo a tu sala de espera...",
+    },
 };
 
 const PLAN_LABEL: Record<PlanCode, string> = {
@@ -564,6 +570,12 @@ export function AIAssistantModal({
 
                 // SIEMPRE navega aunque signUp falle
                 console.log("[AIAssistantModal] navegando a /waiting-activation, userId:", userId, "signupError:", signupError);
+                // ★ v1.9.83: cambiar a step "redirecting" que muestra spinner
+                //   (oculta las opciones estáticas)
+                setCurrentStep("redirecting");
+                // ★ v1.9.83: CERRAR EL MODAL primero, luego navegar
+                //   (sin esto, el modal se queda encima de /waiting-activation)
+                try { onClose(); } catch (_) {}
                 try {
                     if (auth?.refresh) {
                         try { await auth.refresh(); } catch (_) {}
