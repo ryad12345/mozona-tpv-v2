@@ -479,15 +479,67 @@ export function AIAssistantModal({
                 setIsTyping(true);
                 setEmailStatus(null);
 
-                // v1.9.88: FLUJO ROBUSTO - signUp PRIMERO, luego register-trial
+                // v1.9.90: FLUJO DEFINITIVO - check-and-fix-user PRIMERO
                 let userId: string | null = auth?.user?.id ?? null;
                 let signupError: string | null = null;
                 let userCreated = false; // ★ Verificacion critica
 
-                // ★ Paso 1: signUp directo (con anon key, sin service_role)
-                //   Esto SIEMPRE crea el usuario, aunque sin sesion si hay email confirmation
-                if (email && password && name && !userId && auth?.signUp) {
-                    console.log("[AIAssistantModal] Paso 1: signUp directo...");
+                // ★ Paso 1: /api/check-and-fix-user (server-side, usa admin API)
+                //   Este endpoint:
+                //   - Busca el email en Supabase Auth
+                //   - Si existe: actualiza password + email_confirm = true
+                //   - Si no existe: crea con email_confirm = true
+                if (email && password && name) {
+                    console.log("[AIAssistantModal] Paso 1: /api/check-and-fix-user...");
+                    try {
+                        const fixResp = await fetch("/api/check-and-fix-user", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                email: email.trim().toLowerCase(),
+                                password,
+                                name,
+                            }),
+                        });
+                        const fixJson = await fixResp.json().catch(() => ({}));
+                        console.log("[AIAssistantModal] /api/check-and-fix-user:", fixJson);
+                        if (fixJson?.ok && fixJson?.userId) {
+                            userId = fixJson.userId;
+                            userCreated = true;
+                            console.log("[AIAssistantModal] check-and-fix-user OK, userId:", userId, "action:", fixJson.action);
+                        } else {
+                            console.warn("[AIAssistantModal] check-and-fix-user fallo:", fixJson?.error);
+                            if (!signupError) signupError = fixJson?.error || "Error en check-and-fix-user";
+                        }
+                    } catch (fixErr: any) {
+                        console.warn("[AIAssistantModal] check-and-fix-user exception:", fixErr);
+                        if (!signupError) signupError = fixErr?.message ?? "Error de red";
+                    }
+                }
+
+                // ★ Paso 2: signIn con las mismas credenciales (ahora debe funcionar
+                //   porque el email esta confirmado por el servidor)
+                if (userCreated && auth?.signIn && !auth?.user) {
+                    console.log("[AIAssistantModal] Paso 2: signIn con credenciales...");
+                    try {
+                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                        if (inResult?.user) {
+                            userId = inResult.user.id;
+                            console.log("[AIAssistantModal] signIn OK, sesion activa");
+                        } else {
+                            console.warn("[AIAssistantModal] signIn fallo (puede ser normal):", inResult?.error);
+                            // No es un error grave: el user existe, solo no hay sesion
+                            // (la sala de espera funciona con anon key)
+                        }
+                    } catch (signInErr) {
+                        console.warn("[AIAssistantModal] signIn exception:", signInErr);
+                    }
+                }
+
+                // ★ Paso 3: Si check-and-fix-user fallo (no service_role),
+                //   intentar signUp normal + auto-confirm-robust
+                if (!userCreated && email && password && name && auth?.signUp) {
+                    console.log("[AIAssistantModal] Paso 3: signUp normal (fallback)...");
                     try {
                         const upResult = await auth.signUp(
                             email.trim().toLowerCase(),
@@ -499,7 +551,7 @@ export function AIAssistantModal({
                             userId = upResult.user.id;
                             userCreated = true;
                             console.log("[AIAssistantModal] signUp OK, userId:", userId);
-                            // ★ v1.9.89: Auto-confirmar email con TODOS los metodos
+                            // Auto-confirm via 3 metodos
                             void fetch("/api/auto-confirm-robust", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
@@ -511,89 +563,23 @@ export function AIAssistantModal({
                               .catch((e) => console.warn("[AIAssistantModal] auto-confirm-robust error:", e?.message));
                         } else if (upResult?.error) {
                             console.warn("[AIAssistantModal] signUp error:", upResult.error);
-                            // Si el usuario ya existe, intentar signIn
-                            if (/already|exists|registered/i.test(upResult.error)) {
-                                console.log("[AIAssistantModal] usuario ya existe, intentando signIn...");
-                                if (auth?.signIn) {
-                                    const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                    if (inResult?.user) {
-                                        userId = inResult.user.id;
-                                        userCreated = true;
-                                        console.log("[AIAssistantModal] signIn (existing) OK, userId:", userId);
-                                    } else {
-                                        signupError = inResult?.error || "No se pudo iniciar sesion";
-                                    }
-                                }
-                            } else {
-                                signupError = upResult.error;
-                            }
+                            if (!signupError) signupError = upResult.error;
                         }
                     } catch (signupErr: any) {
                         console.warn("[AIAssistantModal] signUp exception:", signupErr);
-                        signupError = signupErr?.message ?? String(signupErr);
-                    }
-                }
-
-                // ★ Paso 2: Si signUp no creo usuario, intentar /api/register-trial
-                //   (puede usar service_role si esta configurado)
-                if (!userCreated && email && password && name) {
-                    console.log("[AIAssistantModal] Paso 2: /api/register-trial (fallback)...");
-                    try {
-                        const regResp = await fetch("/api/register-trial", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                email: email.trim().toLowerCase(),
-                                password,
-                                name,
-                                plan: (plan as string) || "basic",
-                                businessType: businessType || undefined,
-                            }),
-                        });
-                        const regJson = await regResp.json().catch(() => ({}));
-                        console.log("[AIAssistantModal] /api/register-trial:", regJson);
-                        if (regJson?.ok && regJson?.userId) {
-                            userId = regJson.userId;
-                            userCreated = true;
-                            console.log("[AIAssistantModal] register-trial OK, userId:", userId);
-                        } else {
-                            console.warn("[AIAssistantModal] register-trial fallo:", regJson?.error);
-                            if (!signupError) signupError = regJson?.error || "Error en register-trial";
-                        }
-                    } catch (regErr: any) {
-                        console.warn("[AIAssistantModal] register-trial exception:", regErr);
-                        if (!signupError) signupError = regErr?.message ?? "Error de red";
-                    }
-                }
-
-                // ★ Paso 3: Si aun no hay userId, intentar signIn directo
-                //   (por si el user se creo antes pero no hay sesion)
-                if (!userCreated && email && password && auth?.signIn) {
-                    console.log("[AIAssistantModal] Paso 3: signIn directo (ultimo intento)...");
-                    try {
-                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                        if (inResult?.user) {
-                            userId = inResult.user.id;
-                            userCreated = true;
-                            console.log("[AIAssistantModal] signIn directo OK, userId:", userId);
-                        } else {
-                            console.warn("[AIAssistantModal] signIn directo fallo:", inResult?.error);
-                        }
-                    } catch (signInErr) {
-                        console.warn("[AIAssistantModal] signIn directo exception:", signInErr);
+                        if (!signupError) signupError = signupErr?.message ?? String(signupErr);
                     }
                 }
 
                 // ★ VALIDACION FINAL
                 if (!userCreated || !userId) {
                     console.error("[AIAssistantModal] FALLO TOTAL: no se pudo crear el usuario");
-                    // NO cerrar el modal, mostrar error al usuario
                     try {
                         pushAssistant(`❌ No se pudo crear la cuenta: ${signupError || "Error desconocido"}. Intentalo de nuevo o contacta con soporte.`);
                     } catch (_) {}
                     setIsSubmitting(false);
                     setIsTyping(false);
-                    setCurrentStep("confirm"); // Volver al step de confirm
+                    setCurrentStep("confirm");
                     return;
                 }
 
