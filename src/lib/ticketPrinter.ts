@@ -123,23 +123,31 @@ function padBoth(s: string, width: number): string {
     return " ".repeat(left) + s + " ".repeat(total - left);
 }
 
-/** ★ v1.9.20: divide un string largo en líneas de `width` chars SIN truncar.
- *  Si la línea cabe, devuelve un array de un solo elemento.
- *  Si no, parte por espacios cuando es posible; si no hay, corta blando. */
-function wrapText(s: string, width: number): string[] {
-    if (!s) return [];
-    if (s.length <= width) return [s];
+/** ★ v1.9.20 + v1.9.71: divide un string largo en líneas de `width` chars SIN truncar.
+ *  - Si la línea cabe, devuelve un array de un solo elemento.
+ *  - Si no, parte por espacios cuando es posible; si no hay, corta blando.
+ *  - Robusto contra undefined, null, números, y chars multibyte (UTF-8). */
+function wrapText(s: any, width: number): string[] {
+    if (s == null) return [];
+    const text = String(s);
+    if (text.length === 0) return [];
+    if (!width || width <= 0) return [text];
+    if (text.length <= width) return [text];
     const out: string[] = [];
-    let remaining = s;
-    while (remaining.length > width) {
+    let remaining = text;
+    let safetyCounter = 0; // ★ v1.9.71: anti-loop infinito
+    while (remaining.length > width && safetyCounter < 50) {
+        safetyCounter++;
         // Buscar el último espacio dentro del rango
         let cut = remaining.lastIndexOf(" ", width);
         if (cut <= 0) {
             // Sin espacios, cortar duro en width
             cut = width;
         }
-        out.push(remaining.slice(0, cut).trimEnd());
+        const piece = remaining.slice(0, cut).trimEnd();
+        if (piece.length > 0) out.push(piece);
         remaining = remaining.slice(cut).trimStart();
+        if (remaining.length === 0) break;
     }
     if (remaining.length > 0) out.push(remaining);
     return out;
@@ -150,15 +158,21 @@ function padBothMultiline(s: string, width: number): string[] {
     return wrapText(s, width).map(line => padBoth(line, width));
 }
 
-function fmtEUR(n: number): string {
-    // ★ v1.9.21 [HOTFIX]: formato monetario ESTRICTO.
+function fmtEUR(n: number | string | null | undefined): string {
+    // ★ v1.9.21 + v1.9.71: formato monetario ESTRICTO para 58mm y 80mm
     //   - es-ES: usa coma decimal
     //   - 2 decimales SIEMPRE (min y max)
     //   - símbolo € con espacio antes
-    return Number(n ?? 0).toLocaleString("es-ES", {
+    //   - Robusto contra null, undefined, NaN, strings
+    const num = Number(n);
+    if (!isFinite(num) || isNaN(num)) return "0,00 \u20AC";
+    // ★ v1.9.71: ancho MÁXIMO de 12 chars ("999.999.999,00 €")
+    //   para evitar que el precio desborde la celda 40% de 32 chars
+    const formatted = num.toLocaleString("es-ES", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-    }) + " \u20AC";
+    });
+    return formatted + " \u20AC";
 }
 
 /** Formato EXACTO de fecha/hora en HORA LOCAL ESPAÑA (Europe/Madrid):
@@ -244,26 +258,58 @@ function buildTicketHtml(input: TicketInput): string {
     const nameToShow = businessName && businessName.trim() !== ""
         ? businessName
         : DEFAULT_COMPANY.name;
-    headRows.push(`<tr><td colspan="2" class="ctr b">${escapeHtml(nameToShow.toUpperCase())}</td></tr>`);
-    if (cifNif) headRows.push(`<tr><td colspan="2" class="ctr">CIF/NIF: ${escapeHtml(cifNif)}</td></tr>`);
-    if (address) headRows.push(`<tr><td colspan="2" class="ctr">${escapeHtml(address)}</td></tr>`);
-    if (phone) headRows.push(`<tr><td colspan="2" class="ctr">Tel: ${escapeHtml(phone)}</td></tr>`);
+    // ★ v1.9.71: WRAP nombre del negocio si excede 32 chars (sin truncar)
+    for (const ln of wrapText(nameToShow.toUpperCase(), 32)) {
+        headRows.push(`<tr><td colspan="2" class="ctr b">${escapeHtml(ln)}</td></tr>`);
+    }
+    if (cifNif) {
+        // CIF/NIF limitado a 32 chars (los CIF son cortos)
+        headRows.push(`<tr><td colspan="2" class="ctr">CIF/NIF: ${escapeHtml(cifNif.slice(0, 32))}</td></tr>`);
+    }
+    if (address) {
+        // ★ v1.9.71: DIRECCIÓN LARGA con wrap (sin truncar)
+        // Calle + CP + ciudad pueden ser > 32 chars fácilmente
+        for (const ln of wrapText(address, 32)) {
+            headRows.push(`<tr><td colspan="2" class="ctr">${escapeHtml(ln)}</td></tr>`);
+        }
+    }
+    if (phone) {
+        // Tel limitado a 32 chars
+        headRows.push(`<tr><td colspan="2" class="ctr">Tel: ${escapeHtml(phone.slice(0, 32))}</td></tr>`);
+    }
     headRows.push(`<tr><td colspan="2" class="sep-eq"></td></tr>`);
 
     // 1b. Datos del ticket
-    headRows.push(tr("Ticket:", ticketNumber));
-    headRows.push(tr("Fecha:", dateStr));
-    if (tableNumber) headRows.push(tr("Mesa:", String(tableNumber)));
-    if (waiterName) headRows.push(tr("Camarero:", waiterName));
-    headRows.push(tr("Pago:", paymentMethod));
+    // ★ v1.9.71: etiquetas cortas para evitar solapamiento
+    headRows.push(tr("Ticket:", ticketNumber.slice(0, 24)));
+    headRows.push(tr("Fecha:", dateStr));  // 19 chars: "DD/MM/YYYY HH:mm:ss"
+    if (tableNumber) headRows.push(tr("Mesa:", String(tableNumber).slice(0, 24)));
+    if (waiterName) headRows.push(tr("Camarero:", (waiterName || "").slice(0, 24)));
+    headRows.push(tr("Pago:", (paymentMethod || "—").slice(0, 24)));
     headRows.push(`<tr><td colspan="2" class="sep"></td></tr>`);
 
-    // 2. PRODUCTOS — UNA fila por producto
+    // 2. PRODUCTOS — wrap del nombre en lugar de truncar
+    // ★ v1.9.71: el nombre se wrap-ea si excede ~22 chars
+    //   Línea 1: "Nx NOMBRE_PRODUCTO" + precio (40% width)
+    //   Líneas 2+: nombre en wrap (colspan 2)
     const bodyRows: string[] = [];
     for (const l of lines) {
-        const sub = l.unit_price * l.quantity;
-        const left = `${l.quantity} x ${escapeHtml(l.name.slice(0, 22))}`;
-        bodyRows.push(tr(left, fmtEUR(sub)));
+        const sub = Number(l.unit_price) * Number(l.quantity);
+        const qty = String(l.quantity || 1);
+        const name = l.name || "";
+        // ★ v1.9.71: WRAP nombre en lugar de truncar
+        const nameLines = wrapText(name, 24);
+        if (nameLines.length === 0) {
+            // nombre vacío, mostrar cantidad + precio
+            bodyRows.push(tr(`${qty} x —`, fmtEUR(sub)));
+        } else {
+            // Primera línea: "Nx PRIMERA_LINEA" + precio
+            bodyRows.push(tr(`${qty} x ${escapeHtml(nameLines[0])}`, fmtEUR(sub)));
+            // Líneas siguientes: nombre solo, colspan 2
+            for (let i = 1; i < nameLines.length; i++) {
+                bodyRows.push(`<tr><td colspan="2" class="l">${escapeHtml(nameLines[i])}</td></tr>`);
+            }
+        }
     }
     bodyRows.push(`<tr><td colspan="2" class="sep"></td></tr>`);
 

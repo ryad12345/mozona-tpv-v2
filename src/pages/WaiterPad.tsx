@@ -244,7 +244,29 @@ export function WaiterPad() {
     // la vea en tiempo real (además del WebSocket local)
     // -----------------------------------------------------------------
     const sendOrder = useCallback(async () => {
-        if (!selectedTable || cart.length === 0 || !auth.activeWaiter) return;
+        // ★ v1.9.71: BLINDAJE - nunca crashear por estado de camarero
+        if (!selectedTable || cart.length === 0) return;
+        // Si activeWaiter es null pero hay sesión en localStorage, recuperarla
+        let activeW = auth.activeWaiter;
+        if (!activeW) {
+            try {
+                const ls = localStorage.getItem("mozona.waiter_session");
+                if (ls) {
+                    const parsed = JSON.parse(ls);
+                    if (parsed && parsed.user_id && parsed.name) {
+                        activeW = {
+                            id: parsed.user_id,
+                            name: parsed.name,
+                            role: (parsed.role ?? "waiter") as "owner" | "manager" | "waiter" | "kitchen",
+                            loggedInAt: parsed.loggedInAt ?? new Date().toISOString(),
+                        };
+                        console.log("[WaiterPad] activeWaiter recuperado de localStorage");
+                    }
+                }
+            } catch (_) { /* ignore */ }
+        }
+        // Si sigue sin camarero, no bloquear la UI - usar fallback "Anónimo"
+        const waiterName = activeW?.name ?? "Anónimo";
 
         const items: OrderItemPayload[] = cart.map(c => ({
             productId: c.productId,
@@ -263,7 +285,7 @@ export function WaiterPad() {
             subtotal:    totals.subtotal,
             taxAmount:   totals.tax,
             total:       totals.total,
-            waiter:      auth.activeWaiter.name,
+            waiter:      waiterName,
         });
 
         // 2) Persistir en Supabase (FUENTE DE VERDAD para el TPV)
@@ -295,7 +317,7 @@ export function WaiterPad() {
                 tenant_id:   tenantId,
                 table_id:    selectedTable.id,
                 table_label: String(selectedTable.table_number ?? ""),
-                waiter_name: auth.activeWaiter.name,
+                waiter_name: waiterName,
                 items: cart.map(c => ({
                     product_id: c.productId,
                     name:       c.name,
@@ -317,7 +339,7 @@ export function WaiterPad() {
         setLastSentAt(Date.now());
         setCarts(prev => ({ ...prev, [selectedTable.id]: [] }));
         setEditingNotes(null);
-    }, [cart, selectedTable, totals, ws, auth.activeWaiter, saasAuth.user, restaurant?.id]);
+    }, [cart, selectedTable, totals, ws, saasAuth.user, restaurant?.id]);
 
     // Auto-dismiss del toast de éxito
     useEffect(() => {
