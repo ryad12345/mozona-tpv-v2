@@ -331,7 +331,7 @@ module.exports = async (req, res) => {
                 "🆕 *Nueva solicitud de alta*",
                 "",
                 `👤 *Nombre:* ${escapeMd(name) || "—"}`,
-                `📧 *Email:* \\`${escapeMd(email)}\\` `,
+                `📧 *Email:* \`${escapeMd(email)}\` `,
                 `📦 *Plan:* ${escapeMd(plan)}`,
                 businessType ? `🏪 *Tipo:* ${escapeMd(businessType)}` : "",
                 phone ? `📞 *Teléfono:* ${escapeMd(phone)}` : "",
@@ -342,10 +342,10 @@ module.exports = async (req, res) => {
                 `⏰ *Cortesía:* 24h desde ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`,
                 "",
                 "✅ Para aprobar, responde:",
-                `\\`/approve ${tenantId || email}\\``,
+                `\`/approve ${tenantId || email}\``,
                 "",
                 "❌ Para rechazar:",
-                `\\`/reject ${tenantId || email}\\``,
+                `\`/reject ${tenantId || email}\``,
             ].filter(Boolean).join("\n");
 
             await sendTelegram(BOT_TOKEN, CHAT_ID, md);
