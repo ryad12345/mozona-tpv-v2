@@ -57,7 +57,7 @@ interface Step {
     role:     "assistant";
     content:  string;
     options?: Array<{ label: string; value: string; next: string }>;
-    input?:   "email" | "name" | "restaurant";
+    input?:   "email" | "name" | "restaurant" | "password";
 }
 
 const STEPS_CONFIG: Record<string, Step> = {
@@ -151,6 +151,13 @@ const STEPS: Record<string, Step> = {
         role:   "assistant",
         content: "¿A qué email te enviamos el acceso y la factura?",
         input:  "email",
+    },
+    // ★ v1.9.80: Paso de contraseña (solo si NO hay sesión)
+    password: {
+        id:     "password",
+        role:   "assistant",
+        content: "Crea una contraseña (mínimo 6 caracteres) para acceder a tu panel de MOZONA TPV.",
+        input:  "password",
     },
     confirm: {
         id:      "confirm",
@@ -271,6 +278,8 @@ export function AIAssistantModal({
     const [plan, setPlan] = useState<PlanCode | "">(ctxPlan ?? "");
     const [name, setName] = useState(ctxName ?? "");
     const [email, setEmail] = useState(ctxEmail ?? "");
+    // ★ v1.9.80: contraseña para crear cuenta nueva
+    const [password, setPassword] = useState<string>("");
     const [inputValue, setInputValue] = useState("");
     const [busy, setBusy] = useState(false);
     const [leadId, setLeadId] = useState<string | null>(null);
@@ -349,6 +358,7 @@ export function AIAssistantModal({
             setPlan(ctxPlan ?? "");
             setName(ctxName ?? "");
             setEmail(ctxEmail ?? "");
+            setPassword("");  // ★ v1.9.80
             setInputValue("");
             setLeadId(null);
             setSavedOk(false);
@@ -467,20 +477,56 @@ export function AIAssistantModal({
                 // "ok" (verde) o "error" (rosa). El email se envia en background
                 // y actualiza el estado cuando termina (o falla).
                 setEmailStatus(null);
+                // v1.9.80: FLUJO COMPLETO DE ALTA
                 try {
-                    if (FIREBASE_CONFIGURED) {
-                        await persistLead("trial_activo");
-                    } else {
-                        setSavedOk(true);
-                        setBackend("none");
+                    let userId: string | null = auth?.user?.id ?? null;
+                    if (!userId && auth?.signUp && email && password) {
+                        try {
+                            const upResult = await auth.signUp(email.trim().toLowerCase(), password, name || undefined);
+                            if (upResult?.user) {
+                                userId = upResult.user.id;
+                            } else if (upResult?.error) {
+                                if (/already|exists|registered/i.test(upResult.error) && auth?.signIn) {
+                                    const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                                    if (inResult?.user) userId = inResult.user.id;
+                                    else throw new Error(inResult?.error || "No se pudo iniciar sesion");
+                                } else {
+                                    throw new Error(upResult.error);
+                                }
+                            }
+                        } catch (signupErr: any) {
+                            try { pushAssistant(`Error al crear la cuenta: ${signupErr?.message ?? signupErr}.`); } catch (_) {}
+                            setIsSubmitting(false);
+                            setIsTyping(false);
+                            return;
+                        }
                     }
-                    // ★ v1.9.49: marca el envío exitoso en localStorage
+                    if (userId && name) {
+                        try {
+                            const { createTenantWithGrace } = await import("../../lib/activation");
+                            await createTenantWithGrace({
+                                ownerId:      userId,
+                                businessName: name,
+                                planSelected: (plan as string) || "basic",
+                                contactEmail: email,
+                                businessType: businessType || undefined,
+                            });
+                        } catch (tenantErr) {
+                            console.warn("[AIAssistantModal] tenant exception:", tenantErr);
+                        }
+                    }
+                    try { void fetch("/api/notify-telegram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: userId, businessName: name, contactEmail: email, planSelected: (plan as string) || "basic", businessType: businessType, source: "ai-assistant" }) }).catch(() => {}); } catch (_) {}
+                    try { void fetch("/api/notify-admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: userId, businessName: name, contactEmail: email, planSelected: (plan as string) || "basic", businessType: businessType, source: "ai-assistant" }) }).catch(() => {}); } catch (_) {}
+                    if (FIREBASE_CONFIGURED) { try { await persistLead("trial_activo"); } catch (_) {} } else { setSavedOk(true); setBackend("none"); }
                     markLeadSubmitted();
+                    setSavedOk(true);
+                } catch (e) {
+                    console.error("[AIAssistantModal] yes flow error:", e);
                 } finally {
                     setIsSubmitting(false);
                     setIsTyping(false);
                 }
-                await goToStep("done");
+                try { if (auth?.refresh) { try { await auth.refresh(); } catch (_) {} } navigate("/waiting-activation"); } catch (e) { try { location.href = "/waiting-activation"; } catch (_) {} }
                 return;
             }
         } else if (currentStep === "done") {
@@ -659,6 +705,23 @@ export function AIAssistantModal({
                 return;
             }
             setEmail(v);
+            // ★ v1.9.80: Si NO hay sesión, pedir contraseña
+            if (!auth?.user) {
+                await goToStep("password");
+            } else {
+                await goToStep("confirm");
+            }
+        } else if (currentStep === "password") {
+            // ★ v1.9.80: Validar y guardar contraseña
+            if (v.length < 6) {
+                setIsTyping(true);
+                await thinkDelay();
+                pushAssistant("La contraseña debe tener al menos 6 caracteres. Inténtalo de nuevo.");
+                setIsTyping(false);
+                setInputValue("");
+                return;
+            }
+            setPassword(v);
             await goToStep("confirm");
         }
         setInputValue("");
@@ -908,7 +971,7 @@ export function AIAssistantModal({
                     {(mode === "config" || getStepsFor(mode)[currentStep]?.input) ? (
                         <div className="flex gap-2">
                             <input
-                                type={mode === "config" ? "text" : (getStepsFor(mode)[currentStep].input === "email" ? "email" : "text")}
+                                type={currentStep === "password" ? "password" : (mode === "config" ? "text" : (getStepsFor(mode)[currentStep].input === "email" ? "email" : "text"))}
                                 value={inputValue}
                                 onChange={e => setInputValue(e.target.value)}
                                 onKeyDown={e => e.key === "Enter" && handleInput()}
@@ -917,7 +980,8 @@ export function AIAssistantModal({
                                         ? (currentStep === "add-product-price" ? "Precio (IVA incl.)..."
                                           : currentStep === "add-product-iva" ? "% IVA (ej: 10)..."
                                           : 'Escribe: "Anadir bocadillo a 4.50" o "Crear categoria Postres"')
-                                        : (getStepsFor(mode)[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca")
+                                        : (currentStep === "password" ? "Minimo 6 caracteres..."
+                                          : getStepsFor(mode)[currentStep].input === "email" ? "tu@email.com" : "Ej: Rincón de Casablanca")
                                 }
                                 className="input flex-1"
                                 autoFocus
