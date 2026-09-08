@@ -129,57 +129,35 @@ export function WaitingActivationPage() {
     }, []);
 
     // ★ v1.9.87: fetch con ANON KEY por email (no requiere tenant_id)
-    // ★ v2.0.2: Query DEFENSIVA — primero intenta con columnas específicas,
-    //   si falla (400), fallback a select=* que SIEMPRE funciona.
+    // ★ v2.0.3: USA ENDPOINT SERVER-SIDE /api/get-tenant
+    //   El endpoint maneja TODA la lógica de fallback (columna contact_email
+    //   puede no existir, owner_id, etc). Si SERVICE_ROLE está configurada,
+    //   bypasea RLS.
     const fetchStatus = useCallback(async () => {
         if (!userEmail) {
             setLoading(false);
             return;
         }
         try {
-            const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
-            const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
-            if (!supabaseUrl || !supabaseKey) {
-                setError("Supabase no configurado");
+            console.log("[WaitingActivation] buscando tenant para:", userEmail);
+            const r = await fetch("/api/get-tenant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: userEmail.trim().toLowerCase() }),
+            });
+
+            if (!r.ok) {
+                console.error("[WaitingActivation] /api/get-tenant fallo:", r.status);
+                setError("Estamos preparando tu espacio. La activación se completará en los próximos minutos.");
                 setLoading(false);
                 return;
             }
-            const email = encodeURIComponent(userEmail.trim().toLowerCase());
-            const headers = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
 
-            // ★ Intento 1: query con columnas específicas (puede fallar si
-            //   la migración 28 no se ha ejecutado)
-            let r = await fetch(
-                `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${email}&select=id,activation_status,grace_period_ends_at,name,plan_selected&order=created_at.desc&limit=1`,
-                { headers }
-            );
+            const json = await r.json();
+            console.log("[WaitingActivation] /api/get-tenant result:", { ok: json.ok, method: json.method, hasTenant: !!json.tenant });
 
-            // ★ Fallback: si la query falla (400), intentar con select=*
-            //   que siempre funciona independientemente de las columnas
-            if (!r.ok) {
-                console.warn("[WaitingActivation] query especifica fallo:", r.status, "- reintentando con select=*");
-                r = await fetch(
-                    `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${email}&select=*&order=created_at.desc&limit=1`,
-                    { headers }
-                );
-            }
-
-            if (!r.ok) {
-                const errText = await r.text().catch(() => "");
-                console.error("[WaitingActivation] query fallo:", r.status, errText);
-                // ★ Mensaje específico para 400 (esquema no actualizado)
-                if (r.status === 400) {
-                    setError("Estamos preparando tu espacio. La activación se completará en los próximos minutos.");
-                } else {
-                    setError(`Error al consultar estado (${r.status})`);
-                }
-                setLoading(false);
-                return;
-            }
-            const arr = await r.json();
-            if (arr && arr[0]) {
-                const t = arr[0];
-                // ★ Mapear columnas de forma defensiva: usar la que exista
+            if (json.tenant) {
+                const t = json.tenant;
                 const newStatus: TenantStatus = {
                     status: t.activation_status ?? t.subscription_status ?? "pending_activation",
                     grace_period_ends_at: t.grace_period_ends_at,
@@ -188,20 +166,23 @@ export function WaitingActivationPage() {
                     plan_selected: t.plan_selected ?? t.plan,
                 };
                 setStatus(newStatus);
-                console.log("[WaitingActivation] tenant encontrado:", { id: t.id, status: newStatus.status, name: newStatus.business_name });
+                console.log("[WaitingActivation] tenant encontrado:", {
+                    id: t.id,
+                    status: newStatus.status,
+                    name: newStatus.business_name,
+                });
                 // ★ Si el SuperAdmin ya aprobo, redirigir al panel
                 if (newStatus.status === "active_trial" || newStatus.status === "active" || newStatus.status === "vip") {
                     navigate("/app", { replace: true });
                 }
             } else {
-                // No se encontro tenant todavia
                 console.log("[WaitingActivation] no hay tenant todavia para:", userEmail);
                 setError(null);
             }
             setLoading(false);
         } catch (e) {
             console.error("[WaitingActivation] fetchStatus error:", e);
-            setError(String(e));
+            setError("Estamos preparando tu espacio. La activación se completará en los próximos minutos.");
             setLoading(false);
         }
     }, [userEmail, navigate]);

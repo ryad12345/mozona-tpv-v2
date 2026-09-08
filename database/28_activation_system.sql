@@ -20,6 +20,7 @@ DO $$ BEGIN
 END $$;
 
 -- 2) Añadir columnas nuevas a tenants (idempotente)
+-- ★ v2.0.3: Añadir TODAS las columnas que el código cliente y los triggers usan
 ALTER TABLE tenants
     ADD COLUMN IF NOT EXISTS activation_status subscription_status DEFAULT 'pending_activation',
     ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMPTZ,
@@ -29,7 +30,15 @@ ALTER TABLE tenants
     ADD COLUMN IF NOT EXISTS plan_selected TEXT,
     ADD COLUMN IF NOT EXISTS restaurant_address TEXT,
     ADD COLUMN IF NOT EXISTS restaurant_phone TEXT,
-    ADD COLUMN IF NOT EXISTS business_type TEXT;
+    ADD COLUMN IF NOT EXISTS business_type TEXT,
+    ADD COLUMN IF NOT EXISTS contact_email TEXT,
+    ADD COLUMN IF NOT EXISTS business_name TEXT,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 2.1) Índice único parcial sobre contact_email (para evitar duplicados)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_contact_email_unique
+    ON tenants(contact_email)
+    WHERE contact_email IS NOT NULL;
 
 -- 3) Tabla de notificaciones internas (sustituye EmailJS)
 CREATE TABLE IF NOT EXISTS admin_notifications (
