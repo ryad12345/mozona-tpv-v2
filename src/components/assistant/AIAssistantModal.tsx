@@ -29,7 +29,7 @@ import { useEffect, useRef, useState } from "react";
 import { saveLead, saveLeadToLocal, type ChatMessage, type PlanCode, type LeadStatus, type AssistantSource, type LeadRecord } from "../../lib/chatLeads";
 import { FIREBASE_CONFIGURED } from "../../lib/firebase";
 import { sendLeadEmail } from "../../lib/notify";
-import { isLeadAlreadySubmitted, canSubmitAgain, markLeadSubmitted, markLeadAttempt, msUntilNextSubmit } from "../../lib/leadGuard";
+import { markLeadSubmitted, resetLeadGuard } from "../../lib/leadGuard";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { saveProduct as saveProductCatalog, type ProductInput } from "../../lib/catalog";
@@ -288,7 +288,7 @@ export function AIAssistantModal({
     const [isTyping, setIsTyping] = useState(false);  // ★ v1.9.39: Smart Engine
     // ★ v1.9.49: estado de envío + rate limit
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [alreadySubmitted] = useState<boolean>(() => isLeadAlreadySubmitted());
+    const [alreadySubmitted, setAlreadySubmitted] = useState<boolean>(false);
     const [rateLimitedUntil, setRateLimitedUntil] = useState<number>(0);
     // ★ v1.9.50: estado temporal del producto (config mode)
     const [pendingPrice, setPendingPrice] = useState<number>(0);
@@ -352,6 +352,10 @@ export function AIAssistantModal({
     // Reset al abrir
     useEffect(() => {
         if (open) {
+            // ★ v1.9.82: resetear el flag de "ya enviado" para permitir
+            //   que el usuario pueda iniciar el flujo completo.
+            try { resetLeadGuard(); } catch (_) {}
+            setAlreadySubmitted(false);
             setMessages([]);
             setCurrentStep("welcome");
             setBusinessType("");
@@ -459,23 +463,17 @@ export function AIAssistantModal({
             if (value === "fix-email") { await goToStep("email"); return; }
             if (value === "fix-name")  { await goToStep("name");  return; }
             if (value === "yes") {
-                // ★ v1.9.49: Rate limit check
-                if (!canSubmitAgain()) {
-                    const ms = msUntilNextSubmit();
-                    const s = Math.ceil(ms / 1000);
-                    setRateLimitedUntil(Date.now() + ms);
-                    try { pushAssistant(`⏳ Acabas de enviar una solicitud. Espera ${s}s para enviar otra.`); } catch (_) {}
-                    return;
-                }
+                // ★ v1.9.82: rate limit ELIMINADO. El usuario puede intentar
+                //   el alta múltiples veces. Cada clic crea/actualiza el tenant
+                //   (createTenantWithGrace usa upsert con onConflict).
                 if (isSubmitting) {
                     return; // Doble-click seguro
                 }
-                markLeadAttempt();
                 setIsSubmitting(true);
                 setIsTyping(true);
                 setEmailStatus(null);
 
-                // v1.9.81: FLUJO COMPLETO + SIEMPRE NAVEGA
+                // v1.9.82: FLUJO COMPLETO + SIEMPRE NAVEGA
                 let userId: string | null = auth?.user?.id ?? null;
                 let signupError: string | null = null;
 
