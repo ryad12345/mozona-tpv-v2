@@ -96,7 +96,7 @@ module.exports = async (req, res) => {
 
         // ★ Si no hay SERVICE_ROLE, intentar con ANON directamente
         //   (funciona si RLS está deshabilitado o permisivo)
-        const headers: any = {
+        const headers = {
             apikey: apiKey,
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
@@ -157,7 +157,7 @@ module.exports = async (req, res) => {
         }
 
         // ★ Actualizar tenant
-        const updateBody: any = {
+        const updateBody = {
             activation_status: "active_trial",
             approved_at: new Date().toISOString(),
             approved_by: approvedBy,
