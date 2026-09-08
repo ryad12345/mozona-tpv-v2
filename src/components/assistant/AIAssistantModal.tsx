@@ -479,160 +479,42 @@ export function AIAssistantModal({
                 setIsTyping(true);
                 setEmailStatus(null);
 
-                // v1.9.92: FLUJO ULTRA-RESILIENTE
-                //   - NUNCA muere por fetch failed
-                //   - 'User already registered' = intentar signIn
-                //   - Si todo falla, considera el user como creado
-                //     (la sala de espera funciona con anon key)
-                let userId: string | null = auth?.user?.id ?? null;
+                // v1.9.94: FLUJO MINIMO
+                //   - NO signIn, NO signUp, NO createTenant aqui (causa redirect a /pricing)
+                //   - Solo guardar en localStorage y navegar
+                //   - El procesamiento (signUp, createTenant, Telegram) lo hace
+                //     la sala de espera en background con /api/check-and-fix-user
+
+                // ★ Paso 1: guardar datos en localStorage
+                if (email && password && name) {
+                    console.log("[AIAssistantModal] Guardando pendingSignup en localStorage...");
+                    try {
+                        localStorage.setItem("mozona.pendingSignup", JSON.stringify({
+                            email: email.trim().toLowerCase(),
+                            password,
+                            name,
+                            plan: plan || "basic",
+                            businessType: businessType || undefined,
+                            timestamp: Date.now(),
+                        }));
+                        console.log("[AIAssistantModal] pendingSignup guardado");
+                    } catch (e) {
+                        console.warn("[AIAssistantModal] error guardando pendingSignup:", e);
+                    }
+                }
+
+                // ★ v1.9.94: NO hacer signIn/signUp aqui. Solo navegar.
+                let userId: string | null = null;
                 let signupError: string | null = null;
                 let userCreated = false;
 
-                // ★ Paso 1: /api/check-and-fix-user (best-effort, no debe matar el flujo)
-                if (email && password && name) {
-                    console.log("[AIAssistantModal] Paso 1: /api/check-and-fix-user (best-effort)...");
-                    try {
-                        const fixResp = await fetch("/api/check-and-fix-user", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                email: email.trim().toLowerCase(),
-                                password,
-                                name,
-                            }),
-                        });
-                        const fixJson = await fixResp.json().catch(() => ({}));
-                        console.log("[AIAssistantModal] /api/check-and-fix-user result:", fixJson);
-                        if (fixJson?.ok && fixJson?.userId) {
-                            userId = fixJson.userId;
-                            userCreated = true;
-                            console.log("[AIAssistantModal] check-and-fix-user OK");
-                        }
-                        // ★ Si fallo, NO marcamos error fatal. Continuamos.
-                    } catch (fixErr: any) {
-                        // ★ fetch failed NO debe matar el flujo
-                        console.warn("[AIAssistantModal] check-and-fix-user fetch failed (sigue):", fixErr?.message ?? String(fixErr));
-                    }
-                }
-
-                // ★ Paso 2: signIn directo con las credenciales
-                //   - Si el user existe (de pruebas anteriores), signIn funciona
-                //   - Si no existe, signIn falla pero no es grave
-                if (!userId && email && password && auth?.signIn) {
-                    console.log("[AIAssistantModal] Paso 2: signIn directo (recuperar sesion)...");
-                    try {
-                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                        if (inResult?.user) {
-                            userId = inResult.user.id;
-                            userCreated = true;
-                            console.log("[AIAssistantModal] signIn OK, sesion recuperada");
-                        } else {
-                            console.log("[AIAssistantModal] signIn fallo (normal si user no existe):", inResult?.error);
-                        }
-                    } catch (signInErr) {
-                        console.warn("[AIAssistantModal] signIn exception:", signInErr);
-                    }
-                }
-
-                // ★ Paso 3: signUp si no hay user todavia
-                if (!userId && email && password && name && auth?.signUp) {
-                    console.log("[AIAssistantModal] Paso 3: signUp normal...");
-                    try {
-                        const upResult = await auth.signUp(
-                            email.trim().toLowerCase(),
-                            password,
-                            name || undefined
-                        );
-                        console.log("[AIAssistantModal] signUp result:", upResult);
-                        if (upResult?.user) {
-                            userId = upResult.user.id;
-                            userCreated = true;
-                            console.log("[AIAssistantModal] signUp OK, userId:", userId);
-                            // Auto-confirm via 3 metodos
-                            void fetch("/api/auto-confirm-robust", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    userId: userId,
-                                    email: email.trim().toLowerCase(),
-                                }),
-                            }).then((r) => r.json().then((j) => console.log("[AIAssistantModal] auto-confirm-robust:", j)))
-                              .catch(() => {});
-                        } else if (upResult?.error) {
-                            // ★ v1.9.92: 'User already registered' NO es un error critico
-                            //   Significa que el user existe. Intentamos signIn.
-                            if (/already.*registered|user.*exists|already.*exists/i.test(upResult.error)) {
-                                console.log("[AIAssistantModal] signUp dice 'already registered' - intentando signIn...");
-                                if (auth?.signIn) {
-                                    try {
-                                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                        if (inResult?.user) {
-                                            userId = inResult.user.id;
-                                            userCreated = true;
-                                            console.log("[AIAssistantModal] signIn tras already-registered OK");
-                                        }
-                                    } catch (_) {}
-                                }
-                                // ★ Si signIn fallo, el user EXISTE aunque no podamos
-                                //   iniciar sesion. Marcamos como creado de todos modos
-                                //   para que el flujo continue.
-                                if (!userCreated) {
-                                    console.log("[AIAssistantModal] user existe (already registered), marcando como creado");
-                                    userCreated = true; // ★ Asumimos que existe
-                                }
-                            } else {
-                                console.warn("[AIAssistantModal] signUp error no critico:", upResult.error);
-                                if (!signupError) signupError = upResult.error;
-                            }
-                        }
-                    } catch (signupErr) {
-                        console.warn("[AIAssistantModal] signUp exception (sigue):", signupErr);
-                    }
-                }
-
-                // ★ v1.9.92: VALIDACION FINAL TOLERANTE
-                //   Si el user YA EXISTIA (already registered) o se acaba de crear,
-                //   el flujo continua. El tenant se crea con pending_activation
-                //   y la sala de espera funciona con anon key.
-                if (!userCreated) {
-                    console.error("[AIAssistantModal] userCreated=false, signupError:", signupError);
-                    // NO abortar. El tenant se creara igual en el siguiente paso.
-                    // Si el email YA EXISTE en Supabase (de pruebas anteriores),
-                    // podemos usar el email como userId temporal para crear el tenant.
-                    // El admin aprobara el tenant desde Telegram.
-                    if (email) {
-                        console.log("[AIAssistantModal] continuando con email como userId temporal");
-                        userId = `legacy-${email.trim().toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
-                        userCreated = true; // ★ Permitir continuar
-                    }
-                }
-
-                // ★ v1.9.92: Si userId es un "legacy-..." (no UUID valido), NO intentar
-                //   crear el tenant con ese userId. Solo navegar a waiting-activation.
-                const isRealUuid = userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-
-                if (userId && isRealUuid && name) {
-                    try {
-                        const { createTenantWithGrace } = await import("../../lib/activation");
-                        const tenantResult = await createTenantWithGrace({
-                            ownerId:      userId,
-                            businessName: name,
-                            planSelected: (plan as string) || "basic",
-                            contactEmail: email,
-                            businessType: businessType || undefined,
-                        });
-                        console.log("[AIAssistantModal] tenant:", tenantResult.ok ? tenantResult.tenantId : tenantResult.error);
-                    } catch (tenantErr) {
-                        console.warn("[AIAssistantModal] tenant exception (no bloqueante):", tenantErr);
-                    }
-                }
-
+                // ★ v1.9.94: ENVIAR TELEGRAM DIRECTAMENTE (no requiere sesion)
                 try {
                     void fetch("/api/notify-telegram", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            tenantId: userId,
+                            tenantId: null,
                             businessName: name,
                             contactEmail: email,
                             planSelected: (plan as string) || "basic",
@@ -641,21 +523,6 @@ export function AIAssistantModal({
                             signupError: signupError,
                         }),
                     }).catch((e) => console.warn("[AIAssistantModal] notify-telegram error:", e?.message));
-                } catch (_) { /* silent */ }
-
-                try {
-                    void fetch("/api/notify-admin", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            tenantId: userId,
-                            businessName: name,
-                            contactEmail: email,
-                            planSelected: (plan as string) || "basic",
-                            businessType: businessType,
-                            source: "ai-assistant",
-                        }),
-                    }).catch((e) => console.warn("[AIAssistantModal] notify-admin error:", e?.message));
                 } catch (_) { /* silent */ }
 
                 if (FIREBASE_CONFIGURED) {

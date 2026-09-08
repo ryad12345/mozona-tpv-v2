@@ -23,6 +23,7 @@ const SOPORTE_WHATSAPP = "34644165153";
 const LS_LAST_EMAIL = "mozona.lastSignupEmail";
 const LS_LAST_NAME  = "mozona.lastSignupName";
 const LS_LAST_PLAN  = "mozona.lastSignupPlan";
+const LS_PENDING    = "mozona.pendingSignup"; // ★ v1.9.93
 
 function formatRemaining(ms: number): string {
     if (ms <= 0) return "00:00:00";
@@ -53,6 +54,72 @@ export function WaitingActivationPage() {
             setUserName(n);
             setUserPlan(p);
         } catch (_) {}
+
+        // ★ v1.9.93: procesar pendingSignup en BACKGROUND
+        //   El modal guardo los datos aqui. Ahora hacemos:
+        //   1) signUp (o signIn si ya existe)
+        //   2) createTenant
+        //   3) Telegram
+        //   Sin bloquear la UI. Si todo falla, el admin puede
+        //   crear el tenant manualmente desde el panel.
+        const processPending = async () => {
+            try {
+                const raw = localStorage.getItem(LS_PENDING);
+                if (!raw) return;
+                const pending = JSON.parse(raw);
+                if (!pending || !pending.email || !pending.password) {
+                    localStorage.removeItem(LS_PENDING);
+                    return;
+                }
+                // Solo procesar si el timestamp es reciente (< 10 min)
+                if (Date.now() - (pending.timestamp || 0) > 10 * 60 * 1000) {
+                    localStorage.removeItem(LS_PENDING);
+                    return;
+                }
+                console.log("[WaitingActivation] processing pending signup for", pending.email);
+
+                // 1) signUp via /api/check-and-fix-user (server-side, usa admin API)
+                try {
+                    const fixResp = await fetch("/api/check-and-fix-user", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            email: pending.email,
+                            password: pending.password,
+                            name: pending.name || "",
+                        }),
+                    });
+                    const fixJson = await fixResp.json().catch(() => ({}));
+                    console.log("[WaitingActivation] check-and-fix-user:", fixJson);
+                } catch (e) {
+                    console.warn("[WaitingActivation] check-and-fix-user error:", e);
+                }
+
+                // 2) createTenant via /api/notify-telegram (que crea el tenant)
+                try {
+                    await fetch("/api/notify-telegram", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            tenantId: null,
+                            businessName: pending.name || pending.email,
+                            contactEmail: pending.email,
+                            planSelected: pending.plan || "basic",
+                            businessType: pending.businessType,
+                            source: "waiting-activation",
+                        }),
+                    });
+                } catch (e) {
+                    console.warn("[WaitingActivation] notify-telegram error:", e);
+                }
+
+                // 3) Limpiar pending
+                localStorage.removeItem(LS_PENDING);
+            } catch (e) {
+                console.warn("[WaitingActivation] processPending error:", e);
+            }
+        };
+        processPending();
     }, []);
 
     // ★ Tick cada segundo para el contador
