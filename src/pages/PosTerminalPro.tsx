@@ -682,6 +682,7 @@ export function PosTerminalPro() {
                     await saasAuth.signOut();
                     nav("/auth");
                 }}
+                isAuthenticated={!!saasAuth.user}
             />
 
             {/* Banner de conexión + acciones rápidas (sm+) */}

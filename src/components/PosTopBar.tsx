@@ -8,6 +8,7 @@ import {
     IconUser, IconCash,
 } from "./icons";
 import { cn } from "../lib/cn";
+import { Link, useLocation } from "react-router-dom";
 
 // ---------------------------------------------------------------------
 // Tipos del componente
@@ -23,6 +24,8 @@ export interface PosTopBarProps {
     onOpenSettings?:  () => void;
     onLogout?:            () => void;
     onOpenCashRegister?:  () => void;   // ★ Acceso directo al arqueo
+    /** ★ v1.9.74: indica si hay sesión activa (controla el botón login/salir) */
+    isAuthenticated?: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -33,10 +36,14 @@ export function PosTopBar({
     restaurant, connection, version = "0.1.0",
     cashier = { name: "Cajero 01", role: "Camarero" },
     onOpenSettings, onLogout, onOpenCashRegister,
+    isAuthenticated = true,
 }: PosTopBarProps) {
     const initial = restaurant?.business_name?.[0] ?? "M";
     const shortName =
         restaurant?.business_name?.split(/\s+/).slice(0, 2).join(" ") ?? "MOZONA TPV";
+    const location = useLocation();
+    // ★ v1.9.74: oculta el botón si YA estamos en /auth (evita link redundante)
+    const onAuthPage = location.pathname === "/auth" || location.pathname.startsWith("/auth");
 
     return (
         <header
@@ -140,10 +147,12 @@ export function PosTopBar({
 
             {/* Acciones rápidas ======================================== */}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                <IconButton onClick={onOpenSettings} title="Ajustes">
-                    <IconSettings size={18} strokeWidth={1.8} />
-                </IconButton>
-                {onOpenCashRegister && (
+                {isAuthenticated && (
+                    <IconButton onClick={onOpenSettings} title="Ajustes">
+                        <IconSettings size={18} strokeWidth={1.8} />
+                    </IconButton>
+                )}
+                {isAuthenticated && onOpenCashRegister && (
                     <IconButton
                         onClick={onOpenCashRegister}
                         title="Cierre de caja / Arqueo"
@@ -152,10 +161,34 @@ export function PosTopBar({
                         <IconCash size={18} strokeWidth={1.8} />
                     </IconButton>
                 )}
-                {/* ★ v1.9.73: Botón de login/logout SIEMPRE visible (móvil + desktop)
-                     - En móvil: solo icono (44x44px - mínimo táctil recomendado)
-                     - En desktop: icono + label "Salir" para mayor claridad */}
-                {onLogout && (
+                {/* ★ v1.9.74: Botón de Acceso / Login / Logout SIEMPRE visible
+                    (móvil + desktop, sin importar el tamaño de pantalla)
+                    - Si NO hay sesión: muestra "Acceder" con icono user (link a /auth)
+                    - Si hay sesión: muestra "Salir" con icono user
+                    - Mínimo 44x36px (táctil recomendado)
+                    - Border + bg-slate-100 para destacar */}
+                {!isAuthenticated && !onAuthPage ? (
+                    <Link
+                        to="/auth"
+                        title="Iniciar sesión en tu cuenta"
+                        aria-label="Iniciar sesión"
+                        className="
+                            h-9 px-2.5 sm:px-3 rounded-xl
+                            flex items-center justify-center gap-1.5
+                            text-white font-bold
+                            bg-blue-600 hover:bg-blue-700
+                            active:scale-95
+                            transition touch-manipulation select-none
+                            border border-blue-700/30
+                            shadow-sm shadow-blue-600/20
+                        "
+                    >
+                        <IconUser size={15} strokeWidth={2.2} />
+                        <span className="hidden sm:inline text-[12px] tracking-tight">
+                            Acceder
+                        </span>
+                    </Link>
+                ) : isAuthenticated && onLogout ? (
                     <button
                         onClick={onLogout}
                         title="Cerrar sesión / Cambiar de usuario"
@@ -175,15 +208,16 @@ export function PosTopBar({
                             Salir
                         </span>
                     </button>
-                )}
+                ) : null}
             </div>
 
-            {/* Perfil del cajero (sm+) ================================== */}
-            <div className="
-                hidden sm:flex items-center gap-2.5
-                pl-3 ml-1 border-l border-slate-200/80 h-10
-                shrink-0
-            ">
+            {/* Perfil del cajero (sm+, solo si autenticado) ============ */}
+            {isAuthenticated && (
+                <div className="
+                    hidden sm:flex items-center gap-2.5
+                    pl-3 ml-1 border-l border-slate-200/80 h-10
+                    shrink-0
+                ">
                 <div className="text-right leading-tight max-w-[7rem]">
                     <div className="text-[13px] font-semibold text-slate-900 truncate">
                         {cashier.name}
@@ -203,7 +237,8 @@ export function PosTopBar({
                 >
                     <IconUser size={18} strokeWidth={1.8} />
                 </div>
-            </div>
+                </div>
+            )}
         </header>
     );
 }

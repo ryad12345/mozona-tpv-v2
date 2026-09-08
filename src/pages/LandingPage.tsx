@@ -70,19 +70,31 @@ export function LandingPage() {
                             </Link>
                         ) : (
                             <>
+                                {/* ★ v1.9.74: Botón "Iniciar sesión" SIEMPRE visible
+                                    (móvil + desktop) con estilo claro y accesible */}
                                 <Link to="/auth"
-                                      className="h-9 px-3 inline-flex items-center
-                                                 text-[12.5px] font-semibold text-slate-700
-                                                 hover:text-slate-900 transition hidden sm:inline-flex">
-                                    Iniciar sesión
+                                      title="Acceder a tu cuenta"
+                                      aria-label="Iniciar sesión"
+                                      className="h-9 px-2.5 sm:px-3 inline-flex items-center gap-1
+                                                 rounded-lg sm:rounded-xl
+                                                 border border-slate-200 bg-white
+                                                 text-[12.5px] font-bold text-slate-700
+                                                 hover:bg-slate-50 hover:border-slate-300
+                                                 active:scale-95 transition
+                                                 touch-manipulation select-none
+                                                 shadow-sm">
+                                    <IconUser size={15} strokeWidth={2} />
+                                    <span className="hidden sm:inline">Iniciar sesión</span>
                                 </Link>
                                 <button type="button"
                                         onClick={() => openAssistant({ source: "landing" })}
-                                        className="h-9 px-4 inline-flex items-center gap-1.5 rounded-xl
+                                        className="h-9 px-3 sm:px-4 inline-flex items-center gap-1.5 rounded-xl
                                                    bg-blue-600 text-white text-[12.5px] font-bold
                                                    shadow-sm shadow-blue-600/30
-                                                   active:scale-95 transition">
-                                    Probar 7 días
+                                                   active:scale-95 transition
+                                                   touch-manipulation">
+                                    <span className="hidden sm:inline">Probar 7 días</span>
+                                    <span className="sm:hidden">Probar</span>
                                     <IconArrowRight size={14} strokeWidth={2.4} />
                                 </button>
                             </>
