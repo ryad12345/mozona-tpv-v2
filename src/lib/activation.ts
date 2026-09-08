@@ -35,6 +35,7 @@ export interface CreateActivationTenantResult {
 export async function createTenantWithGrace(
     input: CreateActivationTenantInput,
 ): Promise<CreateActivationTenantResult> {
+    let createdTenantId: string | null = null;
     try {
         const graceEndsAt = new Date(Date.now() + GRACE_HOURS * 3600_000).toISOString();
 
@@ -68,6 +69,7 @@ export async function createTenantWithGrace(
         if (!data) {
             return { ok: false, error: "No se devolvió tenant creado" };
         }
+        createdTenantId = data.id;
 
         return {
             ok: true,
@@ -77,6 +79,30 @@ export async function createTenantWithGrace(
     } catch (e: any) {
         console.error("[activation] createTenant exception:", e);
         return { ok: false, error: e?.message ?? "Error desconocido" };
+    } finally {
+        // ★ v1.9.76: Disparar webhook en background (NO bloquea)
+        // Si falla, el trigger de BD ya creó la notificación igualmente.
+        // Es una capa adicional para redundancia + logging.
+        try {
+            void fetch("/api/notify-admin", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    tenantId:     createdTenantId,
+                    businessName: input.businessName,
+                    contactEmail: input.contactEmail,
+                    planSelected: input.planSelected,
+                    businessType: input.businessType,
+                    address:      input.restaurantAddress,
+                    phone:        input.restaurantPhone,
+                    source:       "client-direct",
+                }),
+            }).catch((e) => {
+                console.warn("[activation] webhook notify-admin falló (no bloqueante):", e?.message);
+            });
+        } catch (_) {
+            // Silent: NUNCA debe bloquear el registro
+        }
     }
 }
 
