@@ -67,8 +67,12 @@ module.exports = async (req, res) => {
     }
 
     // ★★ Env vars ★★
+    // ★ v1.9.86: usar VITE_SUPABASE_URL como fallback si SUPABASE_URL no esta
     const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-    const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    // ★ v1.9.86: usar VITE_SUPABASE_ANON_KEY como fallback
+    //   (el admin API normalmente requiere service_role, pero intentamos
+    //    con anon por si las politicas RLS lo permiten)
+    const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
     if (!SUPABASE_URL || !SERVICE_KEY) {
         console.warn("[auto-confirm-user] env vars missing");

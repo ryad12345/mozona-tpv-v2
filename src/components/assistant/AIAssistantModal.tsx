@@ -483,70 +483,58 @@ export function AIAssistantModal({
                 let userId: string | null = auth?.user?.id ?? null;
                 let signupError: string | null = null;
 
-                if (!userId && auth?.signUp && email && password) {
+                // ★ v1.9.86: FLUJO PRINCIPAL VIA /api/register-trial
+                //   Este endpoint usa SERVICE_ROLE para crear el usuario
+                //   YA CONFIRMADO. Despues el cliente hace signIn.
+                if (email && password && name) {
                     try {
-                        const upResult = await auth.signUp(email.trim().toLowerCase(), password, name || undefined);
-                        if (upResult?.user) {
-                            userId = upResult.user.id;
-                            console.log("[AIAssistantModal] signUp OK, userId:", userId);
-                            // ★ v1.9.85: AUTO-CONFIRMAR el email via serverless endpoint
-                            //   Esto usa la SERVICE_ROLE_KEY para saltarse la confirmacion.
-                            try {
-                                void fetch("/api/auto-confirm-user", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({
-                                        userId: userId,
-                                        email: email.trim().toLowerCase(),
-                                    }),
-                                }).then((r) => r.json().then((j) => console.log("[AIAssistantModal] auto-confirm:", j)))
-                                  .catch((e) => console.warn("[AIAssistantModal] auto-confirm error:", e?.message));
-                            } catch (_) { /* silent */ }
+                        const regResp = await fetch("/api/register-trial", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                email: email.trim().toLowerCase(),
+                                password,
+                                name,
+                                plan: (plan as string) || "basic",
+                                businessType: businessType || undefined,
+                            }),
+                        });
+                        const regJson = await regResp.json().catch(() => ({}));
+                        console.log("[AIAssistantModal] /api/register-trial:", regJson);
+                        if (regJson?.ok && regJson?.userId) {
+                            userId = regJson.userId;
+                            console.log("[AIAssistantModal] userId via register-trial:", userId);
+                        } else {
+                            signupError = regJson?.error || "Error en register-trial";
+                        }
+                    } catch (regErr: any) {
+                        console.warn("[AIAssistantModal] register-trial error:", regErr);
+                        signupError = regErr?.message ?? "Error de red";
+                    }
+                }
 
-                            // ★ v1.9.84: si signUp devolvio user pero el caller
-                            //   no tiene sesion, intentar signIn inmediatamente
-                            //   para activar la sesion. El AuthContext ya hace
-                            //   esto internamente, pero por si acaso lo forzamos aqui.
-                            if (!auth?.user) {
-                                console.log("[AIAssistantModal] signUp sin sesion activa, intentando signIn forzado...");
-                                if (auth?.signIn) {
-                                    try {
-                                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                        if (inResult?.user) {
-                                            console.log("[AIAssistantModal] signIn forzado OK");
-                                        } else {
-                                            console.warn("[AIAssistantModal] signIn forzado fallo:", inResult?.error);
-                                        }
-                                    } catch (signInErr) {
-                                        console.warn("[AIAssistantModal] signIn forzado exception:", signInErr);
-                                    }
+                // ★ Paso 1b: DESPUES del register-trial, hacer signIn con las
+                //   mismas credenciales. Como el server ya confirmo el email,
+                //   el signIn funcionara.
+                if (auth?.signIn && email && password && !auth?.user) {
+                    try {
+                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
+                        if (inResult?.user) {
+                            userId = inResult.user.id;
+                            console.log("[AIAssistantModal] signIn post-register OK");
+                        } else {
+                            console.warn("[AIAssistantModal] signIn post-register fallo:", inResult?.error);
+                            // Fallback: signUp normal (si el user no existe en el cliente)
+                            if (auth?.signUp) {
+                                const upResult = await auth.signUp(email.trim().toLowerCase(), password, name || undefined);
+                                if (upResult?.user) {
+                                    userId = upResult.user.id;
+                                    console.log("[AIAssistantModal] signUp fallback OK");
                                 }
-                            }
-                        } else if (upResult?.error) {
-                            if (/confirm|verification|email/i.test(upResult.error)) {
-                                console.warn("[AIAssistantModal] signUp requiere confirmacion, seguimos");
-                                signupError = "Email confirmation requerida";
-                                // ★ v1.9.84: intentar signIn de todos modos
-                                if (auth?.signIn) {
-                                    try {
-                                        const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                        if (inResult?.user) userId = inResult.user.id;
-                                    } catch (_) {}
-                                }
-                            } else if (/already|exists|registered/i.test(upResult.error) && auth?.signIn) {
-                                const inResult = await auth.signIn(email.trim().toLowerCase(), password);
-                                if (inResult?.user) {
-                                    userId = inResult.user.id;
-                                } else {
-                                    signupError = inResult?.error || "No se pudo iniciar sesion";
-                                }
-                            } else {
-                                signupError = upResult.error;
                             }
                         }
-                    } catch (signupErr: any) {
-                        console.warn("[AIAssistantModal] signUp error (sigue):", signupErr);
-                        signupError = signupErr?.message ?? String(signupErr);
+                    } catch (signInErr) {
+                        console.warn("[AIAssistantModal] signIn post-register exception:", signInErr);
                     }
                 }
 
@@ -608,13 +596,25 @@ export function AIAssistantModal({
                 setIsSubmitting(false);
                 setIsTyping(false);
 
-                // SIEMPRE navega aunque signUp falle
+                // ★ v1.9.86: NAVEGACIÓN DIRECTA
+                //   - Si signupError es de "email confirmation", guardar el email
+                //     en localStorage para que /waiting-activation lo muestre
+                //   - SIEMPRE navega a /waiting-activation
                 console.log("[AIAssistantModal] navegando a /waiting-activation, userId:", userId, "signupError:", signupError);
+
+                // Guardar email para que WaitingActivation lo pueda usar
+                try {
+                    if (email) {
+                        localStorage.setItem("mozona.lastSignupEmail", email);
+                    }
+                    if (signupError) {
+                        localStorage.setItem("mozona.lastSignupError", signupError);
+                    }
+                } catch (_) {}
+
                 // ★ v1.9.83: cambiar a step "redirecting" que muestra spinner
-                //   (oculta las opciones estáticas)
                 setCurrentStep("redirecting");
                 // ★ v1.9.83: CERRAR EL MODAL primero, luego navegar
-                //   (sin esto, el modal se queda encima de /waiting-activation)
                 try { onClose(); } catch (_) {}
                 try {
                     if (auth?.refresh) {
