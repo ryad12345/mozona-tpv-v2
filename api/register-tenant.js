@@ -17,40 +17,41 @@
 
 // ★ Carga LAZY (dentro de la función) para que un fallo no
 //   impida que el handler se cargue
-let _supabase = null;
+let _supabaseCreate = undefined;
 function getSupabaseCreate() {
-    if (_supabase !== null) return _supabase;
+    if (_supabaseCreate !== undefined) return _supabaseCreate;
     try {
-        _supabase = require("@supabase/supabase-js").createClient;
+        const lib = require("@supabase/supabase-js");
+        _supabaseCreate = lib.createClient;
     } catch (e) {
-        console.warn("[register-tenant] @supabase/supabase-js not available");
-        _supabase = false; // marcar como intentado
+        console.warn("[register-tenant] @supabase/supabase-js not available:", e?.message);
+        _supabaseCreate = null;
     }
-    return _supabase || null;
+    return _supabaseCreate;
 }
 
-let _rateLimit = null;
+let _rateLimitLib = undefined;
 function getRateLimit() {
-    if (_rateLimit !== null) return _rateLimit;
+    if (_rateLimitLib !== undefined) return _rateLimitLib;
     try {
-        _rateLimit = require("./_rateLimit.js");
+        _rateLimitLib = require("./_rateLimit.js");
     } catch (e) {
-        console.warn("[register-tenant] _rateLimit not available");
-        _rateLimit = false;
+        console.warn("[register-tenant] _rateLimit not available:", e?.message);
+        _rateLimitLib = null;
     }
-    return _rateLimit || null;
+    return _rateLimitLib;
 }
 
-let _security = null;
+let _securityLib = undefined;
 function getSecurity() {
-    if (_security !== null) return _security;
+    if (_securityLib !== undefined) return _securityLib;
     try {
-        _security = require("./_security.js");
+        _securityLib = require("./_security.js");
     } catch (e) {
-        console.warn("[register-tenant] _security not available");
-        _security = false;
+        console.warn("[register-tenant] _security not available:", e?.message);
+        _securityLib = null;
     }
-    return _security || null;
+    return _securityLib;
 }
 
 // ★ Helper: enviar Telegram (reutilizable)
