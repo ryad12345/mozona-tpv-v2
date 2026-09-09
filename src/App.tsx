@@ -27,6 +27,7 @@ const WaitingActivationPage = lazy(() => import("./pages/WaitingActivationPage")
 const WelcomePage = lazy(() => import("./pages/WelcomePage").then(m => ({ default: m.WelcomePage })));
 const AdminApprovePage = lazy(() => import("./pages/AdminApprovePage").then(m => ({ default: m.AdminApprovePage })));
 const HealthPage = lazy(() => import("./pages/HealthPage").then(m => ({ default: m.HealthPage })));
+const AdminPanelPage = lazy(() => import("./pages/AdminPanelPage").then(m => ({ default: m.AdminPanelPage })));
 
 // ★ Página de cierre de caja (nueva, lazy)
 const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m => ({ default: m.CashRegisterPage })));
@@ -152,9 +153,12 @@ export function App() {
                                 {/* ★ v1.9.87: /waiting-activation (alias legacy)
                                     SIN ProtectedRoute, funciona con o sin sesion */}
                                 <Route path="/waiting-activation" element={<Suspense fallback={<PageLoader label="Cargando…" />}><WaitingActivationPage /></Suspense>} />
-                                {/* ★ v3.0.2: /admin/approve (panel admin)
+                                {/* ★ v3.0.2: /admin/approve (panel admin legacy)
                                     Acceso con ?token=mozona-approve-2025 */}
                                 <Route path="/admin/approve" element={<Suspense fallback={<PageLoader label="Cargando…" />}><AdminApprovePage /></Suspense>} />
+                                {/* ★ v3.1.4: /admin (panel de control completo)
+                                    Acceso automatico cuando rofixinsta@gmail.com hace login */}
+                                <Route path="/admin" element={<Suspense fallback={<PageLoader label="Cargando panel…" />}><AdminPanelPage /></Suspense>} />
                                 {/* ★ v3.0.4: /health (estado del sistema) */}
                                 <Route path="/health" element={<Suspense fallback={<PageLoader label="Verificando…" />}><HealthPage /></Suspense>} />
 

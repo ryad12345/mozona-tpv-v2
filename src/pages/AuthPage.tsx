@@ -43,9 +43,9 @@ export function AuthPage() {
     // Si ya está autenticado, redirigir
     useEffect(() => {
         if (auth.isReady && auth.user) {
-            // ★ VIP / SuperAdmin → /app directo, NUNCA a /pricing
+            // ★ SuperAdmin → /admin (panel de control completo)
             if (auth.isSuperAdmin) {
-                nav("/admin/invites", { replace: true });
+                nav("/admin", { replace: true });
                 return;
             }
             if (auth.tenant) {
