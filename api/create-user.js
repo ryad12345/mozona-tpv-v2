@@ -88,15 +88,30 @@ module.exports = async (req, res) => {
         // ★ Buscar si ya existe
         let existingUser = null;
         try {
-            const r = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`, { headers });
+            console.log("[create-user] buscando user existente...");
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 15000);
+            const r = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`, {
+                headers,
+                signal: controller.signal,
+            });
+            clearTimeout(tid);
+            console.log("[create-user] buscar status:", r.status);
             if (r.ok) {
                 const data = await r.json();
                 const users = data?.users || data || [];
                 if (Array.isArray(users)) {
                     existingUser = users.find(u => (u.email || "").toLowerCase() === email);
+                    console.log("[create-user] user existe:", !!existingUser);
                 }
             }
-        } catch (_) {}
+        } catch (e) {
+            console.log("[create-user] buscar error:", e?.message);
+            return safeJson(200, {
+                ok: false,
+                error: `Error buscando: ${e?.message || "fetch failed"}. SUPABASE_URL=${supabaseUrl}, SERVICE_KEY length=${serviceKey.length}`,
+            });
+        }
 
         if (existingUser) {
             // ★ Actualizar password y email_confirm
