@@ -52,7 +52,7 @@ module.exports = async (req, res) => {
             return safeJson(200, { ok: false, error: "tenantId o email requerido" });
         }
 
-        const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
         const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         const anonKey     = process.env.VITE_SUPABASE_ANON_KEY || "";
 

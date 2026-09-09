@@ -22,7 +22,7 @@ function getSecurity() {
 
 const SUPERADMIN_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "";
 
