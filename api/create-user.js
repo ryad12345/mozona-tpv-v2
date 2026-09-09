@@ -63,7 +63,9 @@ module.exports = async (req, res) => {
         }
 
         // ★ Configurar Supabase
-        const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+        // ⚠️ Usar VITE_SUPABASE_URL (validada en consola)
+        //    NO usar SUPABASE_URL sin prefijo porque puede estar mal configurada
+        const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
         const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
         if (!supabaseUrl || !serviceKey) {
