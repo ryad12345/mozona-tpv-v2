@@ -85,16 +85,18 @@ module.exports = async (req, res) => {
         ].filter(Boolean).join("\n");
 
         // ★ Construir inline keyboard con botones
+        // Telegram limita callback_data a 64 bytes
+        const target = tenantId || contactEmail || "unknown";
         const callbackData = (action) => {
-            // callback_data max 64 bytes, así que usamos prefijo + ID
-            return `${action}:${tenantId || contactEmail}`;
+            const full = `${action}:${target}`;
+            return full.length > 64 ? full.slice(0, 64) : full;
         };
 
         const inlineKeyboard = {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "✅ Aprobar (7d trial)", callback_data: callbackData("approve") },
+                        { text: "✅ APROBAR (1 CLICK)", callback_data: callbackData("approve") },
                     ],
                     [
                         { text: "❌ Rechazar", callback_data: callbackData("reject") },
