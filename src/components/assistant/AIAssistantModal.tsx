@@ -551,23 +551,23 @@ export function AIAssistantModal({
                 return;
             }
         } else if (currentStep === "done") {
-            // ★ v1.9.42 + v1.9.43: Botón "Entrar al Panel" con try-catch
-            if (value === "enter") {
-                try {
-                    if (isLogged) {
-                        navigate("/app");
-                    } else {
-                        navigate("/auth?signup=1&email=" + encodeURIComponent(email || ""));
-                    }
-                } catch (e) {
-                    console.error("[AIAssistantModal] navigate error:", e);
-                    // Fallback: location.href
-                    try { location.href = isLogged ? "/app" : "/auth?signup=1"; } catch (_) {}
+            // ★ v3.1.5: SIEMPRE ir a /welcome (sala de espera)
+            //   NUNCA a /auth, NUNCA a /pricing
+            //   El usuario ya completó el alta, debe ver su estado
+            try { onClose(); } catch (_) {}
+            const params = new URLSearchParams({
+                email: email.trim().toLowerCase(),
+                name: name || "",
+                plan: String(plan || "basic"),
+            });
+            // ★ Triple fallback: replace > href > navigate
+            try {
+                window.location.replace("/welcome?" + params.toString());
+            } catch (_) {
+                try { location.href = "/welcome?" + params.toString(); } catch (_) {
+                    try { navigate("/welcome?" + params.toString(), { replace: true }); } catch (_) {}
                 }
-                try { onClose(); } catch (_) {}
-                return;
             }
-            onClose();
             return;
         }
         await goToStep(next);
