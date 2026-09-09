@@ -124,7 +124,7 @@ export function BillingPanel() {
                         <IconLogout size={14} strokeWidth={2.2} />
                         {opening ? "Abriendo…" : "Portal Stripe"}
                     </button>
-                    <Link to="/pricing"
+                    <Link to="/welcome"
                           className="h-11 px-3 rounded-xl bg-slate-100 hover:bg-slate-200
                                      text-[12.5px] font-bold text-slate-700
                                      flex items-center justify-center gap-1.5 active:scale-95 transition">
@@ -142,7 +142,7 @@ export function BillingPanel() {
 
                 {planKey === "free" && (
                     <p className="text-[10.5px] text-slate-400 text-center mt-1">
-                        Aún no tienes un plan de pago.  <Link to="/pricing" className="underline">Ver planes</Link>
+                        Aún no tienes un plan de pago.  <Link to="/welcome" className="underline">Ver planes</Link>
                     </p>
                 )}
             </div>

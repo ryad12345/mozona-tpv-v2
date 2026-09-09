@@ -8,8 +8,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 // ★ Páginas ligeras (carga inmediata: landing, auth, pricing)
 import { AuthPage } from "./pages/AuthPage";
 import { LandingPage } from "./pages/LandingPage";
-import { PricingPage } from "./pages/PricingPage";
-
+// ★ v3.1.6: PricingPage import eliminado
+//   La ruta /pricing ahora redirige a / (landing)
 // ★ Páginas pesadas (lazy loading: TPV, settings, waiter)
 const PosTerminalPro  = lazy(() => import("./pages/PosTerminalPro").then(m => ({ default: m.PosTerminalPro })));
 const SettingsPage    = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
@@ -138,7 +138,8 @@ export function App() {
                             <Routes>
                                 {/* Públicas */}
                                 <Route path="/"        element={<LandingPage />} />
-                                <Route path="/pricing" element={<PricingPage />} />
+                                {/* ★ v3.1.6: /pricing ELIMINADO — redirige a / */}
+                                <Route path="/pricing" element={<Navigate to="/" replace />} />
                                 <Route path="/auth"    element={<AuthPage />} />
                                 <Route path="/reset-password" element={<Suspense fallback={<PageLoader label="Cargando…" />}><ResetPasswordPage /></Suspense>} />
                                 <Route path="/register" element={<Suspense fallback={<PageLoader label="Registrando…" />}><RegisterPage /></Suspense>} />

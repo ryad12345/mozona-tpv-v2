@@ -369,7 +369,7 @@ export function RegisterPage() {
                 )}
 
                 <Link
-                    to="/pricing"
+                    to="/welcome"
                     className="mt-3 inline-flex items-center gap-2 h-11 px-5 rounded-xl
                                bg-blue-600 text-white text-[13px] font-bold
                                hover:bg-blue-700 active:scale-95 transition"

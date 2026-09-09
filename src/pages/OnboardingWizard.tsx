@@ -226,7 +226,7 @@ export function OnboardingWizard() {
         return (
             <Centered>
                 <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200/80 text-[12.5px] text-rose-800">
-                    No hay tenant activo.  Crea uno en <strong>/pricing</strong> primero.
+                    No hay tenant activo.  Ve a <strong>/welcome</strong> para configurar tu cuenta.
                 </div>
             </Centered>
         );

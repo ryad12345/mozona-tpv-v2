@@ -29,7 +29,7 @@ export function BillingCancelPage() {
 
                 <div className="mt-6 flex flex-col gap-2.5">
                     <Link
-                        to="/pricing"
+                        to="/welcome"
                         className="w-full h-12 inline-flex items-center justify-center gap-2
                                    rounded-2xl bg-blue-600 hover:bg-blue-700 text-white
                                    text-[13.5px] font-black

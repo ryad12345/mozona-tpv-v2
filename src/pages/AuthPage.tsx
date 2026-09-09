@@ -175,7 +175,7 @@ export function AuthPage() {
                 <div className="min-w-0 text-[12px] text-slate-700 leading-snug">
                     <strong className="text-slate-900">¿Aún no eres cliente?</strong>{" "}
                     El registro se realiza tras contratar un plan.{" "}
-                    <Link to="/pricing" className="text-blue-700 font-bold hover:underline">
+                    <Link to="/welcome" className="text-blue-700 font-bold hover:underline">
                         Ver planes
                     </Link>
                     .

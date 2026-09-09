@@ -93,8 +93,14 @@ export function SubscriptionGuard({ children }: { children: ReactNode }) {
         return <>{children}</>;
     }
 
-    // Sin tenant → pricing
-    if (!auth.tenant) return <Navigate to="/pricing" state={{ from: location.pathname }} replace />;
+    // Sin tenant → /welcome (sala de espera)
+    // ★ v3.1.6: Ya NO mandamos a /pricing. El usuario sin tenant va
+    //    a la sala de espera donde el admin puede aprobarlo.
+    if (!auth.tenant) {
+        if (!location.pathname.startsWith("/welcome")) {
+            return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
+        }
+    }
     // ★ v1.9.75: Suscripción pending_activation → sala de espera
     //    (24h de cortesía + aprobación del SuperAdmin)
     const status = auth.tenant.subscription_status;
@@ -104,9 +110,9 @@ export function SubscriptionGuard({ children }: { children: ReactNode }) {
         }
         return <>{children}</>;
     }
-    // Suscripción inactiva
+    // Suscripción inactiva → sala de espera
     if (status !== "active" && status !== "trialing") {
-        return <Navigate to="/pricing" state={{ from: location.pathname }} replace />;
+        return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
     }
     // Onboarding incompleto → wizard (salvo si ya estamos en él)
     if (auth.tenant.onboarding_completed === false
