@@ -187,6 +187,15 @@ export function AdminApprovePage() {
                     />
                 </div>
 
+                {/* Crear usuario nuevo (cuando el user no existe en Supabase Auth) */}
+                <div className="bg-white rounded-2xl shadow-xl p-6">
+                    <h2 className="text-sm font-black mb-1">Crear cuenta de acceso</h2>
+                    <p className="text-[10.5px] text-slate-500 mb-3">
+                        Crea el user en Supabase Auth con email confirmado. Útil cuando un cliente se registró pero el user no se creó.
+                    </p>
+                    <UserCreator token={token} />
+                </div>
+
                 {/* Lista de pendientes (si la query funcionó) */}
                 <div className="bg-white rounded-2xl shadow-xl p-6">
                     <h2 className="text-sm font-black mb-3">Pendientes</h2>
@@ -262,6 +271,93 @@ function EmailApprover({ onSubmit, loading, initialEmail }: { onSubmit: (e: stri
             >
                 {loading ? "Aprobando..." : <>Aprobar <IconArrowRight size={12} /></>}
             </button>
+        </form>
+    );
+}
+
+function UserCreator({ token }: { token: string }) {
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [name, setName] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [result, setResult] = useState<any>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email.trim() || password.length < 6) return;
+        setLoading(true);
+        setResult(null);
+        try {
+            const r = await fetch(`/api/create-user?token=${token}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim().toLowerCase(), password, name }),
+            });
+            const json = await r.json();
+            setResult(json);
+        } catch (e) {
+            setResult({ ok: false, error: String(e) });
+        }
+        setLoading(false);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-2">
+            <div className="relative">
+                <IconUser size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="email@ejemplo.com"
+                    className="w-full h-10 pl-9 pr-3 rounded-lg border border-slate-300 text-[12.5px]"
+                    required
+                />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+                <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Nombre (opcional)"
+                    className="h-10 px-3 rounded-lg border border-slate-300 text-[12.5px]"
+                />
+                <input
+                    type="text"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Contraseña (min 6)"
+                    className="h-10 px-3 rounded-lg border border-slate-300 text-[12.5px]"
+                    required
+                    minLength={6}
+                />
+            </div>
+            <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-10 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-[12.5px] font-black flex items-center justify-center gap-1"
+            >
+                {loading ? "Creando..." : <>Crear cuenta <IconArrowRight size={12} /></>}
+            </button>
+            {result && (
+                <div className={`mt-2 p-3 rounded-lg text-[11px] ${result.ok ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
+                    {result.ok ? (
+                        <div>
+                            <p className="font-bold mb-1">✅ {result.message}</p>
+                            <p className="font-mono text-[10px] text-emerald-700">User ID: {result.userId}</p>
+                        </div>
+                    ) : (
+                        <div>
+                            <p className="font-bold mb-1">❌ {result.error}</p>
+                            {result.manualInstructions && (
+                                <ol className="mt-2 list-decimal list-inside space-y-0.5">
+                                    {Object.values(result.manualInstructions).map((s: any, i) => <li key={i}>{s}</li>)}
+                                </ol>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
         </form>
     );
 }
