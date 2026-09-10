@@ -127,7 +127,7 @@ async function approveTenant(tenantIdOrEmail, approvedBy) {
             const r = await fetchWithTimeout(
                 `${SUPABASE_URL}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(tenantIdOrEmail)}&select=id,name&limit=1`,
                 { headers },
-                10000
+                20000
             );
             if (r.ok) {
                 const arr = await r.json();
@@ -143,7 +143,7 @@ async function approveTenant(tenantIdOrEmail, approvedBy) {
                 const r = await fetchWithTimeout(
                     `${SUPABASE_URL}/rest/v1/tenants?order=created_at.desc&limit=10`,
                     { headers },
-                    10000
+                20000
                 );
                 if (r.ok) {
                     const arr = await r.json();
@@ -178,7 +178,7 @@ async function approveTenant(tenantIdOrEmail, approvedBy) {
                     updated_at: new Date().toISOString(),
                 }),
             },
-            10000
+            20000
         );
         if (r.ok) {
             return { ok: true, tenantId: targetTenantId, trialEndsAt };
@@ -211,7 +211,7 @@ async function rejectTenant(tenantIdOrEmail) {
             const r = await fetchWithTimeout(
                 `${SUPABASE_URL}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(tenantIdOrEmail)}&select=id&limit=1`,
                 { headers },
-                10000
+                20000
             );
             if (r.ok) {
                 const arr = await r.json();
@@ -234,7 +234,7 @@ async function rejectTenant(tenantIdOrEmail) {
                     updated_at: new Date().toISOString(),
                 }),
             },
-            10000
+            20000
         );
         if (r.ok) return { ok: true, tenantId: targetTenantId };
         let errText = "";
@@ -391,7 +391,7 @@ module.exports = async (req, res) => {
                         const r = await fetchWithTimeout(
                             `${SUPABASE_URL}/rest/v1/tenants?activation_status=eq.pending_activation&select=id,name,contact_email,plan_selected,created_at&order=created_at.desc&limit=10`,
                             { headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` } },
-                            10000
+                            20000
                         );
                         if (r.ok) {
                             const arr = await r.json();
@@ -443,7 +443,7 @@ module.exports = async (req, res) => {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"] }),
-                    }, 10000);
+                    }, 20000);
                     const json = await r.json();
                     if (json.ok) {
                         await sendMessage(chatId, `✅ Webhook configurado:\n${webhookUrl}`);

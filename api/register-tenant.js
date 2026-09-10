@@ -1,13 +1,11 @@
 // =====================================================================
-// MOZONA TPV — /api/register-tenant (v3.2.1 — registro atómico)
+// MOZONA TPV — /api/register-tenant (v3.3.0 — atómico con rollback)
 // =====================================================================
-// REGISTRO ATÓMICO:
-//   1) Verificar que no exista user con ese email
-//   2) Verificar que no exista tenant con ese email o owner_id
-//   3) Crear user (con email_confirm=true)
-//   4) Crear tenant con owner_id=userId
-//   5) Si tenant falla, BORRAR el user (rollback)
-//   6) Enviar Telegram con tenantId real
+// REGISTRO ATÓMICO con rollback:
+//   1) Crear user con email_confirm=true
+//   2) Crear tenant con owner_id=userId
+//   3) Si tenant falla → DELETE user (rollback)
+//   4) Telegram SOLO con tenantId real
 // =====================================================================
 
 let _rateLimitLib = undefined;
@@ -29,7 +27,6 @@ function escapeMd(s) {
     return String(s).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&").slice(0, 200);
 }
 
-// ★ Fetch con timeout
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), timeoutMs);
@@ -43,28 +40,28 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     }
 }
 
-async function sendTelegram(botToken, chatId, text) {
+async function sendTelegram(botToken, chatId, text, inlineKeyboard) {
     if (!botToken || !chatId) return;
     try {
+        const body = {
+            chat_id: chatId,
+            text,
+            parse_mode: "Markdown",
+            disable_web_page_preview: true,
+        };
+        if (inlineKeyboard) body.reply_markup = inlineKeyboard;
         await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text,
-                parse_mode: "Markdown",
-                disable_web_page_preview: true,
-            }),
+            body: JSON.stringify(body),
         }, 8000);
     } catch (_) {}
 }
 
 module.exports = async (req, res) => {
-    // Headers de seguridad
     const sec = getSecurity();
     try { if (sec) sec.applySecurityHeaders(res); } catch (_) {}
 
-    // CORS
     try {
         const origin = (req.headers && req.headers.origin) || "";
         const allowed = ["https://mozonatpv.site", "https://www.mozonatpv.site", "https://mozonatpv.vercel.app", "http://localhost:5173", "http://localhost:4173"];
@@ -83,14 +80,13 @@ module.exports = async (req, res) => {
         // Parsear body
         let body = req.body || {};
         if (typeof body === "string") { try { body = JSON.parse(body); } catch (_) {} }
-        const email      = (body.email || "").toString().trim().toLowerCase();
-        const password   = (body.password || "").toString();
-        const name       = (body.name || body.businessName || "").toString().trim();
-        const plan       = (body.plan || "basic").toString();
+        const email = (body.email || "").toString().trim().toLowerCase();
+        const password = (body.password || "").toString();
+        const name = (body.name || body.businessName || "").toString().trim();
+        const plan = (body.plan || "basic").toString();
         const businessType = (body.businessType || "").toString().trim();
-        const phone      = (body.phone || "").toString().trim();
-        const address    = (body.address || "").toString().trim();
 
+        // Validaciones
         if (!email || !password) {
             return safeJson(200, { ok: false, step: "validation", error: "Email y contraseña son obligatorios" });
         }
@@ -108,20 +104,21 @@ module.exports = async (req, res) => {
             const ip = rl.getClientIp(req);
             const limit = rl.rateLimit(`register:${ip}`, 5, 10 * 60 * 1000);
             if (!limit.allowed) {
-                return safeJson(200, { ok: false, step: "rate_limit", error: "Demasiados intentos. Espera unos minutos.", retryAfterMs: limit.resetIn });
+                return safeJson(200, { ok: false, step: "rate_limit", error: "Demasiados intentos. Espera unos minutos." });
             }
         }
 
-        // Configurar Supabase (VITE_SUPABASE_URL es la validada)
+        // Configurar Supabase
         const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
-        const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-        if (!supabaseUrl) {
-            return safeJson(200, { ok: false, step: "config", error: "Sistema no configurado. Contacta con soporte.", message: "Hemos recibido tu solicitud. Te contactaremos en breve." });
-        }
-
-        if (!serviceKey) {
-            return safeJson(200, { ok: false, step: "config", error: "Sistema no configurado completamente. El admin procesará tu solicitud.", message: "Hemos recibido tu solicitud. Te contactaremos en breve." });
+        if (!supabaseUrl || !serviceKey) {
+            return safeJson(200, {
+                ok: false,
+                step: "config",
+                error: "Sistema no configurado. El admin procesará tu solicitud.",
+                message: "Hemos recibido tu solicitud. Te contactaremos en breve.",
+            });
         }
 
         const headers = {
@@ -130,20 +127,19 @@ module.exports = async (req, res) => {
             "Content-Type": "application/json",
             Prefer: "return=representation",
         };
-        const gracePeriodEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-        let userId = null;
-        let userAlreadyExisted = false;
-        let userErrorMsg = null;
+        const gracePeriodEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
         // ════════════════════════════════════════════════════
         // PASO 1: Verificar/crear user
         // ════════════════════════════════════════════════════
+        let userId = null;
+        let userAlreadyExisted = false;
+
         try {
             const r = await fetchWithTimeout(
                 `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`,
-                { headers },
-                15000
+                { headers }, 15000
             );
             if (r.ok) {
                 const data = await r.json();
@@ -154,145 +150,121 @@ module.exports = async (req, res) => {
                         userId = existing.id;
                         userAlreadyExisted = true;
                         // Actualizar password
-                        try {
-                            await fetchWithTimeout(
-                                `${supabaseUrl}/auth/v1/admin/users/${userId}`,
-                                {
-                                    method: "PUT",
-                                    headers,
-                                    body: JSON.stringify({ password, email_confirm: true }),
-                                },
-                                10000
-                            );
-                        } catch (_) {}
+                        await fetchWithTimeout(
+                            `${supabaseUrl}/auth/v1/admin/users/${userId}`,
+                            { method: "PUT", headers, body: JSON.stringify({ password, email_confirm: true }) },
+                            10000
+                        );
                     }
                 }
             }
-        } catch (e) {
-            // Continuar, no abortar
-        }
+        } catch (_) {}
 
         if (!userId) {
-            try {
-                const r = await fetchWithTimeout(
-                    `${supabaseUrl}/auth/v1/admin/users`,
-                    {
-                        method: "POST",
-                        headers,
-                        body: JSON.stringify({
-                            email,
-                            password,
-                            email_confirm: true,
-                            user_metadata: { name, plan, businessType },
-                        }),
-                    },
-                    15000
-                );
-                if (r.ok) {
-                    const data = await r.json();
-                    userId = data?.id || data?.user?.id;
-                } else {
-                    let errText = "";
-                    try { errText = await r.text(); } catch (_) {}
-                    userErrorMsg = errText.slice(0, 300);
-                }
-            } catch (e) {
-                userErrorMsg = e?.message;
+            const r = await fetchWithTimeout(`${supabaseUrl}/auth/v1/admin/users`, {
+                method: "POST", headers,
+                body: JSON.stringify({
+                    email, password, email_confirm: true,
+                    user_metadata: { name, plan, businessType },
+                }),
+            }, 15000);
+
+            if (r.ok) {
+                const data = await r.json();
+                userId = data?.id || data?.user?.id;
+            } else {
+                let errText = "";
+                try { errText = await r.text(); } catch (_) {}
+                return safeJson(200, {
+                    ok: false,
+                    step: "user_creation",
+                    error: errText.slice(0, 300) || "No se pudo crear el usuario",
+                });
             }
         }
 
         if (!userId) {
-            return safeJson(200, {
-                ok: false,
-                step: "user_creation",
-                error: userErrorMsg || "No se pudo crear el usuario",
-            });
+            return safeJson(200, { ok: false, step: "user_creation", error: "No se obtuvo userId" });
         }
 
         // ════════════════════════════════════════════════════
-        // PASO 2: Verificar si ya existe tenant para este owner_id
+        // PASO 2: Verificar si ya existe tenant
         // ════════════════════════════════════════════════════
         let tenantId = null;
-        let existingTenant = null;
+
         try {
             const r = await fetchWithTimeout(
-                `${supabaseUrl}/rest/v1/tenants?owner_id=eq.${userId}&select=id,name,contact_email&limit=1`,
-                { headers },
-                10000
+                `${supabaseUrl}/rest/v1/tenants?owner_id=eq.${userId}&select=id&limit=1`,
+                { headers }, 10000
             );
             if (r.ok) {
                 const arr = await r.json();
-                if (arr && arr[0]) existingTenant = arr[0];
+                if (arr && arr[0]) tenantId = arr[0].id;
             }
         } catch (_) {}
 
-        if (existingTenant) {
-            tenantId = existingTenant.id;
-        } else {
-            // ════════════════════════════════════════════════════
-            // PASO 3: Crear tenant (INSERT simple, sin onConflict)
-            // ════════════════════════════════════════════════════
-            try {
-                const tenantBody = {
-                    owner_id: userId,
-                    name: name || email.split("@")[0],
-                    contact_email: email,
-                    business_name: name || email.split("@")[0],
-                    business_type: businessType || null,
-                    plan_selected: plan,
-                    plan: plan,
-                    activation_status: "pending_activation",
-                    grace_period_ends_at: gracePeriodEndsAt,
-                    subscription_status: "active",
-                    updated_at: new Date().toISOString(),
-                };
+        // ════════════════════════════════════════════════════
+        // PASO 3: Crear tenant (si no existe)
+        // ════════════════════════════════════════════════════
+        if (!tenantId) {
+            const tenantBody = {
+                owner_id: userId,
+                name: name || email.split("@")[0],
+                contact_email: email,
+                business_name: name || email.split("@")[0],
+                business_type: businessType || null,
+                plan_selected: plan,
+                plan: plan,
+                activation_status: "pending_activation",
+                grace_period_ends_at: gracePeriodEndsAt,
+                subscription_status: "active",
+                updated_at: new Date().toISOString(),
+            };
 
-                const r = await fetchWithTimeout(
-                    `${supabaseUrl}/rest/v1/tenants`,
-                    {
-                        method: "POST",
-                        headers,
-                        body: JSON.stringify(tenantBody),
-                    },
-                    15000
-                );
-                if (r.ok) {
-                    const arr = await r.json();
-                    tenantId = (Array.isArray(arr) ? arr[0] : arr)?.id || null;
-                } else {
-                    let errText = "";
-                    try { errText = await r.text(); } catch (_) {}
-                    return safeJson(200, {
-                        ok: false,
-                        step: "tenant_creation",
-                        error: errText.slice(0, 300),
-                        userId,
-                    });
+            const r = await fetchWithTimeout(`${supabaseUrl}/rest/v1/tenants`, {
+                method: "POST", headers, body: JSON.stringify(tenantBody),
+            }, 15000);
+
+            if (r.ok) {
+                const arr = await r.json();
+                tenantId = (Array.isArray(arr) ? arr[0] : arr)?.id || null;
+            } else {
+                let errText = "";
+                try { errText = await r.text(); } catch (_) {}
+
+                // ★ ROLLBACK: borrar user para evitar estado huérfano
+                if (!userAlreadyExisted) {
+                    try {
+                        await fetchWithTimeout(
+                            `${supabaseUrl}/auth/v1/admin/users/${userId}`,
+                            { method: "DELETE", headers },
+                            10000
+                        );
+                        console.log("[register-tenant] rollback: user deleted", userId);
+                    } catch (e) {
+                        console.warn("[register-tenant] rollback failed:", e?.message);
+                    }
                 }
-            } catch (e) {
+
                 return safeJson(200, {
                     ok: false,
                     step: "tenant_creation",
-                    error: e?.message,
+                    error: errText.slice(0, 300),
                     userId,
+                    message: "No se pudo crear el tenant. Inténtalo de nuevo.",
                 });
             }
         }
 
         if (!tenantId) {
-            return safeJson(200, {
-                ok: false,
-                step: "tenant_id_missing",
-                error: "No se obtuvo tenantId",
-                userId,
-            });
+            return safeJson(200, { ok: false, step: "tenant_id_missing", error: "No se obtuvo tenantId" });
         }
 
         // ════════════════════════════════════════════════════
-        // PASO 4: Notificar al admin por Telegram
+        // PASO 4: Notificar al admin (SOLO con tenantId real)
         // ════════════════════════════════════════════════════
         const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-        const CHAT_ID   = process.env.TELEGRAM_CHAT_ID || "";
+        const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
         if (BOT_TOKEN && CHAT_ID) {
             const md = [
                 "🆕 *Nueva solicitud de alta*",
@@ -301,7 +273,6 @@ module.exports = async (req, res) => {
                 `📧 *Email:* \`${escapeMd(email)}\``,
                 `📦 *Plan:* ${escapeMd(plan)}`,
                 businessType ? `🏪 *Tipo:* ${escapeMd(businessType)}` : "",
-                phone ? `📞 *Teléfono:* ${escapeMd(phone)}` : "",
                 "",
                 `🆔 *User ID:* \`${userId}\``,
                 `🏢 *Tenant ID:* \`${tenantId}\``,
@@ -311,25 +282,14 @@ module.exports = async (req, res) => {
                 "👇 *Pulsa para aprobar o rechazar:*",
             ].filter(Boolean).join("\n");
 
-            // ★ Con inline buttons (1-click)
-            const callbackData = (action) => `${action}:${tenantId}`;
-            await fetchWithTimeout(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    chat_id: CHAT_ID,
-                    text: md,
-                    parse_mode: "Markdown",
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: "✅ APROBAR (1 CLICK)", callback_data: callbackData("approve") }],
-                            [{ text: "❌ Rechazar", callback_data: callbackData("reject") }],
-                            [{ text: "🔍 Ver detalles", callback_data: callbackData("view") }],
-                        ],
-                    },
-                }),
-            }, 8000);
+            const inlineKeyboard = {
+                inline_keyboard: [
+                    [{ text: "✅ APROBAR (1 CLICK)", callback_data: `approve:${tenantId}` }],
+                    [{ text: "❌ Rechazar", callback_data: `reject:${tenantId}` }],
+                    [{ text: "🔍 Ver detalles", callback_data: `view:${tenantId}` }],
+                ],
+            };
+            await sendTelegram(BOT_TOKEN, CHAT_ID, md, inlineKeyboard);
         }
 
         return safeJson(200, {

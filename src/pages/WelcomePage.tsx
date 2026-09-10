@@ -1,22 +1,18 @@
 // =====================================================================
-// MOZONA TPV — WelcomePage (v3.0.0)
+// MOZONA TPV — WelcomePage (v3.3.0 — refactor total)
 // =====================================================================
-// Sala de espera profesional post-registro.
-// Muestra:
-//   - Logo animado
-//   - Countdown 24h de cortesía
-//   - Timeline visual de pasos
-//   - Mensaje "Tu cuenta está siendo validada"
-//   - Polling cada 10s al estado
-//   - Auto-redirect cuando se aprueba
-//   - Botones de soporte (WhatsApp, login)
+// Sala de espera post-registro.
+// CAMBIOS v3.3.0:
+//   - CERO dependencia de query params frájiles
+//   - Email y userId vienen de useActiveSession (Supabase Auth)
+//   - Si no hay sesión, redirige a /auth (NUNCA a /)
+//   - Polling con useRef + stop flag (SIN bucles)
 // =====================================================================
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useActiveSession } from "../hooks/useActiveSession";
 import { IconShield, IconLock, IconUser, IconCheck, IconArrowRight } from "../components/icons";
-
-const LS_KEY = "mozona.welcomeState";
 
 interface TenantStatus {
     id: string;
@@ -26,7 +22,11 @@ interface TenantStatus {
     activation_status?: string;
     grace_period_ends_at?: string;
     trial_ends_at?: string;
+    contact_email?: string;
+    contactEmail?: string;
 }
+
+const POLL_INTERVAL_MS = 10_000;
 
 function formatRemaining(ms: number): string {
     if (ms <= 0) return "00:00:00";
@@ -39,35 +39,15 @@ function formatRemaining(ms: number): string {
 
 export function WelcomePage() {
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const session = useActiveSession();
 
-    // ★ Leer email/nombre/plan de URL > localStorage > defaults
-    const getInitialState = () => {
-        try {
-            const fromUrl = {
-                email: searchParams.get("email") || "",
-                name:  searchParams.get("name")  || "",
-                plan:  searchParams.get("plan")  || "",
-            };
-            if (fromUrl.email) return fromUrl;
+    // ★ Si no hay sesión activa, redirigir a /auth
+    useEffect(() => {
+        if (session.isReady && !session.isAuthenticated) {
+            navigate("/auth", { replace: true });
+        }
+    }, [session.isReady, session.isAuthenticated, navigate]);
 
-            // ★ Si no, leer del localStorage (NUNCA borrar)
-            const ls = localStorage.getItem(LS_KEY);
-            if (ls) {
-                const parsed = JSON.parse(ls);
-                return {
-                    email: parsed.email || "",
-                    name:  parsed.name  || "",
-                    plan:  parsed.plan  || "",
-                };
-            }
-        } catch (_) {}
-        return { email: "", name: "", plan: "" };
-    };
-
-    const [userEmail, setUserEmail] = useState(getInitialState().email);
-    const [userName, setUserName] = useState(getInitialState().name);
-    const [userPlan, setUserPlan] = useState(getInitialState().plan);
     const [status, setStatus] = useState<TenantStatus | null>(null);
     const [now, setNow] = useState(Date.now());
     const [loading, setLoading] = useState(true);
@@ -75,19 +55,142 @@ export function WelcomePage() {
     const [method, setMethod] = useState<string>("");
     const [pollCount, setPollCount] = useState(0);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // ★ REFS para evitar re-renders y bucles
+    const statusRef = useRef<TenantStatus | null>(null);
+    const navigateRef = useRef(navigate);
+    const redirectedRef = useRef(false);
+    const stoppedRef = useRef(false);
     const pollCountRef = useRef(0);
 
-    // ★ Persistir estado (NUNCA borrar)
-    useEffect(() => {
+    navigateRef.current = navigate;
+    statusRef.current = status;
+
+    // ★ Polling: SOLO depende de session (estable una vez autenticado)
+    const fetchStatus = useCallback(async () => {
+        if (!session.email || !session.userId) return;
+
         try {
-            localStorage.setItem(LS_KEY, JSON.stringify({
-                email: userEmail,
-                name: userName,
-                plan: userPlan,
-                savedAt: Date.now(),
-            }));
-        } catch (_) {}
-    }, [userEmail, userName, userPlan]);
+            pollCountRef.current += 1;
+            setPollCount(pollCountRef.current);
+
+            const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
+            const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
+            if (!supabaseUrl || !supabaseKey) {
+                setError("Configurando el sistema...");
+                setLoading(false);
+                return;
+            }
+
+            let tenant: any = null;
+            let usedMethod = "client_direct";
+
+            // ★ Query 1: por owner_id (es el método más fiable)
+            try {
+                const r = await fetch(
+                    `${supabaseUrl}/rest/v1/tenants?owner_id=eq.${session.userId}&select=*&limit=1`,
+                    { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+                );
+                if (r.ok) {
+                    const arr = await r.json();
+                    if (arr && arr[0]) {
+                        tenant = arr[0];
+                        usedMethod = "client_owner_id";
+                    }
+                }
+            } catch (_) {}
+
+            // ★ Query 2: por contact_email (fallback)
+            if (!tenant) {
+                try {
+                    const r = await fetch(
+                        `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(session.email)}&select=*&limit=1`,
+                        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+                    );
+                    if (r.ok) {
+                        const arr = await r.json();
+                        if (arr && arr[0]) {
+                            tenant = arr[0];
+                            usedMethod = "client_contact_email";
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            setMethod(usedMethod);
+
+            if (tenant) {
+                // ★ Validar que el tenant es del usuario actual
+                const tenantEmail = (tenant.contact_email || "").toLowerCase();
+                if (tenantEmail && tenantEmail !== session.email.toLowerCase()) {
+                    // El tenant NO es del usuario actual, ignorar
+                    console.warn("[Welcome] tenant belongs to another user:", tenantEmail);
+                    setError("Procesando tu registro...");
+                    setLoading(false);
+                    return;
+                }
+                setStatus({
+                    id: tenant.id,
+                    name: tenant.name || tenant.business_name || "",
+                    business_name: tenant.business_name || tenant.name,
+                    plan_selected: tenant.plan_selected || tenant.plan,
+                    activation_status: tenant.activation_status,
+                    grace_period_ends_at: tenant.grace_period_ends_at,
+                    trial_ends_at: tenant.trial_ends_at,
+                    contact_email: tenant.contact_email,
+                });
+                setError(null);
+                setLoading(false);
+
+                // ★ Si está aprobado, marcar para redirect
+                const isApproved = ["active_trial", "active", "vip"].includes(
+                    tenant.activation_status || tenant.subscription_status || ""
+                );
+                if (isApproved && !stoppedRef.current) {
+                    stoppedRef.current = true;
+                }
+            } else {
+                setError("Preparando tu espacio de trabajo...");
+                setLoading(false);
+            }
+        } catch (e) {
+            console.warn("[Welcome] fetch error:", e);
+            setError("Conexión inestable. Reintentando...");
+            setLoading(false);
+        }
+    }, [session.email, session.userId]);
+
+    // ★ Polling con useRef + stop flag (SIN bucles)
+    useEffect(() => {
+        if (!session.isAuthenticated) return;
+
+        const poll = () => {
+            if (stoppedRef.current) return;
+            const s = statusRef.current;
+            if (s && ["active_trial", "active", "vip"].includes(s.activation_status || "")) {
+                // ★ Aprobado: navegar una sola vez
+                if (!redirectedRef.current) {
+                    redirectedRef.current = true;
+                    stoppedRef.current = true;
+                    setTimeout(() => {
+                        navigateRef.current("/auth?approved=1&email=" + encodeURIComponent(session.email || ""), { replace: true });
+                    }, 2000);
+                }
+                return;
+            }
+            fetchStatus();
+        };
+
+        poll(); // inicial
+        const intervalId = setInterval(poll, POLL_INTERVAL_MS);
+        const onFocus = () => poll();
+        window.addEventListener("focus", onFocus);
+
+        return () => {
+            clearInterval(intervalId);
+            window.removeEventListener("focus", onFocus);
+        };
+    }, [session.isAuthenticated, fetchStatus, session.email]);
 
     // ★ Detectar online/offline
     useEffect(() => {
@@ -101,164 +204,6 @@ export function WelcomePage() {
         };
     }, []);
 
-    // ★ Polling inteligente: cada 10s, parar cuando se aprueba
-    // ★ v3.0.1: ESTRATEGIA DOBLE
-    //   1) Intentar query directa con anon key (rápido, sin RLS si la tabla es accesible)
-    //   2) Si falla, llamar a /api/check-status (server-side con SERVICE_ROLE si está)
-    const fetchStatus = useCallback(async () => {
-        if (!userEmail) {
-            setError("No se encontró el email. Vuelve a registrarte.");
-            setLoading(false);
-            return;
-        }
-        try {
-            pollCountRef.current += 1;
-            setPollCount(pollCountRef.current);
-
-            let json: any = null;
-            let usedMethod = "unknown";
-
-            // ★ Intento 1: query directa con anon key
-            try {
-                const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
-                const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
-                if (supabaseUrl && supabaseKey) {
-                    // Buscar tenant por contact_email
-                    const r1 = await fetch(
-                        `${supabaseUrl}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(userEmail)}&select=*&limit=1`,
-                        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
-                    );
-                    if (r1.ok) {
-                        const arr = await r1.json();
-                        if (arr && arr[0]) {
-                            json = { ok: true, tenant: arr[0], method: "client_direct" };
-                            usedMethod = "client_direct";
-                        }
-                    }
-                    // Si contact_email no existe, intentar con otras columnas
-                    if (!json) {
-                        const r2 = await fetch(
-                            `${supabaseUrl}/rest/v1/tenants?select=*&order=created_at.desc&limit=10`,
-                            { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
-                        );
-                        if (r2.ok) {
-                            const arr = await r2.json();
-                            if (arr && arr.length > 0) {
-                                // Buscar match por contact_email (puede no existir como columna)
-                                const match = arr.find((t: any) =>
-                                    t.contact_email && t.contact_email.toLowerCase() === userEmail
-                                );
-                                if (match) {
-                                    json = { ok: true, tenant: match, method: "client_heuristic_match" };
-                                    usedMethod = "client_heuristic_match";
-                                } else {
-                                    // No hay match exacto, devolver el más reciente
-                                    json = { ok: true, tenant: arr[0], method: "client_heuristic_recent" };
-                                    usedMethod = "client_heuristic_recent";
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn("[Welcome] client query error:", e);
-            }
-
-            // ★ Intento 2: server-side (si el cliente no encontró nada)
-            if (!json) {
-                try {
-                    const r = await fetch(`/api/check-status?email=${encodeURIComponent(userEmail)}`);
-                    if (r.ok) {
-                        json = await r.json();
-                        usedMethod = "server_" + (json?.method || "unknown");
-                    }
-                } catch (e) {
-                    console.warn("[Welcome] server query error:", e);
-                }
-            }
-
-            // ★ Si AMBOS fallaron, mostrar mensaje amable
-            if (!json) {
-                setMethod("all_failed");
-                setError("Procesando tu registro. Te avisaremos en breve.");
-                setLoading(false);
-                return;
-            }
-
-            setMethod(usedMethod);
-
-            if (json.tenant) {
-                const t = json.tenant;
-                setStatus({
-                    id: t.id,
-                    name: t.name || t.business_name || userName,
-                    business_name: t.business_name || t.name,
-                    plan_selected: t.plan_selected || t.plan || userPlan,
-                    activation_status: t.activation_status,
-                    grace_period_ends_at: t.grace_period_ends_at,
-                    trial_ends_at: t.trial_ends_at,
-                });
-                setError(null);
-
-                // ★ v3.2.2: Ya NO redirigimos aquí. El useEffect
-                //   externo se encarga de la redirección (sin bucle).
-            } else {
-                if (json.method === "no_config") {
-                    setError("Configurando el sistema. Te avisaremos en breve.");
-                } else if (json.method === "no_data_yet") {
-                    setError("Procesando tu registro. Esto puede tardar unos segundos...");
-                } else {
-                    setError("Preparando tu espacio de trabajo...");
-                }
-            }
-            setLoading(false);
-        } catch (e) {
-            console.warn("[Welcome] fetch error:", e);
-            setError("Conexión inestable. Reintentando...");
-            setLoading(false);
-        }
-    }, [userEmail, userName, userPlan]);  // ★ Sin navigate: usamos navigateRef
-
-    // ★ v3.2.2: Polling SIN bucle infinito
-    //   ANTES: dependía de [fetchStatus, status], lo que causaba
-    //   bucle porque fetchStatus cambia status, que re-disparaba el efecto.
-    //   AHORA: solo depende de fetchStatus (estable), y usamos
-    //   un ref para leer el status actual sin causar re-render.
-    const statusRef = useRef<TenantStatus | null>(null);
-    statusRef.current = status;
-    const navigateRef = useRef(navigate);
-    navigateRef.current = navigate;
-    const redirectedRef = useRef(false);
-
-    useEffect(() => {
-        // ★ Marca de redirección: solo una vez
-        if (redirectedRef.current) return;
-
-        const poll = () => {
-            // ★ Si ya está aprobado, parar
-            const s = statusRef.current;
-            if (s && ["active_trial", "active", "vip"].includes(s.activation_status || "")) {
-                if (!redirectedRef.current) {
-                    redirectedRef.current = true;
-                    setTimeout(() => {
-                        navigateRef.current("/auth?approved=1&email=" + encodeURIComponent(userEmail), { replace: true });
-                    }, 2000);
-                }
-                return;
-            }
-            fetchStatus();
-        };
-
-        poll(); // inicial
-        const t = setInterval(poll, 10_000);
-        const onFocus = () => poll();
-        window.addEventListener("focus", onFocus);
-        return () => {
-            clearInterval(t);
-            window.removeEventListener("focus", onFocus);
-        };
-    }, [fetchStatus, userEmail]);
-
     // ★ Tick cada segundo para countdown
     useEffect(() => {
         const t = setInterval(() => setNow(Date.now()), 1000);
@@ -271,15 +216,37 @@ export function WelcomePage() {
         : 24 * 60 * 60 * 1000;
 
     const whalink = `https://wa.me/34644165153?text=${encodeURIComponent(
-        `Hola! Soy ${userEmail || "cliente"}. Acabo de registrarme en MOZONA TPV y estoy en la sala de espera.`
+        `Hola! Soy ${session.email || "cliente"}. Acabo de registrarme en MOZONA TPV y estoy en la sala de espera.`
     )}`;
 
     const isApproved = !!status && ["active_trial", "active", "vip"].includes(status.activation_status || "");
 
+    // ★ Si no hay sesión, mostrar loading mientras redirige
+    if (!session.isReady) {
+        return (
+            <div className="min-h-dvh bg-gradient-to-br from-slate-50 via-blue-50 to-violet-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 border-[3px] border-slate-200 border-t-blue-600 rounded-full animate-spin" />
+                    <p className="text-[12px] text-slate-500">Cargando...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!session.isAuthenticated) {
+        return (
+            <div className="min-h-dvh bg-gradient-to-br from-slate-50 via-blue-50 to-violet-50 flex items-center justify-center p-5">
+                <div className="text-center">
+                    <p className="text-[12.5px] text-slate-600">Redirigiendo al login...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-dvh bg-gradient-to-br from-slate-50 via-blue-50 to-violet-50 flex items-center justify-center p-4 sm:p-5">
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/60 overflow-hidden">
-                {/* Cabecera con animación */}
+                {/* Cabecera */}
                 <div className="relative h-48 bg-gradient-to-br from-blue-600 via-violet-600 to-blue-700 flex items-center justify-center overflow-hidden">
                     <div className="absolute inset-0 opacity-20">
                         <div className="absolute top-4 left-4 w-2 h-2 rounded-full bg-white animate-ping" style={{ animationDelay: "0ms" }} />
@@ -305,14 +272,13 @@ export function WelcomePage() {
                     </div>
                 </div>
 
-                {/* Cuerpo */}
                 <div className="p-6 sm:p-7 space-y-5">
-                    {/* Email del usuario (visible para que sepa que es su sesión) */}
-                    {userEmail && (
+                    {/* Email del usuario (sesión activa) */}
+                    {session.email && (
                         <div className="text-center">
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60">
                                 <IconUser size={12} className="text-blue-600" />
-                                <span className="text-[11px] font-bold text-blue-900">{userEmail}</span>
+                                <span className="text-[11px] font-bold text-blue-900">{session.email}</span>
                             </div>
                         </div>
                     )}
@@ -326,20 +292,11 @@ export function WelcomePage() {
                         ) : (
                             <>
                                 <p className="text-[13px] text-slate-700 leading-relaxed">
-                                    {/* ★ v3.2.1: Validar que el tenant pertenece al email actual.
-                                          Si el email del tenant no coincide, mostrar userName */}
-                                    {(() => {
-                                        const tenantEmail = (status as any)?.contact_email || (status as any)?.contactEmail;
-                                        const tenantMatches = !tenantEmail || tenantEmail === userEmail;
-                                        const displayName = tenantMatches
-                                            ? (status?.business_name || userName)
-                                            : userName;
-                                        return displayName ? (
-                                            <span className="font-bold text-slate-900">
-                                                {displayName}
-                                            </span>
-                                        ) : null;
-                                    })()}
+                                    {status?.business_name && (
+                                        <span className="font-bold text-slate-900">
+                                            {status.business_name}
+                                        </span>
+                                    )}
                                     {" "}está siendo validado por nuestro equipo.
                                 </p>
                                 <p className="text-[12px] text-slate-500 mt-1.5">
@@ -377,19 +334,11 @@ export function WelcomePage() {
                     <div className="space-y-2.5">
                         <Step done label="Registro completado" />
                         <Step done label="24h de cortesía concedidas" />
-                        <Step
-                            done={!!isApproved}
-                            active={!isApproved && !status}
-                            label="Validación por el equipo"
-                        />
-                        <Step
-                            done={!!isApproved}
-                            active={!isApproved && !!status}
-                            label="Activación de 7 días de trial"
-                        />
+                        <Step done={isApproved} active={!isApproved && !status} label="Validación por el equipo" />
+                        <Step done={isApproved} active={!isApproved && !!status} label="Activación de 7 días de trial" />
                     </div>
 
-                    {/* Botones de acción */}
+                    {/* Botones */}
                     <div className="grid grid-cols-2 gap-2 pt-2">
                         <a
                             href={whalink}
@@ -400,7 +349,7 @@ export function WelcomePage() {
                             💬 WhatsApp
                         </a>
                         <button
-                            onClick={() => navigate("/auth?email=" + encodeURIComponent(userEmail || ""))}
+                            onClick={() => navigate("/auth?email=" + encodeURIComponent(session.email || ""))}
                             className="h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition touch-manipulation shadow-md shadow-blue-500/30"
                         >
                             <IconArrowRight size={14} strokeWidth={2.5} />
@@ -408,15 +357,14 @@ export function WelcomePage() {
                         </button>
                     </div>
 
-                    {/* Indicador de estado (online/poll) */}
+                    {/* Indicador */}
                     <div className="flex items-center justify-center gap-3 text-[10px] text-slate-400">
                         <span className="flex items-center gap-1">
                             <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"} animate-pulse`} />
                             {isOnline ? "En línea" : "Sin conexión"}
                         </span>
                         <span>•</span>
-                        <span className="flex items-center gap-1">
-                            ⏱
+                        <span>
                             {pollCount} {pollCount === 1 ? "consulta" : "consultas"}
                         </span>
                         {method && (
@@ -433,14 +381,11 @@ export function WelcomePage() {
                             Detalles técnicos
                         </summary>
                         <div className="mt-2 space-y-1 font-mono">
-                            <div>Email: {userEmail || "—"}</div>
-                            <div>Negocio: {(() => {
-                                const tenantEmail = (status as any)?.contact_email || (status as any)?.contactEmail;
-                                const tenantMatches = !tenantEmail || tenantEmail === userEmail;
-                                return userName || (tenantMatches ? status?.business_name : null) || "—";
-                            })()}</div>
-                            <div>Plan: {userPlan || status?.plan_selected || "—"}</div>
-                            <div>Status: {status?.activation_status ?? (loading ? "cargando..." : "sin tenant todavía")}</div>
+                            <div>Email: {session.email || "—"}</div>
+                            <div>User ID: {session.userId?.slice(0, 8) || "—"}...</div>
+                            <div>Negocio: {status?.business_name || "—"}</div>
+                            <div>Plan: {status?.plan_selected || "—"}</div>
+                            <div>Status: {status?.activation_status || (loading ? "cargando..." : "sin tenant")}</div>
                             {status?.grace_period_ends_at && (
                                 <div>Cortesía: {new Date(status.grace_period_ends_at).toLocaleString("es-ES")}</div>
                             )}

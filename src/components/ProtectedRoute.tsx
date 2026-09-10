@@ -97,22 +97,26 @@ export function SubscriptionGuard({ children }: { children: ReactNode }) {
     // ★ v3.1.6: Ya NO mandamos a /pricing. El usuario sin tenant va
     //    a la sala de espera donde el admin puede aprobarlo.
     if (!auth.tenant) {
-        if (!location.pathname.startsWith("/welcome")) {
+        if (location.pathname !== "/welcome" && !location.pathname.startsWith("/welcome")) {
             return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
         }
+        return <>{children}</>;
     }
     // ★ v1.9.75: Suscripción pending_activation → sala de espera
     //    (24h de cortesía + aprobación del SuperAdmin)
     const status = auth.tenant.subscription_status;
     if (status === "pending_activation") {
-        if (!location.pathname.startsWith("/waiting-activation")) {
-            return <Navigate to="/waiting-activation" state={{ from: location.pathname }} replace />;
+        if (location.pathname !== "/welcome" && !location.pathname.startsWith("/welcome")) {
+            return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
         }
         return <>{children}</>;
     }
     // Suscripción inactiva → sala de espera
     if (status !== "active" && status !== "trialing") {
-        return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
+        if (location.pathname !== "/welcome" && !location.pathname.startsWith("/welcome")) {
+            return <Navigate to="/welcome" state={{ from: location.pathname }} replace />;
+        }
+        return <>{children}</>;
     }
     // Onboarding incompleto → wizard (salvo si ya estamos en él)
     if (auth.tenant.onboarding_completed === false
