@@ -349,7 +349,13 @@ export function WelcomePage() {
                             💬 WhatsApp
                         </a>
                         <button
-                            onClick={() => navigate("/auth?email=" + encodeURIComponent(session.email || ""))}
+                            onClick={() => {
+                                // ★ v3.4.4: Navegación limpia a /auth con replace.
+                                //   replace:true evita que el botón "Atrás" del navegador
+                                //   vuelva a /welcome y genere un bucle.
+                                //   ?approved=1 fuerza al AuthPage a mostrar el banner.
+                                navigate("/auth?approved=1&email=" + encodeURIComponent(session.email || ""), { replace: true });
+                            }}
                             className="h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition touch-manipulation shadow-md shadow-blue-500/30"
                         >
                             <IconArrowRight size={14} strokeWidth={2.5} />

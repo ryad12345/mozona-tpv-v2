@@ -52,12 +52,17 @@ export function AuthPage() {
                 nav("/app", { replace: true });
                 return;
             }
-            // Sin tenant pero logueado: si es VIP, ir a /app
-            // (AuthContext ya le inyecta un tenant sintético, pero por
-            //  si acaso lo cubrimos aquí también)
-            nav("/app", { replace: true });
+            // ★ v3.4.4: Sin tenant pero logueado.
+            //   NO redirigimos a /welcome porque WelcomePage detecta status
+            //   aprobado y vuelve a mandarnos aquí → BUCLE INFINITO.
+            //   En su lugar, mostramos un mensaje claro y dejamos
+            //   al usuario decidir (cerrar sesión, contactar admin, etc).
+            //   El componente de "esperando activación" se renderiza más abajo.
         }
     }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, nav]);
+
+    // ★ v3.4.4: Si user logueado sin tenant, mostrar UI de "esperando"
+    const waitingForTenant = auth.isReady && !!auth.user && !auth.tenant;
 
     const handleLogin = async () => {
         setMsg(null);
@@ -151,6 +156,53 @@ export function AuthPage() {
                     <code className="px-1 bg-white rounded">VITE_SUPABASE_URL</code> y{" "}
                     <code className="px-1 bg-white rounded">VITE_SUPABASE_ANON_KEY</code> en tu
                     <code className="px-1 bg-white rounded"> .env</code>.
+                </div>
+            </AuthShell>
+        );
+    }
+
+    // ★ v3.4.4: User logueado pero sin tenant → mostrar UI de espera
+    //   NO redirigir a /welcome (causa bucle con auto-redirect de aprobación)
+    if (waitingForTenant) {
+        return (
+            <AuthShell justApproved={justApproved}>
+                <div className="text-center py-6">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                        <span className="text-3xl">⏳</span>
+                    </div>
+                    <h1 className="text-[22px] font-black text-slate-900">
+                        {justApproved ? "¡Aprobado! Cargando…" : "Esperando activación"}
+                    </h1>
+                    <p className="text-[13px] text-slate-600 mt-2 leading-relaxed">
+                        {justApproved
+                            ? "Tu cuenta ha sido aprobada. Estamos preparando tu panel de control…"
+                            : "Hemos recibido tu solicitud. Un administrador está revisando tu cuenta. Te avisaremos por email o WhatsApp."}
+                    </p>
+                    <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
+                        <div className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Sesión activa</div>
+                        <div className="text-[12.5px] text-slate-800 font-semibold mt-1 break-all">
+                            {auth.user?.email}
+                        </div>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-2">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-black"
+                        >
+                            🔄 Reintentar
+                        </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await supabase.auth.signOut();
+                                    window.location.href = "/";
+                                } catch (_) {}
+                            }}
+                            className="h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12.5px] font-semibold"
+                        >
+                            Cerrar sesión
+                        </button>
+                    </div>
                 </div>
             </AuthShell>
         );
