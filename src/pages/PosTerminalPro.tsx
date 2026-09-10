@@ -718,6 +718,21 @@ export function PosTerminalPro() {
                         Cambiar
                     </button>
                 )}
+                {/* ★ v3.4.0: Acceso rápido a Personalización */}
+                <button
+                    onClick={() => nav("/tenant-settings")}
+                    className="
+                        inline-flex items-center gap-1.5
+                        px-2.5 h-7 rounded-lg
+                        bg-violet-100 hover:bg-violet-200
+                        text-[11px] font-semibold text-violet-700
+                        active:scale-95 transition
+                    "
+                    title="Personalización (tema, ticket, UI)"
+                >
+                    <span>🎨</span>
+                    Personalizar
+                </button>
                 {auth.activeWaiter && (
                     <button
                         onClick={() => { auth.logout(); setShowAuth(true); }}

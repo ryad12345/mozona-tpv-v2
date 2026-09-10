@@ -13,6 +13,7 @@ import { LandingPage } from "./pages/LandingPage";
 // ★ Páginas pesadas (lazy loading: TPV, settings, waiter)
 const PosTerminalPro  = lazy(() => import("./pages/PosTerminalPro").then(m => ({ default: m.PosTerminalPro })));
 const SettingsPage    = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const TenantSettingsPage = lazy(() => import("./pages/TenantSettingsPage").then(m => ({ default: m.TenantSettingsPage })));
 const RegisterPage    = lazy(() => import("./pages/RegisterPage").then(m => ({ default: m.RegisterPage })));
 const BillingSuccessPage = lazy(() => import("./pages/BillingSuccessPage").then(m => ({ default: m.BillingSuccessPage })));
 const BillingCancelPage  = lazy(() => import("./pages/BillingCancelPage").then(m => ({ default: m.BillingCancelPage })));
@@ -34,6 +35,7 @@ const CashRegisterPage = lazy(() => import("./pages/CashRegisterPage").then(m =>
 
 import { WebSocketProvider } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
 import { FloatingAssistantButton } from "./components/assistant/FloatingAssistantButton";
@@ -132,6 +134,7 @@ export function App() {
     return (
         <ErrorBoundary>
             <AuthProvider>
+                <ThemeProvider>
                 <WebSocketProvider>
                     <BrowserRouter>
                         <Suspense fallback={<PageLoader />}>
@@ -170,6 +173,8 @@ export function App() {
                                 {/* TPV Admin — solo desktop/tablet */}
                                 <Route path="/app"      element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Iniciando TPV…" />}><PosTerminalPro /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
                                 <Route path="/settings" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cargando ajustes…" />}><SettingsPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
+                                {/* ★ v3.4.0: Configuración personalizable por tenant (tema, ticket) */}
+                                <Route path="/tenant-settings" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando personalización…" />}><TenantSettingsPage /></Suspense></ProtectedRoute>} />
 
                                 {/* Cierre de caja (arqueo / turnos) */}
                                 <Route path="/cash-register" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cierre de caja…" />}><CashRegisterPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
@@ -185,6 +190,7 @@ export function App() {
                     <FloatingAssistantButton />
                     </BrowserRouter>
                 </WebSocketProvider>
+                </ThemeProvider>
             </AuthProvider>
         </ErrorBoundary>
     );

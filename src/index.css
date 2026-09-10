@@ -26,3 +26,73 @@
     text-shadow: none !important;
   }
 }
+
+/* =====================================================================
+   MOZONA TPV — Theme variables (v3.4.0)
+   Aplicadas al <html> por ThemeContext
+   ===================================================================== */
+
+:root {
+    --accent-color: #2563eb;
+    --accent-color-hover: #1d4ed8;
+    --button-size: 44px;
+    --grid-cols: 4;
+    --grid-gap: 8px;
+    --grid-item-size: 14px;
+}
+
+/* Light theme (default) */
+html[data-theme="light"] body {
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --border: #e2e8f0;
+}
+
+/* Dark theme */
+html[data-theme="dark"] body {
+    --bg-page: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border: #334155;
+    background: var(--bg-page) !important;
+    color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .bg-white {
+    background: var(--bg-card) !important;
+}
+
+html[data-theme="dark"] .bg-slate-50,
+html[data-theme="dark"] .bg-slate-100 {
+    background: #1e293b !important;
+    color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .text-slate-900,
+html[data-theme="dark"] .text-slate-800,
+html[data-theme="dark"] .text-slate-700 {
+    color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500,
+html[data-theme="dark"] .text-slate-400 {
+    color: var(--text-secondary) !important;
+}
+
+html[data-theme="dark"] .border-slate-200,
+html[data-theme="dark"] .border-slate-300 {
+    border-color: #334155 !important;
+}
+
+/* High contrast mode */
+html.high-contrast body {
+    filter: contrast(1.2) saturate(1.1);
+}
+
+html.high-contrast button {
+    border-width: 2px !important;
+}
