@@ -80,29 +80,9 @@ export async function createTenantWithGrace(
         console.error("[activation] createTenant exception:", e);
         return { ok: false, error: e?.message ?? "Error desconocido" };
     } finally {
-        // ★ v1.9.76: Disparar webhook en background (NO bloquea)
-        // Si falla, el trigger de BD ya creó la notificación igualmente.
-        // Es una capa adicional para redundancia + logging.
-        try {
-            void fetch("/api/notify-admin", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    tenantId:     createdTenantId,
-                    businessName: input.businessName,
-                    contactEmail: input.contactEmail,
-                    planSelected: input.planSelected,
-                    businessType: input.businessType,
-                    address:      input.restaurantAddress,
-                    phone:        input.restaurantPhone,
-                    source:       "client-direct",
-                }),
-            }).catch((e) => {
-                console.warn("[activation] webhook notify-admin falló (no bloqueante):", e?.message);
-            });
-        } catch (_) {
-            // Silent: NUNCA debe bloquear el registro
-        }
+        // ★ v3.4.3: notify-admin ELIMINADO. Todo se centraliza en
+        // /api/register-tenant que ya dispara Telegram con inline buttons.
+        // El trigger de BD crea la notificación como respaldo.
 
         // ★ v1.9.78/79: Canal principal de notificación = TELEGRAM
         //   - Gratis e ilimitado
