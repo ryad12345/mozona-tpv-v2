@@ -310,11 +310,20 @@ export function WelcomePage() {
                         ) : (
                             <>
                                 <p className="text-[13px] text-slate-700 leading-relaxed">
-                                    {(status?.business_name || userName) && (
-                                        <span className="font-bold text-slate-900">
-                                            {status?.business_name || userName}
-                                        </span>
-                                    )}
+                                    {/* ★ v3.2.1: Validar que el tenant pertenece al email actual.
+                                          Si el email del tenant no coincide, mostrar userName */}
+                                    {(() => {
+                                        const tenantEmail = (status as any)?.contact_email || (status as any)?.contactEmail;
+                                        const tenantMatches = !tenantEmail || tenantEmail === userEmail;
+                                        const displayName = tenantMatches
+                                            ? (status?.business_name || userName)
+                                            : userName;
+                                        return displayName ? (
+                                            <span className="font-bold text-slate-900">
+                                                {displayName}
+                                            </span>
+                                        ) : null;
+                                    })()}
                                     {" "}está siendo validado por nuestro equipo.
                                 </p>
                                 <p className="text-[12px] text-slate-500 mt-1.5">
@@ -409,7 +418,11 @@ export function WelcomePage() {
                         </summary>
                         <div className="mt-2 space-y-1 font-mono">
                             <div>Email: {userEmail || "—"}</div>
-                            <div>Negocio: {userName || status?.business_name || "—"}</div>
+                            <div>Negocio: {(() => {
+                                const tenantEmail = (status as any)?.contact_email || (status as any)?.contactEmail;
+                                const tenantMatches = !tenantEmail || tenantEmail === userEmail;
+                                return userName || (tenantMatches ? status?.business_name : null) || "—";
+                            })()}</div>
                             <div>Plan: {userPlan || status?.plan_selected || "—"}</div>
                             <div>Status: {status?.activation_status ?? (loading ? "cargando..." : "sin tenant todavía")}</div>
                             {status?.grace_period_ends_at && (

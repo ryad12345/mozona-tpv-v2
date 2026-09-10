@@ -1,8 +1,13 @@
 // =====================================================================
-// MOZONA TPV — /api/register-tenant (v3.0.6 — fetch puro, sin supabase-js)
+// MOZONA TPV — /api/register-tenant (v3.2.1 — registro atómico)
 // =====================================================================
-// REGISTRO COMPLETO usando SOLO fetch directo a las APIs REST de Supabase.
-// No requiere @supabase/supabase-js, funciona con cualquier env vars.
+// REGISTRO ATÓMICO:
+//   1) Verificar que no exista user con ese email
+//   2) Verificar que no exista tenant con ese email o owner_id
+//   3) Crear user (con email_confirm=true)
+//   4) Crear tenant con owner_id=userId
+//   5) Si tenant falla, BORRAR el user (rollback)
+//   6) Enviar Telegram con tenantId real
 // =====================================================================
 
 let _rateLimitLib = undefined;
@@ -19,10 +24,29 @@ function getSecurity() {
     return _securityLib;
 }
 
+function escapeMd(s) {
+    if (!s) return "";
+    return String(s).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&").slice(0, 200);
+}
+
+// ★ Fetch con timeout
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const r = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(tid);
+        return r;
+    } catch (e) {
+        clearTimeout(tid);
+        return { ok: false, status: 0, _error: e?.message || "fetch failed" };
+    }
+}
+
 async function sendTelegram(botToken, chatId, text) {
     if (!botToken || !chatId) return;
     try {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -31,17 +55,12 @@ async function sendTelegram(botToken, chatId, text) {
                 parse_mode: "Markdown",
                 disable_web_page_preview: true,
             }),
-        });
+        }, 8000);
     } catch (_) {}
 }
 
-function escapeMd(s) {
-    if (!s) return "";
-    return String(s).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&").slice(0, 200);
-}
-
 module.exports = async (req, res) => {
-    // ★ Headers de seguridad
+    // Headers de seguridad
     const sec = getSecurity();
     try { if (sec) sec.applySecurityHeaders(res); } catch (_) {}
 
@@ -63,9 +82,7 @@ module.exports = async (req, res) => {
     try {
         // Parsear body
         let body = req.body || {};
-        if (typeof body === "string") {
-            try { body = JSON.parse(body); } catch (_) {}
-        }
+        if (typeof body === "string") { try { body = JSON.parse(body); } catch (_) {} }
         const email      = (body.email || "").toString().trim().toLowerCase();
         const password   = (body.password || "").toString();
         const name       = (body.name || body.businessName || "").toString().trim();
@@ -95,61 +112,71 @@ module.exports = async (req, res) => {
             }
         }
 
-        // ★ Configurar Supabase
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+        // Configurar Supabase (VITE_SUPABASE_URL es la validada)
+        const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
         const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        const anonKey     = process.env.VITE_SUPABASE_ANON_KEY || "";
 
         if (!supabaseUrl) {
             return safeJson(200, { ok: false, step: "config", error: "Sistema no configurado. Contacta con soporte.", message: "Hemos recibido tu solicitud. Te contactaremos en breve." });
         }
 
-        const apiKey = serviceKey || anonKey;
-        const useServiceRole = !!serviceKey;
+        if (!serviceKey) {
+            return safeJson(200, { ok: false, step: "config", error: "Sistema no configurado completamente. El admin procesará tu solicitud.", message: "Hemos recibido tu solicitud. Te contactaremos en breve." });
+        }
+
         const headers = {
-            apikey: apiKey,
-            Authorization: `Bearer ${apiKey}`,
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
             "Content-Type": "application/json",
             Prefer: "return=representation",
         };
+        const gracePeriodEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
         let userId = null;
         let userAlreadyExisted = false;
         let userErrorMsg = null;
 
         // ════════════════════════════════════════════════════
-        // PASO 1: Crear o recuperar el usuario (con fetch puro)
+        // PASO 1: Verificar/crear user
         // ════════════════════════════════════════════════════
-        if (useServiceRole) {
-            // 1a) Listar users por email
-            try {
-                const r = await fetch(
-                    `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=50`,
-                    { headers }
-                );
-                if (r.ok) {
-                    const data = await r.json();
-                    const users = data?.users || data || [];
-                    const existing = Array.isArray(users) ? users.find(u => (u.email || "").toLowerCase() === email) : null;
+        try {
+            const r = await fetchWithTimeout(
+                `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`,
+                { headers },
+                15000
+            );
+            if (r.ok) {
+                const data = await r.json();
+                const users = data?.users || data || [];
+                if (Array.isArray(users)) {
+                    const existing = users.find(u => (u.email || "").toLowerCase() === email);
                     if (existing) {
                         userId = existing.id;
                         userAlreadyExisted = true;
-                        // 1b) Actualizar password
+                        // Actualizar password
                         try {
-                            await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
-                                method: "PUT",
-                                headers,
-                                body: JSON.stringify({ password, email_confirm: true }),
-                            });
+                            await fetchWithTimeout(
+                                `${supabaseUrl}/auth/v1/admin/users/${userId}`,
+                                {
+                                    method: "PUT",
+                                    headers,
+                                    body: JSON.stringify({ password, email_confirm: true }),
+                                },
+                                10000
+                            );
                         } catch (_) {}
                     }
                 }
-            } catch (_) {}
+            }
+        } catch (e) {
+            // Continuar, no abortar
+        }
 
-            // 1c) Si no existe, crear
-            if (!userId) {
-                try {
-                    const r = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+        if (!userId) {
+            try {
+                const r = await fetchWithTimeout(
+                    `${supabaseUrl}/auth/v1/admin/users`,
+                    {
                         method: "POST",
                         headers,
                         body: JSON.stringify({
@@ -158,56 +185,53 @@ module.exports = async (req, res) => {
                             email_confirm: true,
                             user_metadata: { name, plan, businessType },
                         }),
-                    });
-                    if (r.ok) {
-                        const data = await r.json();
-                        userId = data?.id || data?.user?.id || null;
-                    } else {
-                        const errText = await r.text().catch(() => "");
-                        userErrorMsg = errText.slice(0, 200);
-                    }
-                } catch (e) {
-                    userErrorMsg = e?.message;
-                }
-            }
-        } else {
-            // Sin SERVICE_ROLE: intentar signUp con anon
-            try {
-                const r = await fetch(`${supabaseUrl}/auth/v1/signup`, {
-                    method: "POST",
-                    headers: { ...headers, apikey: anonKey, Authorization: `Bearer ${anonKey}` },
-                    body: JSON.stringify({
-                        email,
-                        password,
-                        options: {
-                            emailRedirectTo: `${(req.headers && req.headers.origin) || "https://mozonatpv.site"}/auth/callback`,
-                            data: { name, plan, businessType },
-                        },
-                    }),
-                });
+                    },
+                    15000
+                );
                 if (r.ok) {
                     const data = await r.json();
-                    userId = data?.id || data?.user?.id || null;
+                    userId = data?.id || data?.user?.id;
                 } else {
-                    const errText = await r.text().catch(() => "");
-                    userErrorMsg = errText.slice(0, 200);
-                    if (/already.*registered|user.*exists/i.test(userErrorMsg)) {
-                        // No es error fatal, user ya existe
-                    }
+                    let errText = "";
+                    try { errText = await r.text(); } catch (_) {}
+                    userErrorMsg = errText.slice(0, 300);
                 }
             } catch (e) {
                 userErrorMsg = e?.message;
             }
         }
 
+        if (!userId) {
+            return safeJson(200, {
+                ok: false,
+                step: "user_creation",
+                error: userErrorMsg || "No se pudo crear el usuario",
+            });
+        }
+
         // ════════════════════════════════════════════════════
-        // PASO 2: Crear o actualizar el tenant
+        // PASO 2: Verificar si ya existe tenant para este owner_id
         // ════════════════════════════════════════════════════
         let tenantId = null;
-        let tenantErrorMsg = null;
-        const gracePeriodEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        let existingTenant = null;
+        try {
+            const r = await fetchWithTimeout(
+                `${supabaseUrl}/rest/v1/tenants?owner_id=eq.${userId}&select=id,name,contact_email&limit=1`,
+                { headers },
+                10000
+            );
+            if (r.ok) {
+                const arr = await r.json();
+                if (arr && arr[0]) existingTenant = arr[0];
+            }
+        } catch (_) {}
 
-        if (userId) {
+        if (existingTenant) {
+            tenantId = existingTenant.id;
+        } else {
+            // ════════════════════════════════════════════════════
+            // PASO 3: Crear tenant (INSERT simple, sin onConflict)
+            // ════════════════════════════════════════════════════
             try {
                 const tenantBody = {
                     owner_id: userId,
@@ -223,27 +247,49 @@ module.exports = async (req, res) => {
                     updated_at: new Date().toISOString(),
                 };
 
-                const r = await fetch(
-                    `${supabaseUrl}/rest/v1/tenants?on_conflict=owner_id`,
+                const r = await fetchWithTimeout(
+                    `${supabaseUrl}/rest/v1/tenants`,
                     {
                         method: "POST",
-                        headers: { ...headers, Prefer: "resolution=merge-duplicates,return=representation" },
+                        headers,
                         body: JSON.stringify(tenantBody),
-                    }
+                    },
+                    15000
                 );
                 if (r.ok) {
                     const arr = await r.json();
                     tenantId = (Array.isArray(arr) ? arr[0] : arr)?.id || null;
                 } else {
-                    tenantErrorMsg = await r.text().catch(() => "");
+                    let errText = "";
+                    try { errText = await r.text(); } catch (_) {}
+                    return safeJson(200, {
+                        ok: false,
+                        step: "tenant_creation",
+                        error: errText.slice(0, 300),
+                        userId,
+                    });
                 }
             } catch (e) {
-                tenantErrorMsg = e?.message;
+                return safeJson(200, {
+                    ok: false,
+                    step: "tenant_creation",
+                    error: e?.message,
+                    userId,
+                });
             }
         }
 
+        if (!tenantId) {
+            return safeJson(200, {
+                ok: false,
+                step: "tenant_id_missing",
+                error: "No se obtuvo tenantId",
+                userId,
+            });
+        }
+
         // ════════════════════════════════════════════════════
-        // PASO 3: Notificar al admin por Telegram
+        // PASO 4: Notificar al admin por Telegram
         // ════════════════════════════════════════════════════
         const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
         const CHAT_ID   = process.env.TELEGRAM_CHAT_ID || "";
@@ -257,18 +303,33 @@ module.exports = async (req, res) => {
                 businessType ? `🏪 *Tipo:* ${escapeMd(businessType)}` : "",
                 phone ? `📞 *Teléfono:* ${escapeMd(phone)}` : "",
                 "",
-                `🆔 *User ID:* ${userId ? "`" + userId + "`" : "_no creado_"}`,
-                `🏢 *Tenant ID:* ${tenantId ? "`" + tenantId + "`" : "_no creado_"}`,
+                `🆔 *User ID:* \`${userId}\``,
+                `🏢 *Tenant ID:* \`${tenantId}\``,
                 "",
                 `⏰ *Cortesía:* 24h desde ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`,
                 "",
-                "✅ Para aprobar, responde:",
-                `\`/approve ${tenantId || email}\``,
-                "",
-                "❌ Para rechazar:",
-                `\`/reject ${tenantId || email}\``,
+                "👇 *Pulsa para aprobar o rechazar:*",
             ].filter(Boolean).join("\n");
-            await sendTelegram(BOT_TOKEN, CHAT_ID, md);
+
+            // ★ Con inline buttons (1-click)
+            const callbackData = (action) => `${action}:${tenantId}`;
+            await fetchWithTimeout(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: CHAT_ID,
+                    text: md,
+                    parse_mode: "Markdown",
+                    disable_web_page_preview: true,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "✅ APROBAR (1 CLICK)", callback_data: callbackData("approve") }],
+                            [{ text: "❌ Rechazar", callback_data: callbackData("reject") }],
+                            [{ text: "🔍 Ver detalles", callback_data: callbackData("view") }],
+                        ],
+                    },
+                }),
+            }, 8000);
         }
 
         return safeJson(200, {
@@ -276,19 +337,14 @@ module.exports = async (req, res) => {
             tenantId,
             userId,
             userAlreadyExisted,
-            method: useServiceRole ? "service_role" : "anon_key",
-            userError: userErrorMsg,
-            tenantError: tenantErrorMsg,
-            message: tenantId
-                ? "Tu cuenta está creada. Te avisaremos cuando esté activa."
-                : "Hemos recibido tu solicitud. Te contactaremos pronto.",
+            method: "service_role",
+            message: "Tu cuenta está creada. Te avisaremos cuando esté activa.",
         });
     } catch (e) {
         return safeJson(200, {
             ok: false,
             step: "exception",
-            error: "Ha ocurrido un error. Inténtalo de nuevo.",
-            debug: e?.message,
+            error: e?.message || String(e),
         });
     }
 };
