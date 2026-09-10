@@ -1,29 +1,142 @@
 
-/* Corrección de nitidez térmica para tickets */
+/* =====================================================================
+   MOZONA TPV — Estilos de impresión térmica (v3.4.6)
+   =====================================================================
+   Configuración definitiva para impresoras de tickets:
+   - @page { size: 58mm auto; margin: 0 } fuerza el formato del rollo
+   - Ancho efectivo de 48mm deja margen para los dientes de la tiquetera
+   - Solo se imprime el contenedor #thermal-ticket-print
+   - El resto de la UI se oculta con visibility:hidden
+   ===================================================================== */
+
+/* Vista previa en pantalla (parecido al papel real) */
+.thermal-ticket-preview {
+  width: 280px;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #ffffff;
+  padding: 12px;
+  font-family: 'Courier New', Courier, monospace !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  color: #111111 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: none;
+}
+
+.thermal-ticket-preview hr {
+  border: none;
+  border-top: 1px dashed #000000;
+  margin: 6px 0;
+}
+
+.thermal-ticket-preview .line {
+  width: 100%;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+  word-break: normal;
+  hyphens: none;
+}
+
+/* ★ v3.4.6: Impresión definitiva para 58mm con ancho efectivo 48mm */
 @media print {
-  body, html, #root {
-    background: #ffffff !important;
-    color: #000000 !important;
+  /* Forzar formato de página a 58mm exactos sin márgenes blancos */
+  @page {
+    size: 58mm auto;
+    margin: 0mm;
   }
-  .no-print {
-    display: none !important;
+
+  /* Oculta toda la interfaz de la app al imprimir */
+  body * {
+    visibility: hidden !important;
   }
-  .print-ticket {
-    display: block !important;
-    width: 100% !important;
-    max-width: 80mm !important;
-    margin: 0 auto !important;
-    color: #000000 !important;
+
+  /* Muestra solo el contenedor del ticket */
+  #thermal-ticket-print,
+  #thermal-ticket-print * {
+    visibility: visible !important;
+  }
+
+  /* Compatibilidad: contenedor legacy */
+  .print-ticket,
+  .print-ticket * {
+    visibility: visible !important;
+  }
+
+  /* Posicionar el contenedor en la esquina superior izquierda */
+  #thermal-ticket-print {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 48mm !important;          /* Ancho real efectivo (margen para dientes) */
+    max-width: 48mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
     font-family: 'Courier New', Courier, monospace !important;
-    font-weight: 700 !important;
-    font-size: 13px !important;
-    line-height: 1.25 !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+    white-space: pre !important;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: none;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  .print-ticket * {
+
+  /* Líneas del ticket sin wrapping */
+  #thermal-ticket-print .line,
+  .print-ticket .line {
+    width: 100% !important;
+    white-space: pre !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    word-break: normal !important;
+    hyphens: none !important;
+  }
+
+  /* Compatibilidad con el selector antiguo */
+  .print-ticket {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 48mm !important;
+    max-width: 48mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
     color: #000000 !important;
-    text-shadow: none !important;
+    background: #ffffff !important;
+    white-space: pre !important;
+  }
+
+  /* Separadores en tickets */
+  #thermal-ticket-print hr,
+  .print-ticket hr {
+    border: none !important;
+    border-top: 1px dashed #000000 !important;
+    margin: 4px 0 !important;
+  }
+
+  /* Ocultar explícitamente lo marcado como no-print */
+  .no-print {
+    display: none !important;
+  }
+
+  body, html, #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }
 

@@ -328,8 +328,11 @@ export function buildTicketHTML(opts: TicketOptions): string {
         return `<div class="line">${safe || "&nbsp;"}</div>`;
     }).join("\n");
 
-    // CSS optimizado para 58mm
+    // ★ v3.4.6: CSS optimizado para 58mm/80mm con ancho EFECTIVO de 48/72mm
+    //   (deja margen para los dientes de la tiquetera)
     const cssWidth = opts.paperWidth || 58;
+    // 58mm físico → 48mm efectivo, 80mm físico → 72mm efectivo
+    const effectiveWidth = cssWidth === 58 ? 48 : 72;
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -347,13 +350,13 @@ html, body {
     background: #fff;
     color: #000;
     font-family: ${FONT_STACK};
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
-    line-height: 1.15;
+    line-height: 1.2;
     -webkit-font-smoothing: none;
     -webkit-print-color-adjust: exact;
-    width: ${cssWidth - 4}mm;
-    max-width: ${cssWidth - 4}mm;
+    width: ${effectiveWidth}mm;
+    max-width: ${effectiveWidth}mm;
 }
 .ticket {
     width: 100%;
@@ -371,7 +374,7 @@ html, body {
 }
 </style>
 </head>
-<body>
+<body id="thermal-ticket-print">
 <div class="ticket">
 ${htmlBody}
 </div>
