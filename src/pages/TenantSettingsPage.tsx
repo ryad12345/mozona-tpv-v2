@@ -1,55 +1,44 @@
 // =====================================================================
-// MOZONA TPV — TenantSettingsPage (v3.4.0)
+// MOZONA TPV — TenantSettingsPage (v3.4.5)
 // =====================================================================
-// Configuración personalizable por tenant:
-//   - Diseño de tickets térmicos (preview en vivo)
-//   - Tema visual (claro/oscuro/auto + acento + contraste)
-//   - UI (tamaño de botones, densidad, layout)
+// Editor visual tipo Canva + temas persistentes
+//   - Drag & drop de elementos del ticket
+//   - Subir logo redimensionable
+//   - Editor inline de textos
+//   - Persistencia en Supabase por tenant
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useActiveSession } from "../hooks/useActiveSession";
-import { useTenantSettings, DEFAULT_TENANT_SETTINGS, type TenantSettings } from "../hooks/useTenantSettings";
+import {
+    useTenantSettings,
+    DEFAULT_TENANT_SETTINGS,
+    DEFAULT_TICKET_LAYOUT,
+    type TenantSettings,
+    type TicketElement,
+    type TicketElementType,
+} from "../hooks/useTenantSettings";
 import { useTheme } from "../context/ThemeContext";
-import { buildTicketText, buildTicketHTML, type TicketOptions } from "../lib/ticketPrinter";
-import { IconShield, IconCheck, IconUser, IconLock } from "../components/icons";
+import { TicketCanvas, ElementPalette } from "../components/TicketCanvas";
+import { IconShield, IconCheck, IconArrowLeft, IconTrash, IconDuplicate } from "../components/icons";
 
-const COMPANY_PRESETS = [
-    { name: "MOZONA TPV", nif: "B00000000", address: "", phone: "" },
-    { name: "MI RESTAURANTE", nif: "B12345678", address: "Calle Mayor 1, Madrid", phone: "+34 600 000 000" },
-    { name: "BAR LA ESQUINA", nif: "B87654321", address: "Av. Andalucía 22, Sevilla", phone: "+34 954 000 000" },
-];
-
-const PAPER_WIDTHS = [
-    { value: 58, label: "58mm (32 cols)" },
-    { value: 80, label: "80mm (42 cols)" },
-];
-
-const ACCENT_OPTIONS = [
-    { value: "blue",   label: "Azul",   color: "#2563eb" },
-    { value: "green",  label: "Verde",  color: "#16a34a" },
-    { value: "orange", label: "Naranja", color: "#ea580c" },
-    { value: "red",    label: "Rojo",   color: "#dc2626" },
-    { value: "violet", label: "Violeta", color: "#7c3aed" },
-];
-
-const BUTTON_SIZES = [
-    { value: "sm", label: "Pequeño (36px)" },
-    { value: "md", label: "Mediano (44px)" },
-    { value: "lg", label: "Grande (56px)" },
-];
-
-const GRID_DENSITIES = [
-    { value: "compact", label: "Compacto (5 cols)" },
-    { value: "normal", label: "Normal (4 cols)" },
-    { value: "comfortable", label: "Cómodo (3 cols)" },
-];
-
-const PANEL_LAYOUTS = [
-    { value: "horizontal", label: "Horizontal" },
-    { value: "vertical", label: "Vertical" },
-];
+const SAMPLE_DATA = {
+    id: "T-00042",
+    date: "10/09/2026",
+    time: "21:45",
+    table: "5",
+    waiter: "Juan",
+    payment: "Efectivo",
+    lines: [
+        { name: "Tajin carne", qty: 1, price: 8.0, total: 8.0 },
+        { name: "Pan", qty: 1, price: 1.0, total: 1.0 },
+        { name: "Coca-Cola", qty: 2, price: 2.5, total: 5.0 },
+    ],
+    subtotal: 12.73,
+    vat: 1.27,
+    total: 14.0,
+};
 
 export function TenantSettingsPage() {
     const navigate = useNavigate();
@@ -59,49 +48,102 @@ export function TenantSettingsPage() {
     const [localSettings, setLocalSettings] = useState<TenantSettings>(settings);
     const [savedOk, setSavedOk] = useState(false);
 
-    // Si no hay sesión, redirigir a /auth
     useEffect(() => {
         if (session.isReady && !session.isAuthenticated) {
             navigate("/auth", { replace: true });
         }
     }, [session.isReady, session.isAuthenticated, navigate]);
 
-    // Sincronizar settings remotos
     useEffect(() => {
         setLocalSettings(settings);
     }, [settings]);
 
-    // ★ Preview del ticket en tiempo real
-    const previewText = useMemo(() => {
-        const opts: TicketOptions = {
-            lines: [
-                { name: "Tajin de carne picada", quantity: 1, unit_price: 8.00, tax_rate: 10 },
-                { name: "Pan", quantity: 1, unit_price: 1.00, tax_rate: 10 },
-                { name: "Coca-Cola", quantity: 2, unit_price: 2.50, tax_rate: 10 },
-            ],
-            series: "PRE",
-            invoiceNumber: 1,
-            tableNumber: 5,
-            waiterName: "Juan",
-            paymentMethod: "Efectivo",
-            createdAt: Date.now(),
-            paperWidth: localSettings.ticket_paper_width as 58 | 80,
-            showTax: localSettings.ticket_show_vat,
-            headerMsg: localSettings.ticket_header_text,
-            footerMsg: localSettings.ticket_footer_text,
-            settings: {
-                company_name: COMPANY_PRESETS[0].name,
-                cif_nif: "",
-                address: "",
-                phone: "",
-            } as any,
-        };
-        try {
-            return buildTicketText(opts);
-        } catch (e) {
-            return "Error generando preview";
+    // ★ Layout (asegurar default si está vacío)
+    const layout: TicketElement[] = useMemo(() => {
+        if (localSettings.ticket_layout_json && Array.isArray(localSettings.ticket_layout_json) && localSettings.ticket_layout_json.length > 0) {
+            return localSettings.ticket_layout_json;
         }
-    }, [localSettings]);
+        return DEFAULT_TICKET_LAYOUT;
+    }, [localSettings.ticket_layout_json]);
+
+    const updateLayout = useCallback((newLayout: TicketElement[]) => {
+        setLocalSettings(prev => ({ ...prev, ticket_layout_json: newLayout }));
+    }, []);
+
+    // ★ Añadir elemento
+    const addElement = (type: TicketElementType) => {
+        const id = `${type}-${Date.now()}`;
+        const yOffset = layout.length * 8;
+        const newEl: TicketElement = {
+            id,
+            type,
+            x: 5,
+            y: Math.min(95, yOffset),
+            w: type === "logo" ? 30 : 90,
+            h: type === "logo" ? 14 : type === "block_lines" ? 30 : 8,
+            visible: true,
+        };
+        if (type === "text") {
+            newEl.content = "Nuevo texto";
+            newEl.fontSize = 12;
+            newEl.fontWeight = 800;
+            newEl.align = "center";
+        } else if (type === "block_info") {
+            newEl.fields = ["id", "date", "time"];
+        }
+        updateLayout([...layout, newEl]);
+    };
+
+    // ★ Eliminar elemento
+    const removeElement = (id: string) => {
+        updateLayout(layout.filter(e => e.id !== id));
+    };
+
+    // ★ Duplicar
+    const duplicateElement = (id: string) => {
+        const el = layout.find(e => e.id === id);
+        if (!el) return;
+        const copy: TicketElement = { ...el, id: `${el.id}-copy-${Date.now()}`, x: Math.min(95, el.x + 3), y: Math.min(95, el.y + 3) };
+        updateLayout([...layout, copy]);
+    };
+
+    // ★ Toggle visibility
+    const toggleVisibility = (id: string) => {
+        updateLayout(layout.map(e => e.id === id ? { ...e, visible: !e.visible } : e));
+    };
+
+    // ★ Subir logo
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 200_000) {
+            alert("Logo demasiado grande (max 200KB). Usa una imagen comprimida.");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const dataUrl = reader.result as string;
+            // Actualizar o añadir elemento logo
+            const existingLogo = layout.find(e => e.type === "logo");
+            if (existingLogo) {
+                updateLayout(layout.map(el => el.type === "logo" ? { ...el, src: dataUrl, visible: true } : el));
+            } else {
+                const logoEl: TicketElement = {
+                    id: `logo-${Date.now()}`,
+                    type: "logo",
+                    x: 35, y: 0, w: 30, h: 14,
+                    visible: true,
+                    src: dataUrl,
+                };
+                updateLayout([logoEl, ...layout]);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const updateSelected = (id: string, patch: Partial<TicketElement>) => {
+        updateLayout(layout.map(e => e.id === id ? { ...e, ...patch } : e));
+    };
 
     const handleSave = async () => {
         const ok = await save(localSettings);
@@ -120,255 +162,365 @@ export function TenantSettingsPage() {
         return <div className="p-8 text-center text-slate-500">Redirigiendo al login...</div>;
     }
 
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const selected = layout.find(e => e.id === selectedId) || null;
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 sm:p-6">
-            <div className="max-w-6xl mx-auto space-y-4">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-3 sm:p-5">
+            <div className="max-w-7xl mx-auto space-y-3">
                 {/* Cabecera */}
-                <div className="bg-gradient-to-br from-blue-600 via-violet-600 to-blue-700 rounded-3xl shadow-2xl p-6 text-white">
-                    <div className="flex items-center justify-between">
+                <div className="bg-gradient-to-br from-blue-600 via-violet-600 to-blue-700 rounded-2xl shadow-xl p-4 text-white">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                            <IconShield size={32} />
+                            <IconShield size={28} />
                             <div>
-                                <h1 className="text-2xl font-black">Personalización</h1>
-                                <p className="text-[12.5px] text-blue-100">
-                                    Configura tu espacio · {session.email}
+                                <h1 className="text-xl font-black">Personalización</h1>
+                                <p className="text-[11.5px] text-blue-100">
+                                    Editor visual de tickets + temas · {session.email}
                                 </p>
                             </div>
                         </div>
-                        <button
-                            onClick={() => navigate("/app")}
-                            className="h-10 px-4 rounded-lg bg-white/20 hover:bg-white/30 text-white text-[12.5px] font-bold"
-                        >
-                            ← Volver
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => navigate("/settings")}
+                                className="h-9 px-3 rounded-lg bg-white/20 hover:bg-white/30 text-white text-[12px] font-bold flex items-center gap-1"
+                            >
+                                <IconArrowLeft size={12} /> Volver a Configuración
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="h-9 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-400 text-white text-[12px] font-black flex items-center gap-1.5"
+                            >
+                                {saving ? "Guardando..." : <><IconCheck size={12} /> Guardar</>}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                {/* Mensajes */}
                 {savedOk && (
-                    <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 flex items-center gap-2">
-                        <IconCheck size={18} className="text-emerald-600" />
-                        <span className="text-[12.5px] text-emerald-900 font-semibold">Configuración guardada</span>
+                    <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                        <IconCheck size={16} className="text-emerald-600" />
+                        <span className="text-[12.5px] text-emerald-900 font-semibold">Configuración guardada correctamente</span>
                     </div>
                 )}
                 {error && (
-                    <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">
+                    <div className="bg-rose-50 border-2 border-rose-200 rounded-xl p-3">
                         <span className="text-[12.5px] text-rose-900 font-semibold">❌ {error}</span>
                     </div>
                 )}
 
-                {/* ★ Editor de Tickets con Preview en Vivo */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Columna configuración */}
-                    <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
-                        <h2 className="text-lg font-black flex items-center gap-2">
-                            🧾 Diseño del ticket
-                        </h2>
+                {/* ★ EDITOR CANVAS + PALETA + PROPIEDADES */}
+                <div className="grid grid-cols-12 gap-3">
+                    {/* Paleta */}
+                    <div className="col-span-12 lg:col-span-3 bg-white rounded-2xl shadow p-4 space-y-3">
+                        <h2 className="text-[12px] font-black uppercase tracking-widest text-slate-600">Elementos</h2>
+                        <ElementPalette onAdd={addElement} />
 
-                        {/* Ancho del rollo */}
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Ancho del rollo</label>
+                        <div className="pt-2 border-t border-slate-200">
+                            <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Ancho del rollo</label>
                             <div className="grid grid-cols-2 gap-2 mt-2">
-                                {PAPER_WIDTHS.map(p => (
+                                {[
+                                    { v: 58, l: "58mm" },
+                                    { v: 80, l: "80mm" },
+                                ].map(p => (
                                     <button
-                                        key={p.value}
-                                        onClick={() => update("ticket_paper_width", p.value as 58 | 80)}
-                                        className={`h-10 rounded-lg text-[12.5px] font-bold border-2 transition ${
-                                            localSettings.ticket_paper_width === p.value
+                                        key={p.v}
+                                        onClick={() => update("ticket_paper_width", p.v as 58 | 80)}
+                                        className={`h-9 rounded-lg text-[12px] font-bold border-2 ${
+                                            localSettings.ticket_paper_width === p.v
                                                 ? "bg-blue-600 text-white border-blue-600"
-                                                : "bg-white text-slate-700 border-slate-200 hover:border-blue-300"
+                                                : "bg-white text-slate-700 border-slate-200"
                                         }`}
                                     >
-                                        {p.label}
+                                        {p.l}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Textos */}
                         <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Cabecera</label>
+                            <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Subir logo (max 200KB)</label>
                             <input
-                                type="text"
-                                value={localSettings.ticket_header_text}
-                                onChange={e => update("ticket_header_text", e.target.value)}
-                                placeholder="Ej: PRE-CUENTA, TICKET..."
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Pie de página</label>
-                            <textarea
-                                value={localSettings.ticket_footer_text}
-                                onChange={e => update("ticket_footer_text", e.target.value)}
-                                placeholder="Ej: Gracias por su visita!"
-                                rows={2}
-                                className="w-full mt-2 px-3 py-2 rounded-lg border border-slate-300 text-[12.5px]"
+                                type="file"
+                                accept="image/*"
+                                onChange={handleLogoUpload}
+                                className="block w-full mt-2 text-[11px] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-bold"
                             />
                         </div>
 
-                        {/* Toggles */}
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Elementos visibles</label>
-                            <div className="space-y-1.5 mt-2">
-                                {[
-                                    ["ticket_show_id", "ID de ticket"],
-                                    ["ticket_show_date", "Fecha"],
-                                    ["ticket_show_time", "Hora"],
-                                    ["ticket_show_table", "Mesa"],
-                                    ["ticket_show_waiter", "Camarero"],
-                                    ["ticket_show_payment", "Método de pago"],
-                                    ["ticket_show_vat", "Desglose IVA"],
-                                ].map(([key, label]) => (
-                                    <label key={key} className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-slate-50">
-                                        <input
-                                            type="checkbox"
-                                            checked={localSettings[key as keyof TenantSettings] as boolean}
-                                            onChange={e => update(key as keyof TenantSettings, e.target.checked as any)}
-                                            className="w-4 h-4 accent-blue-600"
-                                        />
-                                        <span className="text-[12.5px]">{label}</span>
-                                    </label>
+                        <div className="pt-2 border-t border-slate-200 text-[10.5px] text-slate-500">
+                            <strong>Tip:</strong> Arrastra cualquier elemento del ticket para recolocarlo. Haz clic en un texto para editarlo.
+                        </div>
+                    </div>
+
+                    {/* Canvas */}
+                    <div className="col-span-12 lg:col-span-6 bg-slate-200 rounded-2xl p-6 flex items-start justify-center overflow-auto">
+                        <div
+                            onClick={() => setSelectedId(null)}
+                            className="w-full"
+                        >
+                            <div onClick={(e) => e.stopPropagation()}>
+                                <TicketCanvas
+                                    layout={layout}
+                                    onChange={updateLayout}
+                                    paperWidth={localSettings.ticket_paper_width}
+                                    sampleData={SAMPLE_DATA}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Propiedades */}
+                    <div className="col-span-12 lg:col-span-3 bg-white rounded-2xl shadow p-4 space-y-3">
+                        <h2 className="text-[12px] font-black uppercase tracking-widest text-slate-600">Propiedades</h2>
+                        {selected ? (
+                            <ElementProperties
+                                el={selected}
+                                onChange={(patch) => updateSelected(selected.id, patch)}
+                                onDelete={() => removeElement(selected.id)}
+                                onDuplicate={() => duplicateElement(selected.id)}
+                                onToggleVisible={() => toggleVisibility(selected.id)}
+                            />
+                        ) : (
+                            <div className="text-[11.5px] text-slate-500 p-3 rounded-lg bg-slate-50">
+                                Selecciona un elemento del ticket para editar sus propiedades.
+                            </div>
+                        )}
+
+                        <div className="pt-2 border-t border-slate-200">
+                            <h3 className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest mb-2">Elementos ({layout.length})</h3>
+                            <div className="space-y-1 max-h-48 overflow-y-auto">
+                                {layout.map(el => (
+                                    <button
+                                        key={el.id}
+                                        onClick={() => setSelectedId(el.id)}
+                                        className={`w-full text-left px-2 py-1.5 rounded text-[11px] font-mono flex items-center gap-1.5 ${
+                                            selectedId === el.id ? "bg-blue-100 text-blue-900" : "hover:bg-slate-50 text-slate-700"
+                                        }`}
+                                    >
+                                        <span>{el.type === "text" ? "📝" : el.type === "logo" ? "🖼️" : el.type === "block_info" ? "ℹ️" : el.type === "block_lines" ? "📋" : "💰"}</span>
+                                        <span className="flex-1 truncate">{el.content || el.id.split("-")[0]}</span>
+                                        <span onClick={(e) => { e.stopPropagation(); toggleVisibility(el.id); }} className="text-slate-400 hover:text-slate-700">
+                                            {el.visible ? "👁️" : "🚫"}
+                                        </span>
+                                    </button>
                                 ))}
                             </div>
                         </div>
                     </div>
-
-                    {/* Columna preview */}
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                        <h2 className="text-lg font-black mb-3">Vista previa</h2>
-                        <div className="bg-slate-100 p-4 rounded-xl">
-                            <div
-                                className="bg-white mx-auto shadow-lg"
-                                style={{
-                                    width: localSettings.ticket_paper_width === 58 ? "220px" : "300px",
-                                    padding: "12px",
-                                    fontFamily: "'Courier New', monospace",
-                                    fontSize: "11px",
-                                    fontWeight: 700,
-                                    lineHeight: 1.3,
-                                    whiteSpace: "pre",
-                                    color: "#000",
-                                    border: "1px solid #cbd5e1",
-                                }}
-                            >
-                                {previewText}
-                            </div>
-                        </div>
-                        <p className="text-[10.5px] text-slate-500 text-center mt-2">
-                            Vista previa en blanco y negro (la impresión real usa el tamaño exacto del rollo)
-                        </p>
-                    </div>
                 </div>
 
-                {/* ★ Tema y estilo */}
-                <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
-                    <h2 className="text-lg font-black flex items-center gap-2">
-                        🎨 Tema y estilo
-                    </h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* ★ TEMA */}
+                <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+                    <h2 className="text-[12px] font-black uppercase tracking-widest text-slate-600">Tema y estilo</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <SelectBox label="Modo" value={localSettings.theme_mode} onChange={v => update("theme_mode", v as any)} options={[
+                            { v: "light", l: "☀️ Claro" },
+                            { v: "dark",  l: "🌙 Oscuro" },
+                            { v: "auto",  l: "⚙️ Auto" },
+                        ]} />
                         <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Modo</label>
-                            <select
-                                value={localSettings.theme_mode}
-                                onChange={e => update("theme_mode", e.target.value as any)}
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            >
-                                <option value="light">☀️ Claro</option>
-                                <option value="dark">🌙 Oscuro</option>
-                                <option value="auto">⚙️ Auto (sistema)</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Color de acento</label>
-                            <div className="grid grid-cols-5 gap-1 mt-2">
-                                {ACCENT_OPTIONS.map(a => (
+                            <Label>Color acento</Label>
+                            <div className="grid grid-cols-5 gap-1 mt-1.5">
+                                {[
+                                    { v: "blue",   c: "#2563eb" },
+                                    { v: "green",  c: "#16a34a" },
+                                    { v: "orange", c: "#ea580c" },
+                                    { v: "red",    c: "#dc2626" },
+                                    { v: "violet", c: "#7c3aed" },
+                                ].map(a => (
                                     <button
-                                        key={a.value}
-                                        onClick={() => update("theme_accent", a.value as any)}
-                                        className={`h-10 rounded-lg border-2 transition ${
-                                            localSettings.theme_accent === a.value
-                                                ? "border-slate-900 scale-110"
-                                                : "border-slate-200"
-                                        }`}
-                                        style={{ background: a.color }}
-                                        title={a.label}
+                                        key={a.v}
+                                        onClick={() => update("theme_accent", a.v as any)}
+                                        className={`h-8 rounded-lg border-2 ${localSettings.theme_accent === a.v ? "border-slate-900 scale-110" : "border-slate-200"}`}
+                                        style={{ background: a.c }}
                                     />
                                 ))}
                             </div>
                         </div>
-
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Contraste</label>
-                            <select
-                                value={localSettings.theme_contrast}
-                                onChange={e => update("theme_contrast", e.target.value as any)}
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            >
-                                <option value="normal">Normal</option>
-                                <option value="high">Alto (accesibilidad)</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Tamaño botones</label>
-                            <select
-                                value={localSettings.button_size}
-                                onChange={e => update("button_size", e.target.value as any)}
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            >
-                                {BUTTON_SIZES.map(b => (
-                                    <option key={b.value} value={b.value}>{b.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Densidad cuadrícula</label>
-                            <select
-                                value={localSettings.grid_density}
-                                onChange={e => update("grid_density", e.target.value as any)}
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            >
-                                {GRID_DENSITIES.map(g => (
-                                    <option key={g.value} value={g.value}>{g.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Disposición</label>
-                            <select
-                                value={localSettings.panel_layout}
-                                onChange={e => update("panel_layout", e.target.value as any)}
-                                className="w-full h-10 mt-2 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                            >
-                                {PANEL_LAYOUTS.map(p => (
-                                    <option key={p.value} value={p.value}>{p.label}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <SelectBox label="Contraste" value={localSettings.theme_contrast} onChange={v => update("theme_contrast", v as any)} options={[
+                            { v: "normal", l: "Normal" },
+                            { v: "high", l: "Alto" },
+                        ]} />
+                        <SelectBox label="Botones" value={localSettings.button_size} onChange={v => update("button_size", v as any)} options={[
+                            { v: "sm", l: "Pequeño" },
+                            { v: "md", l: "Mediano" },
+                            { v: "lg", l: "Grande" },
+                        ]} />
+                        <SelectBox label="Densidad" value={localSettings.grid_density} onChange={v => update("grid_density", v as any)} options={[
+                            { v: "compact", l: "Compacto" },
+                            { v: "normal", l: "Normal" },
+                            { v: "comfortable", l: "Cómodo" },
+                        ]} />
+                        <SelectBox label="Layout" value={localSettings.panel_layout} onChange={v => update("panel_layout", v as any)} options={[
+                            { v: "horizontal", l: "Horizontal" },
+                            { v: "vertical", l: "Vertical" },
+                        ]} />
                     </div>
                 </div>
+            </div>
+        </div>
+    );
+}
 
-                {/* Botón guardar */}
-                <div className="bg-white rounded-2xl shadow-xl p-4 flex justify-end gap-2">
-                    <button
-                        onClick={() => setLocalSettings(settings)}
-                        className="h-11 px-5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[13px] font-bold"
-                    >
-                        Descartar cambios
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="h-11 px-6 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[13px] font-black flex items-center gap-2"
-                    >
-                        {saving ? "Guardando..." : <><IconCheck size={14} /> Guardar configuración</>}
-                    </button>
+function Label({ children }: { children: React.ReactNode }) {
+    return <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">{children}</label>;
+}
+
+function SelectBox({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Array<{ v: string; l: string }> }) {
+    return (
+        <div>
+            <Label>{label}</Label>
+            <select
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                className="w-full h-9 mt-1.5 px-2 rounded-lg border border-slate-300 text-[12px]"
+            >
+                {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+        </div>
+    );
+}
+
+function ElementProperties({ el, onChange, onDelete, onDuplicate, onToggleVisible }: {
+    el: TicketElement;
+    onChange: (patch: Partial<TicketElement>) => void;
+    onDelete: () => void;
+    onDuplicate: () => void;
+    onToggleVisible: () => void;
+}) {
+    return (
+        <div className="space-y-2 text-[12px]">
+            <div className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Tipo: {el.type}</div>
+
+            {el.type === "text" && (
+                <>
+                    <div>
+                        <Label>Contenido</Label>
+                        <input
+                            type="text"
+                            value={el.content || ""}
+                            onChange={e => onChange({ content: e.target.value })}
+                            className="w-full h-8 mt-1 px-2 rounded border border-slate-300 text-[12px]"
+                        />
+                    </div>
+                    <div>
+                        <Label>Tamaño fuente ({el.fontSize}px)</Label>
+                        <input
+                            type="range" min="7" max="20" value={el.fontSize || 11}
+                            onChange={e => onChange({ fontSize: Number(e.target.value) })}
+                            className="w-full mt-1"
+                        />
+                    </div>
+                    <div>
+                        <Label>Alineación</Label>
+                        <div className="grid grid-cols-3 gap-1 mt-1">
+                            {(["left", "center", "right"] as const).map(a => (
+                                <button
+                                    key={a}
+                                    onClick={() => onChange({ align: a })}
+                                    className={`h-7 rounded text-[10px] font-bold ${el.align === a ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                                >
+                                    {a === "left" ? "←" : a === "center" ? "↔" : "→"}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {el.type === "block_info" && (
+                <div>
+                    <Label>Campos visibles</Label>
+                    <div className="grid grid-cols-2 gap-1 mt-1">
+                        {([
+                            ["id", "ID"],
+                            ["date", "Fecha"],
+                            ["time", "Hora"],
+                            ["table", "Mesa"],
+                            ["waiter", "Camarero"],
+                            ["payment", "Pago"],
+                        ] as const).map(([k, l]) => (
+                            <label key={k} className="flex items-center gap-1 text-[11px]">
+                                <input
+                                    type="checkbox"
+                                    checked={el.fields?.includes(k as any) || false}
+                                    onChange={e => {
+                                        const fields = el.fields || [];
+                                        const next = e.target.checked
+                                            ? [...fields, k]
+                                            : fields.filter(f => f !== k);
+                                        onChange({ fields: next as any });
+                                    }}
+                                    className="w-3 h-3"
+                                />
+                                {l}
+                            </label>
+                        ))}
+                    </div>
                 </div>
+            )}
+
+            <div>
+                <Label>Posición</Label>
+                <div className="grid grid-cols-2 gap-1 mt-1 text-[10.5px]">
+                    <input
+                        type="number" min="0" max="100"
+                        value={Math.round(el.x)}
+                        onChange={e => onChange({ x: Number(e.target.value) })}
+                        className="h-7 px-1.5 rounded border border-slate-300"
+                        placeholder="X %"
+                    />
+                    <input
+                        type="number" min="0" max="100"
+                        value={Math.round(el.y)}
+                        onChange={e => onChange({ y: Number(e.target.value) })}
+                        className="h-7 px-1.5 rounded border border-slate-300"
+                        placeholder="Y %"
+                    />
+                </div>
+            </div>
+
+            <div>
+                <Label>Tamaño (W × H %)</Label>
+                <div className="grid grid-cols-2 gap-1 mt-1 text-[10.5px]">
+                    <input
+                        type="number" min="5" max="100"
+                        value={Math.round(el.w)}
+                        onChange={e => onChange({ w: Number(e.target.value) })}
+                        className="h-7 px-1.5 rounded border border-slate-300"
+                    />
+                    <input
+                        type="number" min="3" max="100"
+                        value={Math.round(el.h)}
+                        onChange={e => onChange({ h: Number(e.target.value) })}
+                        className="h-7 px-1.5 rounded border border-slate-300"
+                    />
+                </div>
+            </div>
+
+            <div className="flex gap-1 pt-2 border-t border-slate-200">
+                <button
+                    onClick={onToggleVisible}
+                    className="flex-1 h-8 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-bold"
+                >
+                    {el.visible ? "👁️ Visible" : "🚫 Oculto"}
+                </button>
+                <button
+                    onClick={onDuplicate}
+                    className="h-8 w-8 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center"
+                    title="Duplicar"
+                >
+                    <IconDuplicate size={12} />
+                </button>
+                <button
+                    onClick={onDelete}
+                    className="h-8 w-8 rounded bg-rose-100 hover:bg-rose-200 text-rose-600 flex items-center justify-center"
+                    title="Eliminar"
+                >
+                    <IconTrash size={12} />
+                </button>
             </div>
         </div>
     );

@@ -25,6 +25,10 @@ export interface TenantSettings {
     ticket_show_payment: boolean;
     ticket_show_vat: boolean;
 
+    // ★ v3.4.5: Editor visual tipo Canva
+    ticket_logo_url?: string;
+    ticket_layout_json?: TicketElement[];
+
     // Tema
     theme_mode: "light" | "dark" | "auto";
     theme_accent: "blue" | "green" | "orange" | "red" | "violet";
@@ -36,6 +40,43 @@ export interface TenantSettings {
     panel_layout: "horizontal" | "vertical";
     show_product_images: boolean;
 }
+
+// ★ v3.4.5: Elementos del canvas
+export type TicketElementType =
+    | "logo"        // imagen/logo
+    | "text"        // texto libre
+    | "block_info"  // ID/Fecha/Hora/Mesa
+    | "block_lines" // líneas de productos
+    | "block_totals"; // subtotal/IVA/total
+
+export interface TicketElement {
+    id: string;
+    type: TicketElementType;
+    x: number;       // % desde la izquierda (0-100)
+    y: number;       // % desde arriba (0-100)
+    w: number;       // % del ancho (0-100)
+    h: number;       // % del alto (0-100)
+    visible: boolean;
+    // Para type=text
+    content?: string;
+    fontSize?: number;
+    fontWeight?: number;
+    align?: "left" | "center" | "right";
+    // Para type=logo
+    src?: string;
+    // Para type=block_info
+    fields?: Array<"id" | "date" | "time" | "table" | "waiter" | "payment">;
+}
+
+// ★ Layout por defecto
+export const DEFAULT_TICKET_LAYOUT: TicketElement[] = [
+    { id: "logo-1",  type: "logo",        x: 35, y: 0,  w: 30, h: 14, visible: false, src: "" },
+    { id: "text-1",  type: "text",        x: 0,  y: 15, w: 100, h: 6, visible: true, content: "MI RESTAURANTE", fontSize: 13, fontWeight: 900, align: "center" },
+    { id: "info-1",  type: "block_info",  x: 0,  y: 23, w: 100, h: 16, visible: true, fields: ["id", "date", "time", "table", "waiter"] },
+    { id: "lines-1", type: "block_lines", x: 0,  y: 41, w: 100, h: 40, visible: true },
+    { id: "tot-1",   type: "block_totals",x: 0,  y: 84, w: 100, h: 9, visible: true },
+    { id: "foot-1",  type: "text",        x: 0,  y: 95, w: 100, h: 5, visible: true, content: "Gracias por su visita!", fontSize: 9, fontWeight: 700, align: "center" },
+];
 
 export const DEFAULT_TENANT_SETTINGS: TenantSettings = {
     ticket_paper_width: 58,
