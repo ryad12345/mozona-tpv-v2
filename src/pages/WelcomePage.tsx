@@ -200,15 +200,8 @@ export function WelcomePage() {
                 });
                 setError(null);
 
-                // ★ Si está aprobado, redirigir al login
-                const isApproved = ["active_trial", "active", "vip"].includes(
-                    t.activation_status || t.subscription_status
-                );
-                if (isApproved) {
-                    setTimeout(() => {
-                        navigate("/auth?approved=1&email=" + encodeURIComponent(userEmail), { replace: true });
-                    }, 2000);
-                }
+                // ★ v3.2.2: Ya NO redirigimos aquí. El useEffect
+                //   externo se encarga de la redirección (sin bucle).
             } else {
                 if (json.method === "no_config") {
                     setError("Configurando el sistema. Te avisaremos en breve.");
@@ -224,24 +217,47 @@ export function WelcomePage() {
             setError("Conexión inestable. Reintentando...");
             setLoading(false);
         }
-    }, [userEmail, userName, userPlan, navigate]);
+    }, [userEmail, userName, userPlan]);  // ★ Sin navigate: usamos navigateRef
+
+    // ★ v3.2.2: Polling SIN bucle infinito
+    //   ANTES: dependía de [fetchStatus, status], lo que causaba
+    //   bucle porque fetchStatus cambia status, que re-disparaba el efecto.
+    //   AHORA: solo depende de fetchStatus (estable), y usamos
+    //   un ref para leer el status actual sin causar re-render.
+    const statusRef = useRef<TenantStatus | null>(null);
+    statusRef.current = status;
+    const navigateRef = useRef(navigate);
+    navigateRef.current = navigate;
+    const redirectedRef = useRef(false);
 
     useEffect(() => {
-        fetchStatus();
-        const t = setInterval(() => {
-            // ★ Parar polling si ya está aprobado
-            if (status && ["active_trial", "active", "vip"].includes(status.activation_status || "")) {
+        // ★ Marca de redirección: solo una vez
+        if (redirectedRef.current) return;
+
+        const poll = () => {
+            // ★ Si ya está aprobado, parar
+            const s = statusRef.current;
+            if (s && ["active_trial", "active", "vip"].includes(s.activation_status || "")) {
+                if (!redirectedRef.current) {
+                    redirectedRef.current = true;
+                    setTimeout(() => {
+                        navigateRef.current("/auth?approved=1&email=" + encodeURIComponent(userEmail), { replace: true });
+                    }, 2000);
+                }
                 return;
             }
             fetchStatus();
-        }, 10_000);
-        const onFocus = () => fetchStatus();
+        };
+
+        poll(); // inicial
+        const t = setInterval(poll, 10_000);
+        const onFocus = () => poll();
         window.addEventListener("focus", onFocus);
         return () => {
             clearInterval(t);
             window.removeEventListener("focus", onFocus);
         };
-    }, [fetchStatus, status]);
+    }, [fetchStatus, userEmail]);
 
     // ★ Tick cada segundo para countdown
     useEffect(() => {
