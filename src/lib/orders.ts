@@ -207,13 +207,16 @@ export async function listOpenOrders(tenantId: string): Promise<OrderRow[]> {
 }
 
 /** Lista comandas de una mesa. */
-export async function listOrdersForTable(tableId: string): Promise<OrderRow[]> {
+export async function listOrdersForTable(tableId: string, tenantId?: string): Promise<OrderRow[]> {
     if (!isSupabaseConfigured || !tableId) return [];
-    const { data, error } = await supabase
+    // ★ v3.4.9: Filtrar también por tenant_id (defensa en profundidad)
+    let query = supabase
         .from("orders")
         .select("*")
         .eq("table_id", tableId)
         .order("created_at", { ascending: false });
+    if (tenantId) query = query.eq("tenant_id", tenantId);
+    const { data, error } = await query;
     if (error) {
         console.warn("[orders] listOrdersForTable error:", error.message);
         return [];

@@ -97,7 +97,13 @@ async function getFirstActiveTenant(): Promise<string | null> {
 export async function loadCategories(tenantId: string): Promise<Category[]> {
     if (!isSupabaseConfigured) return [];
     // ★ v1.9.2: NO usar is_active (puede no existir)
-    // 1) Con tenant
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id. RLS valida el acceso.
+    //   ELIMINADO el fallback que leía TODAS las categorías de TODOS los tenants
+    //   (cross-tenant contamination).
+    if (!tenantId) {
+        console.warn("[loadCategories] ⚠️ Sin tenant_id");
+        return [];
+    }
     const { data, error } = await supabase
         .from("categories")
         .select("*")
@@ -107,28 +113,8 @@ export async function loadCategories(tenantId: string): Promise<Category[]> {
         console.warn("[restaurantData] loadCategories error:", error.message);
         return [];
     }
-    if (data && data.length > 0) {
-        console.log("[loadCategories] ✓", data.length, "con tenant");
-        return data as Category[];
-    }
-    // 2) FALLBACK: leer TODAS las categorías
-    console.warn("[loadCategories] 0 con tenant, leyendo todas...");
-    const { data: allData } = await supabase
-        .from("categories")
-        .select("*")
-        .order("sort_order");
-    if (!allData) return [];
-    // Tenant dominante
-    const byTenant: Record<string, number> = {};
-    for (const c of allData) {
-        const k = String(c.tenant_id ?? "null");
-        byTenant[k] = (byTenant[k] ?? 0) + 1;
-    }
-    const dominant = Object.entries(byTenant).sort(([, a], [, b]) => b - a)[0]?.[0];
-    if (dominant && dominant !== "null") {
-        return allData.filter(c => String(c.tenant_id) === dominant) as Category[];
-    }
-    return allData as Category[];
+    console.log("[loadCategories] ✓", data?.length ?? 0, "del tenant", tenantId);
+    return (data ?? []) as Category[];
 }
 
 // ---------------------------------------------------------------------
@@ -155,7 +141,13 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
         category_id: p.category_id ?? null,
     });
 
-    // 1) Query con tenant_id
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id. RLS valida acceso.
+    //   ELIMINADO el fallback que leía TODOS los productos y usaba el
+    //   "tenant dominante" (cross-tenant contamination).
+    if (!tenantId) {
+        console.warn("[loadProducts] ⚠️ Sin tenant_id");
+        return [];
+    }
     const { data, error } = await supabase
         .from("products")
         .select("id, name, description, price, category, image_url, is_active, tenant_id, tax_rate, category_id, sort_order")
@@ -163,48 +155,10 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
         .order("name");
     if (error) {
         console.warn("[loadProducts] error con tenant:", error.message);
-    } else if (data && data.length > 0) {
-        console.log("[loadProducts] ✓", data.length, "productos con tenant", tenantId);
-        return data.map(mapProduct);
-    }
-
-    // 2) ★ FALLBACK: query sin filtro de tenant (is_active=true)
-    console.warn("[loadProducts] 0 productos con tenant, buscando en todos...");
-    const { data: allData, error: allErr } = await supabase
-        .from("products")
-        .select("id, name, description, price, category, image_url, is_active, tenant_id, tax_rate, category_id, sort_order")
-        .eq("is_active", true)
-        .order("name")
-        .limit(1000);
-    if (allErr) {
-        console.error("[loadProducts] error sin filtro:", allErr.message);
         return [];
     }
-    if (!allData || allData.length === 0) {
-        console.warn("[loadProducts] 0 productos en la BD");
-        return [];
-    }
-
-    // 3) Distribución por tenant_id
-    const byTenant: Record<string, number> = {};
-    for (const p of allData) {
-        const k = String(p.tenant_id ?? "null");
-        byTenant[k] = (byTenant[k] ?? 0) + 1;
-    }
-    console.log("[loadProducts] DISTRIBUCIÓN por tenant_id:", byTenant);
-
-    // 4) Usar el tenant DOMINANTE
-    const sortedTenants = Object.entries(byTenant).sort(([, a], [, b]) => b - a);
-    const dominantTenant = sortedTenants[0]?.[0];
-    if (dominantTenant && dominantTenant !== "null") {
-        const prods = allData
-            .filter(p => String(p.tenant_id) === dominantTenant)
-            .map(mapProduct);
-        console.log("[loadProducts] ✓ tenant dominante:", dominantTenant, "→", prods.length, "productos");
-        return prods;
-    }
-    console.log("[loadProducts] devolviendo todos sin tenant:", allData.length);
-    return allData.map(mapProduct);
+    console.log("[loadProducts] ✓", data?.length ?? 0, "del tenant", tenantId);
+    return (data ?? []).map(mapProduct);
 }
 
 // ---------------------------------------------------------------------
@@ -213,21 +167,12 @@ export async function loadProducts(tenantId: string): Promise<Product[]> {
 
 export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
     if (!isSupabaseConfigured) return [];
-    // ★ v1.9.8: Estrategia 0 - RPC get_dining_tables (SECURITY DEFINER)
-    //   Tabla REAL: public.dining_tables (NO public.tables)
-    //   Columnas: id, tenant_id, name ("S-1", "B-6"), zone, status
-    try {
-        const { data: rpcData, error: rpcErr } = await supabase
-            .rpc("get_dining_tables", { p_tenant_id: tenantId });
-        if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
-            console.log("[loadTables] ✓ via RPC", rpcData.length, "mesas");
-            return (rpcData as any[]).map((t, i) => mapTableRow(t, i));
-        }
-    } catch (e) {
-        console.warn("[loadTables] RPC no disponible:", e);
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id. RLS valida acceso.
+    //   ELIMINADO el fallback que leía TODAS las mesas.
+    if (!tenantId) {
+        console.warn("[loadTables] ⚠️ Sin tenant_id");
+        return [];
     }
-
-    // 1) SELECT directo con tenant
     let { data, error } = await supabase
         .from("dining_tables")
         .select("*")
@@ -238,23 +183,8 @@ export async function loadTables(tenantId: string): Promise<RestaurantTable[]> {
         console.warn("[restaurantData] loadTables error:", error.message);
         data = null;
     }
-    // 2) FALLBACK: si 0 con tenant, leer todas
-    if (!data || data.length === 0) {
-        console.warn("[loadTables] 0 con tenant, leyendo TODAS las mesas...");
-        const fb = await supabase
-            .from("dining_tables")
-            .select("*")
-            .order("zone", { ascending: true })
-            .order("name", { ascending: true })
-            .limit(50);
-        if (fb.error || !fb.data) {
-            console.warn("[loadTables] fallback también falló");
-            return [];
-        }
-        data = fb.data;
-    }
-    console.log("[loadTables] ✓", data.length, "mesas cargadas");
-    return data.map((t, i) => mapTableRow(t, i));
+    console.log("[loadTables] ✓", data?.length ?? 0, "mesas cargadas");
+    return (data ?? []).map((t, i) => mapTableRow(t, i));
 }
 
 /** Mapea una fila de dining_tables a RestaurantTable.

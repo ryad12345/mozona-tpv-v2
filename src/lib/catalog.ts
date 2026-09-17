@@ -51,41 +51,30 @@ export async function fetchCatalog(tenantId?: string | null): Promise<PosProduct
     }
     console.log("[fetchCatalog] 📡 Consultando Supabase EN VIVO... tenantId=", tenantId);
 
-    // 1) Consulta directa con tenant (si aplica)
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id (RLS se encarga de validar
+    //   que el usuario tiene acceso al tenant).
+    //   ELIMINADO el fallback que leía TODOS los productos de TODOS los tenants
+    //   (cross-tenant contamination).
     const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
-    let query = supabase
+    if (!useTenant) {
+        console.warn("[fetchCatalog] ⚠️ Sin tenant_id, no se puede consultar productos");
+        return [];
+    }
+
+    const { data, error } = await supabase
         .from("products")
         .select("id, name, description, price, category_id, category, category_name, image_url, is_active, tenant_id, tax_rate")
         .eq("is_active", true)
+        .eq("tenant_id", tenantId)
         .order("name", { ascending: true });
-    if (useTenant) {
-        query = query.eq("tenant_id", tenantId);
-    }
-
-    let { data, error } = await query;
 
     if (error) {
         console.error("[fetchCatalog] ❌ Error Supabase:", error.code, error.message);
-        data = null;
+        return [];
     }
 
-    // 2) Si la consulta con tenant da 0, leer TODOS los activos de la BD
-    if (!data || data.length === 0) {
-        console.warn("[fetchCatalog] 0 productos con tenant, leyendo TODOS los activos de la BD...");
-        const fallback = await supabase
-            .from("products")
-            .select("id, name, description, price, category_id, category, category_name, image_url, is_active, tenant_id, tax_rate")
-            .eq("is_active", true)
-            .order("name", { ascending: true });
-        if (fallback.error) {
-            console.error("[fetchCatalog] ❌ Error fallback:", fallback.error.message);
-            return [];
-        }
-        data = fallback.data ?? [];
-    }
-
-    console.log(`[fetchCatalog] ✓ Cargados ${data.length} productos en vivo desde Supabase`);
-    return data.map(normalizeProduct);
+    console.log(`[fetchCatalog] ✓ Cargados ${data?.length ?? 0} productos del tenant ${tenantId}`);
+    return (data ?? []).map(normalizeProduct);
 }
 
 function normalizeProduct(p: any): PosProduct {
@@ -118,43 +107,35 @@ export async function fetchCategories(tenantId?: string | null): Promise<PosCate
     }
     console.log("[fetchCategories] 📡 Consultando Supabase EN VIVO... tenantId=", tenantId);
 
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id (RLS valida acceso).
+    //   ELIMINADO el fallback que leía TODAS las categorías.
     const useTenant = tenantId && tenantId !== "vip-bypass" && tenantId !== "null" && tenantId !== "";
-    // ★ v1.9.2: NO filtrar por is_active (puede no existir en la tabla)
-    let query = supabase
+    if (!useTenant) {
+        console.warn("[fetchCategories] ⚠️ Sin tenant_id");
+        return [];
+    }
+
+    const { data, error } = await supabase
         .from("categories")
         .select("id, name, sort_order, tenant_id")
+        .eq("tenant_id", tenantId)
         .order("sort_order", { ascending: true });
-    if (useTenant) {
-        query = query.eq("tenant_id", tenantId);
-    }
-    let { data, error } = await query;
 
     if (error) {
         console.error("[fetchCategories] ❌ Error:", error.message);
         return [];
     }
 
-    // FALLBACK: si 0 con tenant, leer todas (sin filtro)
-    if (!data || data.length === 0) {
-        console.warn("[fetchCategories] 0 con tenant, leyendo TODAS...");
-        const fb = await supabase
-            .from("categories")
-            .select("id, name, sort_order, tenant_id")
-            .order("sort_order", { ascending: true });
-        if (fb.error || !fb.data) return [];
-        data = fb.data;
-    }
-
     // Ordenar por sort_order
-    data.sort((a: any, b: any) => {
+    (data ?? []).sort((a: any, b: any) => {
         const sa = Number(a.sort_order ?? 0);
         const sb = Number(b.sort_order ?? 0);
         if (sa !== sb) return sa - sb;
         return String(a.name).localeCompare(String(b.name));
     });
 
-    console.log(`[fetchCategories] ✓ Cargadas ${data.length} categorías en vivo`);
-    return data.map(normalizeCategory);
+    console.log(`[fetchCategories] ✓ Cargadas ${data?.length ?? 0} categorías del tenant ${tenantId}`);
+    return (data ?? []).map(normalizeCategory);
 }
 
 function normalizeCategory(c: any): PosCategory {

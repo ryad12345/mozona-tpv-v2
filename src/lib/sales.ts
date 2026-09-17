@@ -111,22 +111,26 @@ export async function listSales(
         endIso:     end,
     });
 
-    // 2) Query base ULTRA-DEFENSIVA
-    //    ★ SIEMPRE .gte() + .lte() para rangos cerrados
+    // ★ v3.4.9: SIEMPRE filtrar por tenant_id. RLS valida acceso.
+    //   ELIMINADO el fallback que leía TODOS los tickets de TODOS los tenants
+    //   (cross-tenant contamination).
+    const realId = await resolveRealTenantId(tenantId);
+    console.log("[listSales] tenant resuelto:", realId);
+    if (!realId) {
+        console.warn("[listSales] ⚠️ Sin tenant_id");
+        return [];
+    }
+
+    // 2) Query con tenant_id (SIEMPRE)
     let query = supabase
         .from("orders")
-        .select("id, total, created_at")
+        .select("id, total, created_at, tenant_id")
+        .eq("tenant_id", realId)
         .gte("created_at", start)
         .lte("created_at", end)
         .order("created_at", { ascending: false })
         .limit(1000);
 
-    // 3) ★ PRIMERA QUERY: con tenant_id resuelto (si lo hay)
-    const realId = await resolveRealTenantId(tenantId);
-    console.log("[listSales] tenant resuelto:", realId);
-
-    // ★★★ ESTRATEGIA 1: query mínima sin filtro de tenant ★★★
-    //    Pedimos solo 'id, total, created_at' (columnas que casi seguro existen)
     let allData: any[] | null = null;
     try {
         const { data, error } = await query;
@@ -134,18 +138,19 @@ export async function listSales(
             console.warn("[listSales] E1 error:", error.code, error.message, error.details, error.hint);
         } else if (data && data.length > 0) {
             allData = data;
-            console.log("[listSales] E1 ✓ cargados", data.length, "tickets (mínimas)");
+            console.log("[listSales] E1 ✓ cargados", data.length, "tickets del tenant", realId);
         }
     } catch (e) {
         console.warn("[listSales] E1 exception:", e);
     }
 
-    // ★★★ ESTRATEGIA 2: fallback a select(*) si E1 no devuelve nada ★★★
+    // ★★★ ESTRATEGIA 2: reintentar con select(*) si E1 falló ★★★
     if (!allData || allData.length === 0) {
         try {
             const { data, error } = await supabase
                 .from("orders")
                 .select("*")
+                .eq("tenant_id", realId)
                 .order("created_at", { ascending: false })
                 .limit(1000);
             if (error) {
