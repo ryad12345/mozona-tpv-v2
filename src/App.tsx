@@ -14,6 +14,7 @@ import { LandingPage } from "./pages/LandingPage";
 const PosTerminalPro  = lazy(() => import("./pages/PosTerminalPro").then(m => ({ default: m.PosTerminalPro })));
 const SettingsPage    = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const TenantSettingsPage = lazy(() => import("./pages/TenantSettingsPage").then(m => ({ default: m.TenantSettingsPage })));
+const AIStudioPage    = lazy(() => import("./pages/AIStudioPage").then(m => ({ default: m.AIStudioPage })));
 const RegisterPage    = lazy(() => import("./pages/RegisterPage").then(m => ({ default: m.RegisterPage })));
 const BillingSuccessPage = lazy(() => import("./pages/BillingSuccessPage").then(m => ({ default: m.BillingSuccessPage })));
 const BillingCancelPage  = lazy(() => import("./pages/BillingCancelPage").then(m => ({ default: m.BillingCancelPage })));
@@ -175,6 +176,8 @@ export function App() {
                                 <Route path="/settings" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cargando ajustes…" />}><SettingsPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />
                                 {/* ★ v3.4.0: Configuración personalizable por tenant (tema, ticket) */}
                                 <Route path="/tenant-settings" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando personalización…" />}><TenantSettingsPage /></Suspense></ProtectedRoute>} />
+                                {/* ★ v3.5.0: AI Studio (IA 100% local) */}
+                                <Route path="/ai-studio" element={<ProtectedRoute><Suspense fallback={<PageLoader label="Cargando AI Studio…" />}><AIStudioPage /></Suspense></ProtectedRoute>} />
 
                                 {/* Cierre de caja (arqueo / turnos) */}
                                 <Route path="/cash-register" element={<ProtectedRoute><SubscriptionGuard><DesktopGuard><Suspense fallback={<PageLoader label="Cierre de caja…" />}><CashRegisterPage /></Suspense></DesktopGuard></SubscriptionGuard></ProtectedRoute>} />

@@ -216,15 +216,26 @@ export function SettingsPage() {
                         <p className="text-[11px] text-slate-500">Empresa, menú, mesas, camareros, ticket</p>
                     </div>
                 </div>
-                {/* ★ v3.4.5: Acceso a Personalización (editor visual de tickets + temas) */}
-                <button
-                    type="button"
-                    onClick={() => navigate('/tenant-settings')}
-                    className="h-9 px-3.5 bg-gradient-to-r from-violet-600 to-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition"
-                    title="Editor visual de tickets, temas y estilos"
-                >
-                    🎨 Personalizar
-                </button>
+                <div className="flex gap-2">
+                    {/* ★ v3.5.0: AI Studio */}
+                    <button
+                        type="button"
+                        onClick={() => navigate('/ai-studio')}
+                        className="h-9 px-3.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition"
+                        title="IA local: facturas, voz, precios"
+                    >
+                        🤖 AI Studio
+                    </button>
+                    {/* ★ v3.4.5: Acceso a Personalización (editor visual de tickets + temas) */}
+                    <button
+                        type="button"
+                        onClick={() => navigate('/tenant-settings')}
+                        className="h-9 px-3.5 bg-gradient-to-r from-violet-600 to-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition"
+                        title="Editor visual de tickets, temas y estilos"
+                    >
+                        🎨 Personalizar
+                    </button>
+                </div>
             </div>
 
             {/* Tabs */}
