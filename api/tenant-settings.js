@@ -94,6 +94,7 @@ module.exports = async (req, res) => {
         // GET: leer settings
         // ════════════════════════════════════════════════════
         if (req.method === "GET") {
+            const VIP_EMAILS = ["chalohiahmd1980@gmail.com"];
             // Resolver tenantId si solo tenemos email
             let targetTenantId = tenantId;
             if (!targetTenantId && email) {
@@ -117,6 +118,22 @@ module.exports = async (req, res) => {
                                     const arr = await tr.json();
                                     if (arr?.[0]) targetTenantId = arr[0].id;
                                 }
+
+                                // ★ v3.4.12: Si es VIP y aún no tiene tenant,
+                                //   asignarle el primer tenant activo automaticamente.
+                                if (!targetTenantId && VIP_EMAILS.includes(email.toLowerCase())) {
+                                    console.log(`[tenant-settings] VIP ${email} sin tenant, asignando primer tenant activo`);
+                                    const first = await fetchWithTimeout(
+                                        `${supabaseUrl}/rest/v1/tenants?order=created_at.asc&select=id&limit=1`,
+                                        { headers }, 10000
+                                    );
+                                    if (first.ok) {
+                                        const arr = await first.json();
+                                        if (arr?.[0]) {
+                                            targetTenantId = arr[0].id;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -125,7 +142,7 @@ module.exports = async (req, res) => {
 
             if (!targetTenantId) {
                 // Devolver defaults si no hay tenant
-                return safeJson(200, { ok: true, settings: DEFAULT_SETTINGS, method: "default" });
+                return safeJson(200, { ok: true, settings: DEFAULT_SETTINGS, method: "default", tenant_id: null });
             }
 
             try {
@@ -136,12 +153,12 @@ module.exports = async (req, res) => {
                 if (r.ok) {
                     const arr = await r.json();
                     if (arr && arr[0]) {
-                        return safeJson(200, { ok: true, settings: arr[0], method: "db" });
+                        return safeJson(200, { ok: true, settings: arr[0], method: "db", tenant_id: targetTenantId });
                     }
-                    return safeJson(200, { ok: true, settings: DEFAULT_SETTINGS, method: "default" });
+                    return safeJson(200, { ok: true, settings: { ...DEFAULT_SETTINGS, tenant_id: targetTenantId }, method: "default", tenant_id: targetTenantId });
                 }
             } catch (_) {}
-            return safeJson(200, { ok: true, settings: DEFAULT_SETTINGS, method: "default" });
+            return safeJson(200, { ok: true, settings: { ...DEFAULT_SETTINGS, tenant_id: targetTenantId }, method: "default", tenant_id: targetTenantId });
         }
 
         // ════════════════════════════════════════════════════
