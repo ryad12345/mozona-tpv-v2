@@ -101,13 +101,16 @@ export function OnboardingWizardPage() {
                 .from("tenants")
                 .update(allPatch)
                 .eq("id", auth.tenant.id);
-            // Si falla por columna inexistente, ir retirando columnas opcionales
-            if (e1 && /column.*does not exist/i.test(e1.message)) {
-                console.warn("[Onboarding] reintento sin default_iva:", e1.message);
+            // ★ v3.4.8: Capturar más variaciones de errores de columna faltante
+            //   - "column ... does not exist" (Postgres)
+            //   - "Could not find the 'X' column of 'Y' in the schema cache" (PostgREST)
+            const columnMissing = !!e1 && /column.*does not exist|could not find the.*column|schema cache/i.test(e1.message);
+            if (columnMissing) {
+                console.warn("[Onboarding] columna default_iva no existe, reintento sin ella:", e1?.message);
                 const { default_iva, ...rest } = allPatch as any;
                 const r2 = await supabase.from("tenants").update(rest).eq("id", auth.tenant.id);
                 e1 = r2.error;
-                if (e1 && /column.*does not exist/i.test(e1.message)) {
+                if (e1 && columnMissing) {
                     console.warn("[Onboarding] reintento mínimo:", e1.message);
                     const minimal = {
                         name:                 form.name.trim(),
