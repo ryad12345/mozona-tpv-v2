@@ -162,42 +162,63 @@ export function AuthProvider({ children }: AuthProviderProps) {
         //   Antes el AuthContext solo tenía user/session, lo que causaba
         //   que AuthPage mostrara la pantalla de "Esperando activación"
         //   aunque el tenant ya estuviera aprobado en BD.
+        //
+        // ★ v3.4.11: Usa el endpoint server-side /api/tenant-settings que
+        //   ya usa SERVICE_ROLE_KEY (bypass RLS). Esto es crítico para VIPs
+        //   y casos donde el RLS estricto bloquea la query directa.
         const fetchTenant = async (userId: string, email: string) => {
             if (!isSupabaseConfigured) return;
-            const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-            const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
-            if (!url || !key) return;
             try {
-                // Query 1: por owner_id (más fiable)
-                let r = await fetch(
-                    `${url}/rest/v1/tenants?owner_id=eq.${userId}&select=*&limit=1`,
-                    {
-                        headers: {
-                            apikey: key,
-                            Authorization: `Bearer ${key}`,
-                        },
-                    }
-                );
-                if (r.ok) {
-                    const arr = await r.json();
-                    if (arr && arr[0]) {
-                        if (mounted) setTenant(arr[0]);
-                        return;
+                // 1) Endpoint server-side (SERVICE_ROLE bypasa RLS)
+                const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(email)}`);
+                const json = await r.json();
+                if (json && json.ok && json.settings && json.settings.tenant_id) {
+                    // Devolvió un tenant_id real → consultar el tenant directamente
+                    const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+                    const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+                    if (url && key) {
+                        const tr = await fetch(
+                            `${url}/rest/v1/tenants?id=eq.${json.settings.tenant_id}&select=*&limit=1`,
+                            {
+                                headers: {
+                                    apikey: key,
+                                    Authorization: `Bearer ${key}`,
+                                },
+                            }
+                        );
+                        if (tr.ok) {
+                            const arr = await tr.json();
+                            if (arr && arr[0] && mounted) {
+                                setTenant(arr[0]);
+                                return;
+                            }
+                        }
                     }
                 }
-                // Query 2: por contact_email (fallback)
-                r = await fetch(
-                    `${url}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
-                    {
-                        headers: {
-                            apikey: key,
-                            Authorization: `Bearer ${key}`,
-                        },
+                // 2) Fallback al query directo por owner_id (caso normal)
+                const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+                const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+                if (url && key) {
+                    let r2 = await fetch(
+                        `${url}/rest/v1/tenants?owner_id=eq.${userId}&select=*&limit=1`,
+                        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+                    );
+                    if (r2.ok) {
+                        const arr = await r2.json();
+                        if (arr && arr[0] && mounted) {
+                            setTenant(arr[0]);
+                            return;
+                        }
                     }
-                );
-                if (r.ok) {
-                    const arr = await r.json();
-                    if (arr && arr[0] && mounted) setTenant(arr[0]);
+                    // 3) Fallback por contact_email
+                    r2 = await fetch(
+                        `${url}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
+                        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+                    );
+                    if (r2.ok) {
+                        const arr = await r2.json();
+                        if (arr && arr[0] && mounted) setTenant(arr[0]);
+                    }
                 }
             } catch (e) {
                 console.warn("[AuthContext] fetchTenant error:", e);
@@ -440,20 +461,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setUser(u);
                 setSession(s);
                 saveToStorage(u, s);
-                // ★ v3.4.7: Recargar tenant también
+                // ★ v3.4.11: Recargar tenant también vía endpoint server-side
                 try {
-                    const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-                    const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
-                    if (url && key) {
-                        const r = await fetch(
-                            `${url}/rest/v1/tenants?owner_id=eq.${u.id}&select=*&limit=1`,
-                            {
-                                headers: { apikey: key, Authorization: `Bearer ${key}` },
+                    if (u.email) {
+                        const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(u.email)}`);
+                        const json = await r.json();
+                        if (json && json.ok && json.settings && json.settings.tenant_id) {
+                            const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+                            const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+                            if (url && key) {
+                                const tr = await fetch(
+                                    `${url}/rest/v1/tenants?id=eq.${json.settings.tenant_id}&select=*&limit=1`,
+                                    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+                                );
+                                if (tr.ok) {
+                                    const arr = await tr.json();
+                                    if (arr && arr[0]) setTenant(arr[0]);
+                                }
                             }
-                        );
-                        if (r.ok) {
-                            const arr = await r.json();
-                            if (arr && arr[0]) setTenant(arr[0]);
                         }
                     }
                 } catch (_) {}
@@ -523,7 +548,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isSuperAdmin: isSuperAdminEmail(user?.email),
         status: loading ? "loading" : (user ? "authenticated" : "unauthenticated"),
         // ★ v3.4.7: tenant REAL desde Supabase (o sintético para VIP)
-        tenant: isVipOrAdmin(user?.email)
+        // ★ v3.4.11: Priorizar SIEMPRE el tenant REAL cargado de BD
+        //   (incluso para VIPs). Si por algún motivo BD no devuelve nada,
+        //   mantener el bypass sintético para que no se rompa el flujo.
+        tenant: (isVipOrAdmin(user?.email) && !tenant)
             ? {
                 id: "vip-bypass",
                 name: "VIP Bypass",
