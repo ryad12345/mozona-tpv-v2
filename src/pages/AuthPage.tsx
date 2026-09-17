@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSupabaseConfigured, isSuperAdmin, supabase } from "../lib/supabase";
+import { isVipOrAdmin } from "../lib/vip";
 import { IconShield, IconLock, IconArrowRight, IconSparkles } from "../components/icons";
 import { Logo } from "../components/Logo";
 import { useRateLimit } from "../hooks/useRateLimit";
@@ -52,17 +53,24 @@ export function AuthPage() {
                 nav("/app", { replace: true });
                 return;
             }
-            // ★ v3.4.4: Sin tenant pero logueado.
+            // ★ v3.4.13: VIP no debe quedarse en "esperando activación".
+            //   El endpoint /api/tenant-settings le asigna tenant automáticamente,
+            //   pero si por algún motivo el AuthContext aún no lo tiene, lo
+            //   forzamos a /app (que tiene su propio bypass VIP).
+            if (isVipOrAdmin(auth.user.email)) {
+                nav("/app", { replace: true });
+                return;
+            }
+            // ★ v3.4.4: Sin tenant pero logueado (usuario normal).
             //   NO redirigimos a /welcome porque WelcomePage detecta status
             //   aprobado y vuelve a mandarnos aquí → BUCLE INFINITO.
             //   En su lugar, mostramos un mensaje claro y dejamos
             //   al usuario decidir (cerrar sesión, contactar admin, etc).
-            //   El componente de "esperando activación" se renderiza más abajo.
         }
-    }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, nav]);
+    }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, auth.user?.email, nav]);
 
-    // ★ v3.4.4: Si user logueado sin tenant, mostrar UI de "esperando"
-    const waitingForTenant = auth.isReady && !!auth.user && !auth.tenant;
+    // ★ v3.4.13: VIP NO se queda en "esperando activación"
+    const waitingForTenant = auth.isReady && !!auth.user && !auth.tenant && !isVipOrAdmin(auth.user.email);
 
     const handleLogin = async () => {
         setMsg(null);

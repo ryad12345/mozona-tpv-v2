@@ -96,26 +96,50 @@ export function usePosData(): PosDataState {
                     if (waiterTenantId) {
                         data = await loadRestaurantData(waiterTenantId);
                     } else if (auth.isSuperAdmin || auth.user) {
-                        // ★ VIP / SuperAdmin: usar el primer tenant activo
-                        //    que encontremos, o el del owner = current user
-                        data = await loadRestaurantData();
-                        if (!data.restaurant) {
-                            // Sin tenant del user → buscar el primer tenant
-                            // activo (caso típico del SuperAdmin)
+                        // ★ v3.4.13: Para VIP / SuperAdmin, si el AuthContext
+                        //   YA cargó el tenant real (vía /api/tenant-settings),
+                        //   usarlo directamente. Si no, hacer fallback server-side.
+                        const realId = (auth.tenant && auth.tenant.id && auth.tenant.id !== "vip-bypass")
+                            ? auth.tenant.id
+                            : null;
+
+                        if (realId) {
+                            data = await loadRestaurantData(realId);
+                            console.log("[usePosData] ✓ Cargado desde tenant real", realId);
+                        } else {
+                            // Sin tenant real → cargar vía endpoint server-side
+                            // (bypasa RLS con SERVICE_ROLE)
                             try {
-                                const sb = (await import("../lib/supabase")).supabase;
-                                const { data: firstTenant } = await sb
-                                    .from("tenants")
-                                    .select("*")
-                                    .eq("subscription_status", "active")
-                                    .order("created_at", { ascending: true })
-                                    .limit(1)
-                                    .maybeSingle();
-                                if (firstTenant) {
-                                    data = await loadRestaurantData(firstTenant.id);
+                                const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(auth.user?.email || "")}`);
+                                const json = await r.json();
+                                if (json && json.ok && json.tenant_id) {
+                                    data = await loadRestaurantData(json.tenant_id);
+                                    console.log("[usePosData] ✓ Cargado vía endpoint server-side, tenant=", json.tenant_id);
                                 }
                             } catch (e) {
-                                console.warn("[usePosData] VIP fallback tenant lookup:", e);
+                                console.warn("[usePosData] Server-side resolve failed:", e);
+                            }
+                        }
+
+                        if (!data || !data.restaurant) {
+                            // Fallback extremo: primer tenant activo vía cliente
+                            // (puede fallar por RLS pero es seguro intentarlo)
+                            data = await loadRestaurantData();
+                            if (!data.restaurant) {
+                                try {
+                                    const sb = (await import("../lib/supabase")).supabase;
+                                    const { data: firstTenant } = await sb
+                                        .from("tenants")
+                                        .select("*")
+                                        .order("created_at", { ascending: true })
+                                        .limit(1)
+                                        .maybeSingle();
+                                    if (firstTenant) {
+                                        data = await loadRestaurantData(firstTenant.id);
+                                    }
+                                } catch (e) {
+                                    console.warn("[usePosData] VIP fallback tenant lookup:", e);
+                                }
                             }
                         }
                     } else {

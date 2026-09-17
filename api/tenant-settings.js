@@ -97,6 +97,7 @@ module.exports = async (req, res) => {
             const VIP_EMAILS = ["chalohiahmd1980@gmail.com"];
             // Resolver tenantId si solo tenemos email
             let targetTenantId = tenantId;
+            let resolvedUserId = null;
             if (!targetTenantId && email) {
                 try {
                     const r = await fetchWithTimeout(
@@ -109,6 +110,7 @@ module.exports = async (req, res) => {
                         if (Array.isArray(users)) {
                             const u = users.find(u => (u.email || "").toLowerCase() === email);
                             if (u) {
+                                resolvedUserId = u.id;
                                 // Buscar tenant por owner_id
                                 const tr = await fetchWithTimeout(
                                     `${supabaseUrl}/rest/v1/tenants?owner_id=eq.${u.id}&select=id&limit=1`,
@@ -119,18 +121,67 @@ module.exports = async (req, res) => {
                                     if (arr?.[0]) targetTenantId = arr[0].id;
                                 }
 
-                                // ★ v3.4.12: Si es VIP y aún no tiene tenant,
-                                //   asignarle el primer tenant activo automaticamente.
-                                if (!targetTenantId && VIP_EMAILS.includes(email.toLowerCase())) {
-                                    console.log(`[tenant-settings] VIP ${email} sin tenant, asignando primer tenant activo`);
+                                // ★ v3.4.13: AUTO-ASSIGN transparente para VIPs sin tenant
+                                if (!targetTenantId && VIP_EMAILS.includes(email.toLowerCase()) && resolvedUserId) {
+                                    console.log(`[tenant-settings] VIP ${email} sin tenant, auto-asignando primer tenant activo`);
+                                    // 1) Buscar el primer tenant activo
                                     const first = await fetchWithTimeout(
-                                        `${supabaseUrl}/rest/v1/tenants?order=created_at.asc&select=id&limit=1`,
+                                        `${supabaseUrl}/rest/v1/tenants?order=created_at.asc&select=id,owner_id,activation_status&limit=1`,
                                         { headers }, 10000
                                     );
+                                    let candidateId = null;
+                                    let prevOwner = null;
                                     if (first.ok) {
                                         const arr = await first.json();
                                         if (arr?.[0]) {
-                                            targetTenantId = arr[0].id;
+                                            candidateId = arr[0].id;
+                                            prevOwner = arr[0].owner_id;
+                                        }
+                                    }
+                                    if (candidateId) {
+                                        // 2) Asignar el VIP como owner del tenant (UPDATE atomico)
+                                        const upd = await fetchWithTimeout(
+                                            `${supabaseUrl}/rest/v1/tenants?id=eq.${candidateId}`,
+                                            {
+                                                method: "PATCH",
+                                                headers,
+                                                body: JSON.stringify({ owner_id: resolvedUserId }),
+                                            },
+                                            10000
+                                        );
+                                        if (upd.ok) {
+                                            targetTenantId = candidateId;
+                                            console.log(`[tenant-settings] ✓ VIP ${email} ahora owner del tenant ${targetTenantId}`);
+                                        } else {
+                                            let errText = "";
+                                            try { errText = await upd.text(); } catch (_) {}
+                                            console.error(`[tenant-settings] ✗ UPDATE tenant falló: ${errText.slice(0, 200)}`);
+                                        }
+                                    } else {
+                                        // ★ Fallback extremo: crear tenant nuevo para el VIP
+                                        console.log(`[tenant-settings] Creando tenant nuevo para VIP ${email}`);
+                                        const create = await fetchWithTimeout(
+                                            `${supabaseUrl}/rest/v1/tenants`,
+                                            {
+                                                method: "POST",
+                                                headers,
+                                                body: JSON.stringify({
+                                                    owner_id: resolvedUserId,
+                                                    name: email.split("@")[0],
+                                                    slug: email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "-"),
+                                                    contact_email: email,
+                                                    subscription_status: "active",
+                                                    activation_status: "active",
+                                                    plan: "lifetime_vip",
+                                                    onboarding_completed: true,
+                                                }),
+                                            },
+                                            10000
+                                        );
+                                        if (create.ok) {
+                                            const arr = await create.json();
+                                            if (arr?.[0]) targetTenantId = arr[0].id;
+                                            console.log(`[tenant-settings] ✓ Tenant nuevo creado: ${targetTenantId}`);
                                         }
                                     }
                                 }
@@ -155,9 +206,33 @@ module.exports = async (req, res) => {
                     if (arr && arr[0]) {
                         return safeJson(200, { ok: true, settings: arr[0], method: "db", tenant_id: targetTenantId });
                     }
-                    return safeJson(200, { ok: true, settings: { ...DEFAULT_SETTINGS, tenant_id: targetTenantId }, method: "default", tenant_id: targetTenantId });
                 }
             } catch (_) {}
+
+            // ★ v3.4.13: Si el tenant no tiene fila en tenant_settings, crearla
+            //   (caso del VIP que acabamos de auto-asignar)
+            try {
+                const newSettings = {
+                    ...DEFAULT_SETTINGS,
+                    tenant_id: targetTenantId,
+                };
+                const create = await fetchWithTimeout(
+                    `${supabaseUrl}/rest/v1/tenant_settings`,
+                    {
+                        method: "POST",
+                        headers: { ...headers, Prefer: "resolution=ignore-duplicates,return=representation" },
+                        body: JSON.stringify(newSettings),
+                    },
+                    10000
+                );
+                if (create.ok) {
+                    const arr = await create.json();
+                    if (arr && arr[0]) {
+                        return safeJson(200, { ok: true, settings: arr[0], method: "db_new", tenant_id: targetTenantId });
+                    }
+                }
+            } catch (_) {}
+
             return safeJson(200, { ok: true, settings: { ...DEFAULT_SETTINGS, tenant_id: targetTenantId }, method: "default", tenant_id: targetTenantId });
         }
 

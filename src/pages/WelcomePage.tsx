@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useActiveSession } from "../hooks/useActiveSession";
+import { isVipOrAdmin } from "../lib/vip";
 import { IconShield, IconLock, IconUser, IconCheck, IconArrowRight } from "../components/icons";
 
 interface TenantStatus {
@@ -42,11 +43,19 @@ export function WelcomePage() {
     const session = useActiveSession();
 
     // ★ Si no hay sesión activa, redirigir a /auth
+    // ★ v3.4.13: VIP logueado NUNCA debe pasar por aquí. Va directo a /app.
     useEffect(() => {
-        if (session.isReady && !session.isAuthenticated) {
+        if (!session.isReady) return;
+        if (!session.isAuthenticated) {
             navigate("/auth", { replace: true });
+            return;
         }
-    }, [session.isReady, session.isAuthenticated, navigate]);
+        // VIP con sesión → directo al TPV (sin polling, sin UI de sala de espera)
+        if (session.email && isVipOrAdmin(session.email)) {
+            console.log("[Welcome] VIP detectado, redirigiendo a /app sin polling");
+            navigate("/app", { replace: true });
+        }
+    }, [session.isReady, session.isAuthenticated, session.email, navigate]);
 
     const [status, setStatus] = useState<TenantStatus | null>(null);
     const [now, setNow] = useState(Date.now());
