@@ -161,8 +161,18 @@ export function AuthPage() {
         );
     }
 
-    // ★ v3.4.4: User logueado pero sin tenant → mostrar UI de espera
-    //   NO redirigir a /welcome (causa bucle con auto-redirect de aprobación)
+    // ★ v3.4.7: User logueado pero sin tenant.
+    //   Si viene de /welcome?approved=1, hacer polling automático cada 3s
+    //   hasta que AuthContext cargue el tenant y se pueda redirigir a /app.
+    useEffect(() => {
+        if (!waitingForTenant || !justApproved) return;
+        const interval = setInterval(() => {
+            if (auth.refresh) auth.refresh();
+        }, 3000);
+        const timeout = setTimeout(() => clearInterval(interval), 30000);
+        return () => { clearInterval(interval); clearTimeout(timeout); };
+    }, [waitingForTenant, justApproved, auth]);
+
     if (waitingForTenant) {
         return (
             <AuthShell justApproved={justApproved}>
@@ -186,7 +196,7 @@ export function AuthPage() {
                     </div>
                     <div className="mt-4 flex flex-col gap-2">
                         <button
-                            onClick={() => window.location.reload()}
+                            onClick={() => { if (auth.refresh) auth.refresh(); }}
                             className="h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-black"
                         >
                             🔄 Reintentar

@@ -151,11 +151,58 @@ export interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser]       = useState<AuthUser | null>(null);
     const [session, setSession] = useState<AuthSession | null>(null);
+    const [tenant, setTenant]   = useState<any | null>(null);  // ★ v3.4.7
     const [loading, setLoading] = useState<boolean>(true);
 
     // Carga inicial: cache local + verificación con Supabase
     useEffect(() => {
         let mounted = true;
+
+        // ★ v3.4.7: Cargar el tenant REAL desde Supabase
+        //   Antes el AuthContext solo tenía user/session, lo que causaba
+        //   que AuthPage mostrara la pantalla de "Esperando activación"
+        //   aunque el tenant ya estuviera aprobado en BD.
+        const fetchTenant = async (userId: string, email: string) => {
+            if (!isSupabaseConfigured) return;
+            const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+            const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+            if (!url || !key) return;
+            try {
+                // Query 1: por owner_id (más fiable)
+                let r = await fetch(
+                    `${url}/rest/v1/tenants?owner_id=eq.${userId}&select=*&limit=1`,
+                    {
+                        headers: {
+                            apikey: key,
+                            Authorization: `Bearer ${key}`,
+                        },
+                    }
+                );
+                if (r.ok) {
+                    const arr = await r.json();
+                    if (arr && arr[0]) {
+                        if (mounted) setTenant(arr[0]);
+                        return;
+                    }
+                }
+                // Query 2: por contact_email (fallback)
+                r = await fetch(
+                    `${url}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
+                    {
+                        headers: {
+                            apikey: key,
+                            Authorization: `Bearer ${key}`,
+                        },
+                    }
+                );
+                if (r.ok) {
+                    const arr = await r.json();
+                    if (arr && arr[0] && mounted) setTenant(arr[0]);
+                }
+            } catch (e) {
+                console.warn("[AuthContext] fetchTenant error:", e);
+            }
+        };
 
         const init = async () => {
             // 1) Hidratar desde localStorage (rápido)
@@ -163,6 +210,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (cached && mounted) {
                 setUser(cached.user);
                 setSession(cached.session);
+                if (cached.user) {
+                    fetchTenant(cached.user.id, cached.user.email);
+                }
             }
 
             // 2) Verificar con Supabase si está configurado
@@ -178,10 +228,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         setUser(u);
                         setSession(s);
                         saveToStorage(u, s);
+                        // ★ Cargar tenant para el usuario activo
+                        fetchTenant(u.id, u.email);
                     } else if (cached) {
                         // Supabase dice que no hay sesión pero teníamos cache
                         setUser(null);
                         setSession(null);
+                        setTenant(null);
                         saveToStorage(null, null);
                     }
                 } catch (e) {
@@ -203,9 +256,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     setUser(u);
                     setSession(s);
                     saveToStorage(u, s);
+                    // ★ Cargar tenant tras cambio de sesión
+                    fetchTenant(u.id, u.email);
                 } else {
                     setUser(null);
                     setSession(null);
+                    setTenant(null);
                     saveToStorage(null, null);
                 }
             });
@@ -384,6 +440,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setUser(u);
                 setSession(s);
                 saveToStorage(u, s);
+                // ★ v3.4.7: Recargar tenant también
+                try {
+                    const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+                    const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+                    if (url && key) {
+                        const r = await fetch(
+                            `${url}/rest/v1/tenants?owner_id=eq.${u.id}&select=*&limit=1`,
+                            {
+                                headers: { apikey: key, Authorization: `Bearer ${key}` },
+                            }
+                        );
+                        if (r.ok) {
+                            const arr = await r.json();
+                            if (arr && arr[0]) setTenant(arr[0]);
+                        }
+                    }
+                } catch (_) {}
             }
         } catch (e) {
             console.warn("[AuthContext] refresh error:", e);
@@ -449,9 +522,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isReady: !loading,
         isSuperAdmin: isSuperAdminEmail(user?.email),
         status: loading ? "loading" : (user ? "authenticated" : "unauthenticated"),
+        // ★ v3.4.7: tenant REAL desde Supabase (o sintético para VIP)
         tenant: isVipOrAdmin(user?.email)
-            // VIP: tenant sintético para que cualquier guard que
-            // mire `auth.tenant` no lo mande a /pricing
             ? {
                 id: "vip-bypass",
                 name: "VIP Bypass",
@@ -461,12 +533,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 onboarding_completed: true,
                 created_at: new Date().toISOString(),
             }
-            : null,
+            : tenant,
         tenantRole: isVipOrAdmin(user?.email) ? "owner" : null,
         profile: user,
         refresh, createTenant, redeemInvite, signInWithGoogle,
         signIn, signInWithPassword, signOut, logout, signUp,
-    }), [user, session, loading, signIn, signUp, signOut, refresh,
+    }), [user, session, tenant, loading, signIn, signUp, signOut, refresh,
          createTenant, redeemInvite, signInWithGoogle]);
 
     return (
