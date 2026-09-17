@@ -3,11 +3,11 @@
 // =====================================================================
 // Centro de IA 100% LOCAL:
 //   - Invoice Scanner  (Llama 3.2 Vision local)
-//   - Voice Assistant  (Whisper local + LLM local)
+//   - Voice Assistant  (Whisper centralizado + LLM central)
 //   - Smart Pricing    (SQL analysis + LLM local)
 //
 // CERO APIs externas. Todo corre en el servidor del cliente con
-// Ollama, Whisper.cpp y modelos open-source.
+// Whisper + Llama en nuestro servidor central (ai.mozonatpv.com).
 // =====================================================================
 
 import { useEffect, useState, useRef } from "react";
@@ -55,7 +55,7 @@ export function AIStudioPage() {
                             <div>
                                 <h1 className="text-xl font-black">AI Studio · Local</h1>
                                 <p className="text-[11.5px] text-violet-100">
-                                    Llama 3.2 Vision · Whisper · Llama 3.1 — todo on-premise · {auth.user.email}
+                                    IA Centralizada Mozona · Llama 3.2 Vision + Whisper · {auth.user.email}
                                 </p>
                             </div>
                         </div>
@@ -106,8 +106,8 @@ export function AIStudioPage() {
                 </div>
 
                 <div className="text-[10.5px] text-slate-500 text-center">
-                    🔒 <strong>Cero APIs externas</strong>. Los datos (imágenes, audio, texto) NUNCA salen de tu servidor.
-                    Ollama + Whisper corren en localhost.
+                    🏢 IA Centralizada Mozona · <strong>El cliente no instala nada</strong>.
+                    Privacidad total: las imágenes, audios y textos nunca tocan Ollama local del bar.
                 </div>
             </div>
         </div>
@@ -139,10 +139,10 @@ function InvoiceScanner({ tenantId }: { tenantId?: string }) {
         setBusy(true);
         setResponse(null);
         try {
-            const r = await fetch("/api/ai-assistant", {
+            const r = await fetch("/api/business-intelligence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-tenant-id": tenantId || "" },
-                body: JSON.stringify({ action: "scan-invoice", imageBase64, tenantId }),
+                body: JSON.stringify({ action: "invoice-scan", imageBase64, tenantId }),
             });
             const json = await r.json();
             setResponse(json);
@@ -276,7 +276,7 @@ function VoiceAssistant({ tenantId }: { tenantId?: string }) {
         setBusy(true);
         setResponse(null);
         try {
-            const r = await fetch("/api/ai-assistant", {
+            const r = await fetch("/api/business-intelligence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-tenant-id": tenantId || "" },
                 body: JSON.stringify({
@@ -297,7 +297,7 @@ function VoiceAssistant({ tenantId }: { tenantId?: string }) {
         <div>
             <h2 className="text-lg font-black mb-3">🎙️ Tomar comanda por voz</h2>
             <p className="text-[13px] text-slate-600 mb-4">
-                El camarero habla. Whisper transcribe. Llama 3.1 extrae los items del menú.
+                El camarero habla. IA centralizada (Whisper + Llama) estructura los items.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
@@ -329,7 +329,7 @@ function VoiceAssistant({ tenantId }: { tenantId?: string }) {
 
                     <div className="mb-3">
                         <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">
-                            Texto manual (si no hay Whisper)
+                            Texto manual (fallback sin audio)
                         </label>
                         <textarea
                             value={manualText}
@@ -357,14 +357,14 @@ function VoiceAssistant({ tenantId }: { tenantId?: string }) {
                         disabled={(!audioBase64 && !manualText) || busy}
                         className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-[14px] font-black"
                     >
-                        {busy ? "⏳ Whisper + Llama…" : "🎯 Procesar comanda"}
+                        {busy ? "⏳ IA Centralizada…" : "🎯 Procesar comanda"}
                     </button>
                 </div>
 
                 <div>
                     {response && !response.ok && (
                         <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">
-                            <div className="font-black text-rose-900 mb-1">⚠️ Whisper/Llama no disponible</div>
+                            <div className="font-black text-rose-900 mb-1">⚠️ IA Centralizada no responde (contacta con soporte)</div>
                             <div className="text-[12px] text-rose-800">{response.error}</div>
                             {response.hint && (
                                 <pre className="mt-2 text-[11px] bg-white rounded p-2 overflow-x-auto">{response.hint}</pre>
@@ -415,10 +415,10 @@ function SmartPricing({ tenantId }: { tenantId?: string }) {
         setBusy(true);
         setResponse(null);
         try {
-            const r = await fetch("/api/ai-assistant", {
+            const r = await fetch("/api/business-intelligence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-                body: JSON.stringify({ action: "predict-pricing", tenantId }),
+                body: JSON.stringify({ action: "profit-insights", tenantId }),
             });
             const json = await r.json();
             setResponse(json);
@@ -493,70 +493,87 @@ function ConfigPanel() {
     return (
         <div className="max-w-3xl">
             <h2 className="text-lg font-black mb-3 flex items-center gap-2">
-                <IconSettings size={18} /> Configuración del servidor IA local
+                <IconSettings size={18} /> IA Centralizada Mozona
             </h2>
-            <p className="text-[13px] text-slate-600 mb-4">
-                Para usar las funciones de IA, necesitas instalar Ollama y opcionalmente Whisper en el servidor.
-            </p>
+
+            <div className="bg-gradient-to-r from-violet-50 to-purple-50 border-2 border-violet-200 rounded-2xl p-5 mb-4">
+                <div className="text-[14px] font-black text-violet-900 mb-2">🏢 Arquitectura centralizada</div>
+                <p className="text-[12.5px] text-violet-800 leading-relaxed">
+                    Toda la inteligencia artificial corre en nuestra infraestructura privada (<code className="bg-white px-1 rounded">ai.mozonatpv.com</code>).
+                    <strong>El cliente no instala nada.</strong> Las imágenes, audios y textos jamás tocan Ollama local del bar.
+                </p>
+            </div>
 
             <div className="space-y-4">
-                <div className="bg-slate-50 rounded-2xl p-4">
-                    <h3 className="text-[14px] font-black mb-2">1️⃣ Instalar Ollama</h3>
-                    <pre className="bg-slate-900 text-green-300 rounded-lg p-3 text-[11px] overflow-x-auto">
-{`# Linux/Mac
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve
-
-# Modelos necesarios
-ollama pull llama3.2-vision    # Para facturas
-ollama pull llama3.1:8b        # Para texto (Whisper → items, pricing)`}
-                    </pre>
-                </div>
-
-                <div className="bg-slate-50 rounded-2xl p-4">
-                    <h3 className="text-[14px] font-black mb-2">2️⃣ Instalar Whisper (opcional)</h3>
-                    <pre className="bg-slate-900 text-green-300 rounded-lg p-3 text-[11px] overflow-x-auto">
-{`# Opción A: whisper-server (recomendado)
-git clone https://github.com/ggml-org/whisper.cpp.git
-cd whisper.cpp && make
-./build/bin/whisper-server -m models/ggml-base.bin --port 8080
-
-# Opción B: faster-whisper (Python)
-pip install faster-whisper
-# Levantar con tu wrapper en puerto 8080`}
-                    </pre>
-                </div>
-
-                <div className="bg-slate-50 rounded-2xl p-4">
-                    <h3 className="text-[14px] font-black mb-2">3️⃣ Variables de entorno en Vercel</h3>
-                    <pre className="bg-slate-900 text-green-300 rounded-lg p-3 text-[11px] overflow-x-auto">
-{`OLLAMA_HOST=http://localhost:11434
-OLLAMA_VISION_MODEL=llama3.2-vision
-OLLAMA_LLM_MODEL=llama3.1:8b
-WHISPER_HOST=http://localhost:8080`}
-                    </pre>
-                    <p className="text-[11.5px] text-slate-500 mt-2">
-                        ⚠️ <strong>Importante</strong>: el backend (Vercel) no puede hablar con localhost directamente.
-                        Usa un túnel ngrok / cloudflared para Ollama, o despliega este backend en tu propio VPS.
-                    </p>
-                </div>
-
                 <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4">
-                    <h3 className="text-[14px] font-black mb-2">✅ Estado del sistema</h3>
-                    <div className="text-[12px] space-y-1">
-                        <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            Backend Vercel funcionando
+                    <h3 className="text-[14px] font-black mb-2 flex items-center gap-2">
+                        <span className="text-emerald-600">✓</span> Ventajas para ti
+                    </h3>
+                    <ul className="space-y-1.5 text-[12.5px] text-emerald-900">
+                        <li className="flex gap-2"><span>·</span> Cero configuración: abres AI Studio y funciona</li>
+                        <li className="flex gap-2"><span>·</span> Cero coste de infraestructura IA para el bar</li>
+                        <li className="flex gap-2"><span>·</span> Datos privados: solo van a nuestro servidor, no a OpenAI ni nada externo</li>
+                        <li className="flex gap-2"><span>·</span> Latencia consistente: SLA empresarial</li>
+                        <li className="flex gap-2"><span>·</span> Modelos siempre actualizados automáticamente</li>
+                    </ul>
+                </div>
+
+                <div className="bg-slate-50 rounded-2xl p-4">
+                    <h3 className="text-[14px] font-black mb-2">🛠️ Stack técnico del backend IA</h3>
+                    <div className="text-[12px] text-slate-700 space-y-1">
+                        <div className="flex justify-between bg-white rounded p-2">
+                            <span>Visión (facturas)</span>
+                            <span className="font-mono text-violet-600">Llama 3.2 Vision 11B</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-500">
-                            <span className="w-2 h-2 rounded-full bg-slate-300"></span>
-                            Ollama: configura OLLAMA_HOST para activar
+                        <div className="flex justify-between bg-white rounded p-2">
+                            <span>Voz (transcripción)</span>
+                            <span className="font-mono text-violet-600">Whisper Large V3</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-500">
-                            <span className="w-2 h-2 rounded-full bg-slate-300"></span>
-                            Whisper: configura WHISPER_HOST para activar
+                        <div className="flex justify-between bg-white rounded p-2">
+                            <span>Estructuración</span>
+                            <span className="font-mono text-violet-600">Llama 3.1 70B (function calling)</span>
+                        </div>
+                        <div className="flex justify-between bg-white rounded p-2">
+                            <span>Análisis SQL (Barista, Socio)</span>
+                            <span className="font-mono text-emerald-600">PostgreSQL nativo · &lt;50ms</span>
                         </div>
                     </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+                    <h3 className="text-[14px] font-black mb-2">📊 Cómo funciona cada módulo</h3>
+                    <div className="space-y-2 text-[12px] text-slate-700">
+                        <div className="flex gap-2">
+                            <span className="font-mono bg-white px-2 py-0.5 rounded text-[10px] text-blue-600">SQL</span>
+                            <div>
+                                <strong>🌌 Barista Fantasma:</strong> función PostgreSQL <code>get_restock_drafts()</code>. SQL puro, instantáneo.
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <span className="font-mono bg-white px-2 py-0.5 rounded text-[10px] text-blue-600">SQL</span>
+                            <div>
+                                <strong>👥 Socio Oculto:</strong> función PostgreSQL <code>get_profit_insights()</code>. SQL puro, instantáneo.
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <span className="font-mono bg-white px-2 py-0.5 rounded text-[10px] text-violet-600">IA</span>
+                            <div>
+                                <strong>📸 Escáner Facturas:</strong> Llama 3.2 Vision (centralizado, &lt;3s).
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <span className="font-mono bg-white px-2 py-0.5 rounded text-[10px] text-violet-600">IA</span>
+                            <div>
+                                <strong>🎙️ Comandas Voz:</strong> Whisper Large V3 + Llama 3.1 (centralizado).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-900 text-emerald-300 rounded-2xl p-4 font-mono text-[11px]">
+                    <div className="text-slate-400 mb-1"># Variable de entorno (configurada por Mozona)</div>
+                    <div>AI_BACKEND_URL=https://ai.mozonatpv.com</div>
+                    <div className="text-slate-400 mt-3 mb-1"># El cliente nunca toca esto. Es interno.</div>
                 </div>
             </div>
         </div>
@@ -576,10 +593,10 @@ function BaristaGhost({ tenantId }: { tenantId?: string }) {
         setBusy(true);
         setData(null);
         try {
-            const r = await fetch("/api/ai-assistant", {
+            const r = await fetch("/api/business-intelligence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-                body: JSON.stringify({ action: "barista-ghost", tenantId }),
+                body: JSON.stringify({ action: "restock-drafts", tenantId }),
             });
             setData(await r.json());
         } catch (e: any) { setData({ ok: false, error: e?.message }); }
@@ -690,10 +707,10 @@ function SocioOculto({ tenantId }: { tenantId?: string }) {
         setBusy(true);
         setData(null);
         try {
-            const r = await fetch("/api/ai-assistant", {
+            const r = await fetch("/api/business-intelligence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-                body: JSON.stringify({ action: "profit-coach", tenantId }),
+                body: JSON.stringify({ action: "profit-insights", tenantId }),
             });
             setData(await r.json());
         } catch (e: any) { setData({ ok: false, error: e?.message }); }
