@@ -209,3 +209,86 @@ html.high-contrast body {
 html.high-contrast button {
     border-width: 2px !important;
 }
+
+/* =====================================================================
+   MOZONA TPV — Modo "Hora Punta Ciega" (v3.5.0)
+   Adaptativo: detecta número de comandas pendientes y aplica
+   ergonomía extrema automáticamente.
+   ===================================================================== */
+
+/* Cuando el html tiene data-stress-level="high", todo se agranda,
+   se eliminan adornos, y se maximiza el contraste. */
+html[data-stress-level="high"] {
+    --accent-color: #ffffff;
+    --button-size: 72px;
+    --grid-cols: 3;
+}
+
+html[data-stress-level="high"] body {
+    background: #000000 !important;
+}
+
+html[data-stress-level="high"] .pos-grid .product-card {
+    font-size: 18px !important;
+    font-weight: 900 !important;
+    border: 3px solid #fff !important;
+    background: #1a1a1a !important;
+    color: #ffffff !important;
+    padding: 12px !important;
+}
+
+html[data-stress-level="high"] .product-card:hover,
+html[data-stress-level="high"] .product-card:active {
+    background: #ffffff !important;
+    color: #000000 !important;
+    transform: scale(1.05);
+}
+
+html[data-stress-level="high"] .order-panel {
+    background: #000 !important;
+    color: #fff !important;
+    border: 2px solid #444 !important;
+}
+
+html[data-stress-level="high"] .order-line {
+    padding: 14px 8px !important;
+    font-size: 18px !important;
+    border-bottom: 1px solid #333 !important;
+}
+
+html[data-stress-level="high"] .nav-chrome,
+html[data-stress-level="high"] .header-decorations,
+html[data-stress-level="high"] aside,
+html[data-stress-level="high"] .logo-deco {
+    display: none !important;
+}
+
+html[data-stress-level="high"] .grid-cols-2,
+html[data-stress-level="high"] .grid-cols-3,
+html[data-stress-level="high"] .grid-cols-4,
+html[data-stress-level="high"] .grid-cols-5,
+html[data-stress-level="high"] .grid-cols-6 {
+    grid-template-columns: repeat(var(--grid-cols, 3), minmax(0, 1fr)) !important;
+    gap: 12px !important;
+}
+
+/* Banner flotante "HORA PUNTA" */
+.stress-banner {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #dc2626;
+    color: white;
+    padding: 8px 24px;
+    border-radius: 999px;
+    font-weight: 900;
+    font-size: 14px;
+    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4);
+    z-index: 9999;
+    animation: pulse-stress 1.5s ease-in-out infinite;
+}
+@keyframes pulse-stress {
+    0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+    50% { opacity: 0.85; transform: translateX(-50%) scale(1.03); }
+}

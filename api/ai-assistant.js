@@ -359,6 +359,218 @@ Responde SOLO JSON con array de sugerencias:
             }
         }
 
+        // ═════════════════════════════════════════════════════════════
+        // ACTION: barista-ghost (automatización de proveedores)
+        //   - Detecta productos con stock bajo
+        //   - Genera borrador de pedido al proveedor preferido
+        //   - Construye URL de WhatsApp lista para enviar
+        // ═════════════════════════════════════════════════════════════
+        if (action === "barista-ghost") {
+            if (!tenantId) return safeJson(200, { ok: false, error: "tenantId requerido" });
+            if (!supabaseUrl || !serviceKey) return safeJson(200, { ok: false, error: "Supabase no configurado" });
+
+            try {
+                // 1) Productos con stock bajo (current_stock <= min_stock)
+                const lowStockRes = await fetchWithTimeout(
+                    `${supabaseUrl}/rest/v1/products?tenant_id=eq.${tenantId}&select=id,name,current_stock,min_stock,cost_price&current_stock=lte.5&order=name&limit=50`,
+                    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+                    10000
+                );
+                const lowStock = lowStockRes.ok ? await lowStockRes.json() : [];
+
+                if (lowStock.length === 0) {
+                    return safeJson(200, {
+                        ok: true,
+                        data: {
+                            needs_restock: [],
+                            message: "✅ Todo el stock está por encima del mínimo. No se necesita pedir nada.",
+                        },
+                    });
+                }
+
+                // 2) Para cada producto bajo, busca el proveedor preferido
+                const drafts = [];
+                for (const product of lowStock) {
+                    try {
+                        const psRes = await fetchWithTimeout(
+                            `${supabaseUrl}/rest/v1/product_suppliers?tenant_id=eq.${tenantId}&product_id=eq.${product.id}&is_preferred=eq.true&select=cost_price,pack_size,supplier_id,suppliers!inner(id,name,phone)&limit=1`,
+                            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+                            8000
+                        );
+                        if (psRes.ok) {
+                            const arr = await psRes.json();
+                            if (arr && arr[0]) {
+                                const ps = arr[0];
+                                const supplier = ps.suppliers;
+                                const need = Math.max(0, (product.min_stock || 5) - (product.current_stock || 0));
+                                const pack = ps.pack_size || 1;
+                                const packsToOrder = Math.ceil(need / pack);
+                                drafts.push({
+                                    product_id: product.id,
+                                    product_name: product.name,
+                                    current_stock: product.current_stock,
+                                    min_stock: product.min_stock,
+                                    need_units: need,
+                                    packs_to_order: packsToOrder,
+                                    pack_size: pack,
+                                    cost_per_pack: ps.cost_price * pack,
+                                    subtotal: packsToOrder * ps.cost_price * pack,
+                                    supplier: {
+                                        id: supplier.id,
+                                        name: supplier.name,
+                                        phone: supplier.phone,
+                                    },
+                                });
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                // 3) Agrupar por proveedor
+                const bySupplier = {};
+                for (const d of drafts) {
+                    if (!d.supplier) continue;
+                    const key = d.supplier.id;
+                    if (!bySupplier[key]) {
+                        bySupplier[key] = {
+                            supplier: d.supplier,
+                            lines: [],
+                            subtotal: 0,
+                        };
+                    }
+                    bySupplier[key].lines.push(d);
+                    bySupplier[key].subtotal += d.subtotal;
+                }
+
+                // 4) Para cada proveedor, generar URL WhatsApp y crear draft
+                const orders = [];
+                for (const k of Object.keys(bySupplier)) {
+                    const o = bySupplier[k];
+                    const supplier = o.supplier;
+                    const linesText = o.lines.map(l =>
+                        `• ${l.product_name}: ${l.packs_to_order} pack(s) x ${(l.cost_per_pack).toFixed(2)}€ = ${l.subtotal.toFixed(2)}€`
+                    ).join("\n");
+                    const totalText = o.subtotal.toFixed(2);
+                    const message = `Hola ${supplier.name}, ¿podrías prepararme el siguiente pedido?\n\n${linesText}\n\n*Total: ${totalText}€*\n\nGracias.`;
+                    const phoneClean = (supplier.phone || "").replace(/[^\d+]/g, "").replace(/^\+/, "");
+                    const whatsappUrl = phoneClean
+                        ? `https://wa.me/${phoneClean}?text=${encodeURIComponent(message)}`
+                        : null;
+
+                    // Guardar borrador
+                    try {
+                        await fetchWithTimeout(`${supabaseUrl}/rest/v1/supplier_orders`, {
+                            method: "POST",
+                            headers: sbHeaders,
+                            body: JSON.stringify({
+                                tenant_id: tenantId,
+                                supplier_id: supplier.id,
+                                lines: o.lines,
+                                subtotal: o.subtotal,
+                                whatsapp_url: whatsappUrl,
+                                notes: message,
+                            }),
+                        }, 8000);
+                    } catch (_) {}
+
+                    orders.push({
+                        supplier,
+                        lines: o.lines,
+                        subtotal: o.subtotal,
+                        whatsapp_url: whatsappUrl,
+                        message_preview: message.slice(0, 200) + "...",
+                    });
+                }
+
+                await aiLog("ok", { drafts_count: orders.length, total: orders.reduce((s, o) => s + o.subtotal, 0) }, null);
+                return safeJson(200, {
+                    ok: true,
+                    data: {
+                        orders,
+                        total_drafts: orders.length,
+                        total_estimated_cost: orders.reduce((s, o) => s + o.subtotal, 0),
+                        message: orders.length === 0
+                            ? "Hay productos bajo de stock pero no tienen proveedor asignado."
+                            : `He preparado ${orders.length} pedido(s) listos para enviar.`,
+                    },
+                });
+            } catch (e) {
+                await aiLog("error", null, e?.message);
+                return safeJson(200, { ok: false, error: e?.message });
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // ACTION: profit-coach (Socio Oculto)
+        //   - Analiza márgenes por producto
+        //   - Detecta productos con margen bajo
+        //   - Sugiere subidas de precio o renegociar con proveedor
+        // ═════════════════════════════════════════════════════════════
+        if (action === "profit-coach") {
+            if (!tenantId) return safeJson(200, { ok: false, error: "tenantId requerido" });
+            if (!supabaseUrl || !serviceKey) return safeJson(200, { ok: false, error: "Supabase no configurado" });
+
+            try {
+                // 1) Productos con precio de venta y coste
+                const productsRes = await fetchWithTimeout(
+                    `${supabaseUrl}/rest/v1/products?tenant_id=eq.${tenantId}&select=id,name,price,cost_price,target_margin_pct&limit=300`,
+                    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+                    10000
+                );
+                const products = productsRes.ok ? await productsRes.json() : [];
+
+                // 2) Análisis de margen
+                const insights = [];
+                let totalMargin = 0;
+                let totalRevenue = 0;
+                for (const p of products) {
+                    const price = Number(p.price || 0);
+                    const cost = Number(p.cost_price || 0);
+                    if (price === 0 || cost === 0) continue;
+
+                    const margin = ((price - cost) / price) * 100;
+                    const marginAbs = price - cost;
+                    totalMargin += marginAbs;
+                    totalRevenue += price;
+
+                    if (margin < (p.target_margin_pct || 65)) {
+                        const suggestedPrice = cost / (1 - ((p.target_margin_pct || 65) / 100));
+                        insights.push({
+                            product_id: p.id,
+                            product_name: p.name,
+                            price,
+                            cost,
+                            current_margin: margin.toFixed(1),
+                            target_margin: p.target_margin_pct || 65,
+                            severity: margin < 40 ? "critical" : margin < 55 ? "warning" : "info",
+                            suggestion: `Sube precio a ${suggestedPrice.toFixed(2)}€ para alcanzar tu margen objetivo del ${p.target_margin_pct || 65}%.`,
+                            potential_gain: ((suggestedPrice - price) * 10).toFixed(2), // estimado en 10 ventas
+                        });
+                    }
+                }
+
+                insights.sort((a, b) =>
+                    (b.severity === "critical" ? 2 : b.severity === "warning" ? 1 : 0) -
+                    (a.severity === "critical" ? 2 : a.severity === "warning" ? 1 : 0)
+                );
+
+                await aiLog("ok", { insights: insights.length, avg_margin: totalRevenue ? (totalMargin / totalRevenue * 100).toFixed(1) : 0 }, null);
+                return safeJson(200, {
+                    ok: true,
+                    data: {
+                        total_products: products.length,
+                        products_with_cost: products.filter((p: any) => Number(p.cost_price || 0) > 0).length,
+                        avg_margin_pct: totalRevenue ? ((totalMargin / totalRevenue) * 100).toFixed(1) : "0",
+                        insights: insights.slice(0, 20),
+                        ai_powered: false,
+                    },
+                });
+            } catch (e) {
+                await aiLog("error", null, e?.message);
+                return safeJson(200, { ok: false, error: e?.message });
+            }
+        }
+
         return safeJson(200, { ok: false, error: `action desconocida: ${action}` });
     } catch (e) {
         return safeJson(200, { ok: false, error: e?.message || "Error desconocido" });

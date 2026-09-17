@@ -16,7 +16,7 @@ import { useAuth } from "../lib/auth";
 import { isVipOrAdmin } from "../lib/vip";
 import { IconShield, IconArrowLeft, IconCheck, IconSettings } from "../components/icons";
 
-type Tab = "invoice" | "voice" | "pricing" | "config";
+type Tab = "invoice" | "voice" | "pricing" | "suppliers" | "profit" | "config";
 
 interface ApiResponse {
     ok: boolean;
@@ -75,7 +75,9 @@ export function AIStudioPage() {
                     {([
                         { id: "invoice", label: "📸 Facturas", desc: "Escáner de proveedores" },
                         { id: "voice", label: "🎙️ Voz", desc: "Asistente de camarero" },
-                        { id: "pricing", label: "📈 Precios", desc: "Anti-mermas predictivo" },
+                        { id: "suppliers", label: "🌌 Barista", desc: "Auto-pedidos IA" },
+                        { id: "profit", label: "👥 Socio", desc: "Coach rentabilidad" },
+                        { id: "pricing", label: "📈 Stock", desc: "Anti-mermas" },
                         { id: "config", label: "⚙️ Config", desc: "Setup local" },
                     ] as const).map(t => (
                         <button
@@ -97,6 +99,8 @@ export function AIStudioPage() {
                 <div className="bg-white rounded-2xl shadow p-5 min-h-[500px]">
                     {tab === "invoice" && <InvoiceScanner tenantId={auth.tenant?.id} />}
                     {tab === "voice" && <VoiceAssistant tenantId={auth.tenant?.id} />}
+                    {tab === "suppliers" && <BaristaGhost tenantId={auth.tenant?.id} />}
+                    {tab === "profit" && <SocioOculto tenantId={auth.tenant?.id} />}
                     {tab === "pricing" && <SmartPricing tenantId={auth.tenant?.id} />}
                     {tab === "config" && <ConfigPanel />}
                 </div>
@@ -555,6 +559,234 @@ WHISPER_HOST=http://localhost:8080`}
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// =====================================================================
+// 🌌 BARISTA FANTASMA (Auto-pedidos a proveedores por WhatsApp)
+// =====================================================================
+function BaristaGhost({ tenantId }: { tenantId?: string }) {
+    const [data, setData] = useState<ApiResponse | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [sent, setSent] = useState<Record<number, boolean>>({});
+
+    const onAnalyze = async () => {
+        if (!tenantId) return;
+        setBusy(true);
+        setData(null);
+        try {
+            const r = await fetch("/api/ai-assistant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+                body: JSON.stringify({ action: "barista-ghost", tenantId }),
+            });
+            setData(await r.json());
+        } catch (e: any) { setData({ ok: false, error: e?.message }); }
+        setBusy(false);
+    };
+
+    useEffect(() => { onAnalyze(); }, [tenantId]);
+
+    return (
+        <div>
+            <h2 className="text-lg font-black mb-1">🌌 Barista Fantasma</h2>
+            <p className="text-[13px] text-slate-600 mb-4">
+                Detectamos qué falta en tu cocina y preparamos pedidos a tus proveedores por WhatsApp.
+                Un clic y se abre el chat listo para enviar.
+            </p>
+            <button
+                onClick={onAnalyze}
+                disabled={busy}
+                className="mb-4 h-10 px-4 rounded-lg bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 disabled:bg-slate-300 text-white text-[12.5px] font-black"
+            >
+                {busy ? "⏳ Analizando stock y ventas…" : "🔄 Re-analizar ahora"}
+            </button>
+
+            {data && !data.ok && (
+                <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">
+                    <div className="text-[12px] text-rose-800">{data.error}</div>
+                </div>
+            )}
+
+            {data && data.ok && (
+                <div className="space-y-3">
+                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 text-[12.5px] text-blue-900">
+                        {data.data.message}
+                        {data.data.total_estimated_cost > 0 && (
+                            <span className="ml-2 font-black">
+                                · Coste estimado: €{data.data.total_estimated_cost.toFixed(2)}
+                            </span>
+                        )}
+                    </div>
+
+                    {data.data.orders?.length === 0 && (
+                        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6 text-center">
+                            <div className="text-4xl mb-2">✅</div>
+                            <div className="text-[14px] font-bold text-emerald-900">Todo en orden</div>
+                            <div className="text-[12px] text-emerald-700">No hay productos por debajo del mínimo</div>
+                        </div>
+                    )}
+
+                    {data.data.orders?.map((o: any, i: number) => (
+                        <div key={i} className="bg-white border-2 border-slate-200 rounded-2xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <div className="text-[15px] font-black">{o.supplier.name}</div>
+                                    <div className="text-[11.5px] text-slate-500">{o.supplier.phone}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-[10.5px] text-slate-500">Subtotal</div>
+                                    <div className="text-[18px] font-black text-violet-600">€{o.subtotal.toFixed(2)}</div>
+                                </div>
+                            </div>
+                            <div className="space-y-1 mb-3 max-h-48 overflow-y-auto">
+                                {o.lines.map((l: any, j: number) => (
+                                    <div key={j} className="flex items-center justify-between text-[12px] bg-slate-50 rounded-lg p-2">
+                                        <span><strong>{l.product_name}</strong></span>
+                                        <span className="text-slate-600">
+                                            {l.packs_to_order}× pack ({l.pack_size}u)
+                                            · <span className="font-bold">€{l.subtotal.toFixed(2)}</span>
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                            <details className="mb-2">
+                                <summary className="text-[11px] text-slate-500 cursor-pointer">Ver mensaje completo</summary>
+                                <pre className="bg-slate-50 rounded p-2 text-[11px] whitespace-pre-wrap mt-1">{o.message_preview}</pre>
+                            </details>
+                            {sent[i] ? (
+                                <div className="bg-emerald-100 text-emerald-800 rounded-lg p-2 text-center text-[12px] font-bold">
+                                    ✅ Marcado como enviado
+                                </div>
+                            ) : (
+                                <a
+                                    href={o.whatsapp_url || "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={() => setSent(prev => ({ ...prev, [i]: true }))}
+                                    className={`block text-center w-full h-12 rounded-xl ${o.whatsapp_url ? "bg-emerald-500 hover:bg-emerald-600" : "bg-slate-300"} text-white font-black text-[14px] flex items-center justify-center gap-2`}
+                                >
+                                    💬 Abrir WhatsApp
+                                </a>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// =====================================================================
+// 👥 SOCIO OCULTO (Coach de rentabilidad)
+// =====================================================================
+function SocioOculto({ tenantId }: { tenantId?: string }) {
+    const [data, setData] = useState<ApiResponse | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const onAnalyze = async () => {
+        if (!tenantId) return;
+        setBusy(true);
+        setData(null);
+        try {
+            const r = await fetch("/api/ai-assistant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+                body: JSON.stringify({ action: "profit-coach", tenantId }),
+            });
+            setData(await r.json());
+        } catch (e: any) { setData({ ok: false, error: e?.message }); }
+        setBusy(false);
+    };
+
+    useEffect(() => { onAnalyze(); }, [tenantId]);
+
+    if (!data) {
+        return <div className="text-center py-12 text-slate-500">⏳ Analizando tu cartera…</div>;
+    }
+    if (!data.ok) {
+        return <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">{data.error}</div>;
+    }
+
+    const d = data.data;
+    return (
+        <div>
+            <h2 className="text-lg font-black mb-1">👥 Socio Oculto</h2>
+            <p className="text-[13px] text-slate-600 mb-4">
+                Te digo en lenguaje claro qué platos te están dejando más margen — y cuáles están sangrando dinero.
+            </p>
+
+            <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-white rounded-2xl p-4 border border-slate-200">
+                    <div className="text-[10.5px] text-slate-500 uppercase tracking-widest">Total productos</div>
+                    <div className="text-2xl font-black mt-1">{d.total_products}</div>
+                </div>
+                <div className="bg-white rounded-2xl p-4 border border-slate-200">
+                    <div className="text-[10.5px] text-slate-500 uppercase tracking-widest">Con coste</div>
+                    <div className="text-2xl font-black mt-1">{d.products_with_cost}</div>
+                </div>
+                <div className={`rounded-2xl p-4 border-2 ${Number(d.avg_margin_pct) > 60 ? "bg-emerald-50 border-emerald-200" : Number(d.avg_margin_pct) > 40 ? "bg-amber-50 border-amber-200" : "bg-rose-50 border-rose-200"}`}>
+                    <div className="text-[10.5px] text-slate-500 uppercase tracking-widest">Margen medio</div>
+                    <div className="text-2xl font-black mt-1">{d.avg_margin_pct}%</div>
+                </div>
+            </div>
+
+            {d.insights.length === 0 ? (
+                <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6 text-center">
+                    <div className="text-4xl mb-2">🎉</div>
+                    <div className="text-[14px] font-bold text-emerald-900">Tu cartera está saneada</div>
+                    <div className="text-[12px] text-emerald-700">
+                        Todos tus productos cumplen el margen objetivo del {d.insights[0]?.target_margin || 65}%.
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    <h3 className="text-[14px] font-black mt-4 mb-2">⚠️ Platos que necesitan tu atención</h3>
+                    {d.insights.map((ins: any, i: number) => (
+                        <div
+                            key={i}
+                            className={`rounded-2xl p-3 border-l-4 ${
+                                ins.severity === "critical" ? "bg-rose-50 border-rose-500"
+                                : ins.severity === "warning" ? "bg-amber-50 border-amber-500"
+                                : "bg-blue-50 border-blue-500"
+                            }`}
+                        >
+                            <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                    <div className="text-[14px] font-bold text-slate-900">
+                                        {ins.product_name}
+                                    </div>
+                                    <div className="text-[12px] text-slate-600 mt-1">
+                                        Precio actual <strong>€{ins.price.toFixed(2)}</strong> ·
+                                        Coste €{ins.cost.toFixed(2)} ·
+                                        Margen <span className={ins.severity === "critical" ? "text-rose-600 font-black" : "text-amber-700 font-bold"}>{ins.current_margin}%</span>
+                                        (objetivo {ins.target_margin}%)
+                                    </div>
+                                    <div className="text-[12px] mt-2 text-slate-700">
+                                        💡 {ins.suggestion}
+                                    </div>
+                                </div>
+                                <div className="text-right ml-3">
+                                    <div className="text-[10px] text-slate-500 uppercase">Ganancia</div>
+                                    <div className="text-[15px] font-black text-emerald-600">
+                                        +€{ins.potential_gain}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">/10 ventas</div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <button
+                onClick={onAnalyze}
+                disabled={busy}
+                className="mt-4 h-10 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-[12.5px] font-black"
+            >
+                {busy ? "⏳ …" : "🔄 Re-analizar"}
+            </button>
         </div>
     );
 }
