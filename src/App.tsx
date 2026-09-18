@@ -40,6 +40,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
 import { FloatingAssistantButton } from "./components/assistant/FloatingAssistantButton";
+import { ChatPro } from "./components/ChatPro";
 
 // ★ Spinner reutilizable para Suspense
 function PageLoader({ label = "Cargando…" }: { label?: string }) {
@@ -191,6 +192,8 @@ export function App() {
                     {/* ★ v1.9.38 + v1.9.43: Botón flotante GLOBAL del asistente Riyad
                         ★ DEBE estar dentro de BrowserRouter porque el modal usa useNavigate() */}
                     <FloatingAssistantButton />
+                    {/* ★ v4.0.2: Chat Pro "Habla con Riyad" (SQL puro) */}
+                    <ChatPro />
                     </BrowserRouter>
                 </WebSocketProvider>
                 </ThemeProvider>
