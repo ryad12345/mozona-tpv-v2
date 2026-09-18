@@ -140,6 +140,7 @@ export function AuthPage() {
             setBusy(false);
 
             if (!json.ok) {
+                rate.recordFailure();
                 setMsg({ kind: "err", text: json.friendly_message || "No pudimos enviar el codigo. Reintenta." });
                 return;
             }
