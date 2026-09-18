@@ -38,7 +38,8 @@ interface OpenDetail {
 }
 
 // ★ v1.9.50: rutas donde el asistente se OCULTA (POS, operativa de cobro)
-const HIDDEN_ROUTES: string[] = ["/app"];
+// ★ v4.0.3: ampliado para incluir rutas publicas y de auth
+const HIDDEN_ROUTES: string[] = ["/app", "/auth", "/", "/reset-password", "/register", "/waiter/login", "/setup-caja"];
 // ★ rutas donde el asistente actúa como copiloto de configuración
 const CONFIG_ROUTES: string[] = ["/settings"];
 

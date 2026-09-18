@@ -11,8 +11,11 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+
+// ★ Rutas donde el ChatPro NO debe mostrarse (publicas y de autenticacion)
+const HIDDEN_ROUTES = new Set(["/auth", "/", "/reset-password", "/register", "/waiter/login", "/setup-caja"]);
 
 // ★ Quick replies contextuales (Zero-Tech, humano)
 const QUICK_REPLIES: Array<{ id: string; label: string; icon: string; prompt: string }> = [
@@ -43,6 +46,7 @@ const WELCOME: ChatMessage = {
 export function ChatPro() {
     const auth = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
     const [draft, setDraft] = useState("");
@@ -63,8 +67,9 @@ export function ChatPro() {
         setUnread(0);
     }, [open]);
 
-    // ★ Solo mostrar si hay sesion (DESPUES de los hooks)
+    // ★ Solo mostrar si hay sesion Y NO estamos en ruta publica
     if (!auth.user) return null;
+    if (HIDDEN_ROUTES.has(location.pathname)) return null;
 
     // ★ Enviar mensaje al backend
     const send = async (text: string) => {

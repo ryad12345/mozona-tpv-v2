@@ -529,11 +529,9 @@ function AuthShell({ children, justApproved }: { children: React.ReactNode; just
             <div className="relative w-full max-w-md">
                 {/* ★ Logo */}
                 <div className="flex justify-center mb-6">
-                    <Link to="/" className="inline-flex items-center gap-2.5 group">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition">
-                            <Logo size="md" />
-                        </div>
-                        <span className="text-[20px] font-black tracking-tight text-slate-900">
+                    <Link to="/" className="inline-flex flex-col items-center gap-3 group">
+                        <Logo variant="square" size="md" className="rounded-2xl shadow-lg group-hover:scale-105 transition" />
+                        <span className="text-[15px] font-black tracking-tight text-slate-900">
                             Mozona TPV
                         </span>
                     </Link>
