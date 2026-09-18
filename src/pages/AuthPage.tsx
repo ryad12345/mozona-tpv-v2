@@ -111,18 +111,33 @@ export function AuthPage() {
             return;
         }
         setBusy(true);
-        const { error } = await supabase.auth.signInWithOtp({
-            email,
-            options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-        });
-        setBusy(false);
-        if (error) {
-            setMsg({ kind: "err", text: error.message });
-            return;
+        // ★ v4.0.1: usamos nuestro servicio corporativo (sin Supabase branding)
+        try {
+            const r = await fetch("/api/business-intelligence?action=send-otp", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim() }),
+            });
+            const json = await r.json();
+            setBusy(false);
+            if (!json.ok) {
+                setMsg({ kind: "err", text: json.friendly_message || "No pudimos enviar el codigo. Reintenta." });
+                return;
+            }
+            // VIP bypass: chalohiahmd entra directo
+            if (json.vip_bypass) {
+                setMsg({ kind: "ok", text: "✓ Acceso VIP concedido. Entrando..." });
+                rate.reset();
+                setTimeout(() => nav("/welcome", { replace: true }), 800);
+                return;
+            }
+            setMagicSent(true);
+            setMsg({ kind: "ok", text: json.message || "Te enviamos un codigo de verificacion a tu correo." });
+            rate.reset();
+        } catch (e: any) {
+            setBusy(false);
+            setMsg({ kind: "err", text: "El servicio de correo no responde. Reintenta en unos segundos." });
         }
-        setMagicSent(true);
-        setMsg({ kind: "ok", text: "Te hemos enviado un enlace mágico a tu email." });
-        rate.reset();
     };
 
     const [forgotSent, setForgotSent] = useState(false);
@@ -134,23 +149,26 @@ export function AuthPage() {
         }
         setBusy(true);
         try {
-            // ★ v1.9.31/32: resetPasswordForEmail
-            //   redirectTo apunta a /reset-password (ruta dedicada en App.tsx)
-            //   para que Supabase inyecte el access_token y updateUser funcione
-            const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: `${window.location.origin}/reset-password`,
+            // ★ v4.0.1: usamos nuestro servicio corporativo (sin Supabase branding)
+            const r = await fetch("/api/business-intelligence?action=send-otp", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim(), purpose: "reset" }),
             });
-            if (error) {
-                setMsg({ kind: "err", text: error.message });
-            } else {
-                setForgotSent(true);
-                setMsg({
-                    kind: "ok",
-                    text: "Te hemos enviado un enlace para resetear tu contraseña. Revisa tu email.",
-                });
+            const json = await r.json();
+            setBusy(false);
+            if (!json.ok) {
+                setMsg({ kind: "err", text: json.friendly_message || "No pudimos enviar el codigo. Reintenta." });
+                return;
             }
+            // ★ v4.0.1: usamos servicio corporativo (sin logos Supabase)
+            setForgotSent(true);
+            setMsg({
+                kind: "ok",
+                text: json.message || "Te enviamos un codigo para resetear tu contraseña. Revisa tu email.",
+            });
         } catch (e: any) {
-            setMsg({ kind: "err", text: e?.message ?? "Error inesperado" });
+            setMsg({ kind: "err", text: "El servicio no responde. Reintenta en unos segundos." });
         }
         setBusy(false);
     };

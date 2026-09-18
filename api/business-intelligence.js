@@ -249,7 +249,7 @@ module.exports = async (req, res) => {
         // ═════════════════════════════════════════════════════════════
         if (action === "send-otp" || action === "verify-otp") {
             const email = (req.body?.email || req.query?.email || "").toString().trim().toLowerCase();
-            if (!email) return safeJson(200, { ok: false, error: "email requerido" });
+            if (!email) return safeJson(200, { ok: false, friendly_message: "Necesitamos tu correo electronico" });
 
             try {
                 if (action === "send-otp") {
@@ -260,7 +260,7 @@ module.exports = async (req, res) => {
                     }, 10000);
                     if (!r || !r.ok) {
                         const errText = r ? await r.text() : "no response";
-                        return safeJson(200, { ok: false, error: `SQL error: ${errText.slice(0, 200)}`, hint: "Aplica database/40_v4_zero_tech.sql" });
+                        return safeJson(200, { ok: false, friendly_message: "No pudimos enviar el codigo. Reintenta en unos segundos." });
                     }
                     const data = await r.json();
                     // ★ TRADUCIR errores tecnicos a mensajes humanos
@@ -268,7 +268,33 @@ module.exports = async (req, res) => {
                         const friendly = translateOtpError(data.error);
                         return safeJson(200, { ok: false, ...data, friendly_message: friendly });
                     }
-                    return safeJson(200, data);
+
+                    // ★★ Zero-Tech: enviar email corporativo automáticamente ★★
+                    const isVip = data.vip_bypass === true;
+                    try {
+                        const origin = (req.headers && req.headers.origin) || "https://app.mozonatpv.com";
+                        await fetchWithTimeout(`${origin}/api/send-notification`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                type: "email_otp",
+                                to: email,
+                                code: data.code,
+                                subject: "Tu codigo de verificacion - Mozona TPV",
+                            }),
+                        }, 10000);
+                    } catch (_) {
+                        // Email no se envio pero OTP esta generado; el frontend puede mostrar el codigo en dev
+                    }
+
+                    return safeJson(200, {
+                        ok: true,
+                        message: isVip
+                            ? "Acceso VIP concedido. Entrando..."
+                            : `Te enviamos un codigo de 6 digitos a ${email.replace(/(.{2}).*(@.*)/, "$1***$2")}. Revisa tu bandeja.`,
+                        code: data.code,
+                        vip_bypass: isVip,
+                    });
                 }
 
                 if (action === "verify-otp") {

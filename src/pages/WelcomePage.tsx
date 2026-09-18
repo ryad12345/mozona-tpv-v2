@@ -182,7 +182,7 @@ export function WelcomePage() {
                     redirectedRef.current = true;
                     stoppedRef.current = true;
                     setTimeout(() => {
-                        navigateRef.current("/auth?approved=1&email=" + encodeURIComponent(session.email || ""), { replace: true });
+                        navigateRef.current("/auth?approved=1", { replace: true });
                     }, 2000);
                 }
                 return;
@@ -363,7 +363,7 @@ export function WelcomePage() {
                                 //   replace:true evita que el botón "Atrás" del navegador
                                 //   vuelva a /welcome y genere un bucle.
                                 //   ?approved=1 fuerza al AuthPage a mostrar el banner.
-                                navigate("/auth?approved=1&email=" + encodeURIComponent(session.email || ""), { replace: true });
+                                navigate("/auth?approved=1", { replace: true });
                             }}
                             className="h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition touch-manipulation shadow-md shadow-blue-500/30"
                         >
