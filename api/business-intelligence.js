@@ -94,7 +94,7 @@ module.exports = async (req, res) => {
                 const data = await r.json();
                 // Guardar borradores en supplier_orders para auditoría
                 if (data.orders && data.orders.length > 0) {
-                    const inserts = data.orders.map((o: any) => ({
+                    const inserts = data.orders.map((o) => ({
                         tenant_id: tenantId,
                         supplier_id: o.supplier_id,
                         status: "draft",
@@ -242,8 +242,259 @@ module.exports = async (req, res) => {
             }
         }
 
+        // ═════════════════════════════════════════════════════════════
+        // 5. 📧 OTP — verificacion de email
+        //    action=send-otp: genera codigo
+        //    action=verify-otp: valida codigo introducido
+        // ═════════════════════════════════════════════════════════════
+        if (action === "send-otp" || action === "verify-otp") {
+            const email = (req.body?.email || req.query?.email || "").toString().trim().toLowerCase();
+            if (!email) return safeJson(200, { ok: false, error: "email requerido" });
+
+            try {
+                if (action === "send-otp") {
+                    const r = await fetchWithTimeout(`${supabaseUrl}/rest/v1/rpc/create_otp`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({ p_email: email, p_purpose: "signup" }),
+                    }, 10000);
+                    if (!r || !r.ok) {
+                        const errText = r ? await r.text() : "no response";
+                        return safeJson(200, { ok: false, error: `SQL error: ${errText.slice(0, 200)}`, hint: "Aplica database/40_v4_zero_tech.sql" });
+                    }
+                    const data = await r.json();
+                    // ★ TRADUCIR errores tecnicos a mensajes humanos
+                    if (!data.ok) {
+                        const friendly = translateOtpError(data.error);
+                        return safeJson(200, { ok: false, ...data, friendly_message: friendly });
+                    }
+                    return safeJson(200, data);
+                }
+
+                if (action === "verify-otp") {
+                    const code = (req.body?.code || "").toString().trim();
+                    if (!code) return safeJson(200, { ok: false, error: "codigo requerido" });
+                    const r = await fetchWithTimeout(`${supabaseUrl}/rest/v1/rpc/verify_otp`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({ p_email: email, p_code: code, p_purpose: "signup" }),
+                    }, 10000);
+                    if (!r || !r.ok) {
+                        const errText = r ? await r.text() : "no response";
+                        return safeJson(200, { ok: false, error: `SQL error: ${errText.slice(0, 200)}` });
+                    }
+                    return safeJson(200, await r.json());
+                }
+            } catch (e) {
+                return safeJson(200, { ok: false, error: e?.message });
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // 6. 🌱 SEED MENU — inyectar carta según tipo de negocio
+        // ═════════════════════════════════════════════════════════════
+        if (action === "seed-menu") {
+            const tenantId = (req.body?.tenantId || req.query?.tenantId || "").toString();
+            const businessType = (req.body?.businessType || req.query?.businessType || "").toString();
+            if (!tenantId) return safeJson(200, { ok: false, error: "tenantId requerido" });
+            if (!businessType) return safeJson(200, { ok: false, error: "businessType requerido" });
+
+            try {
+                const r = await fetchWithTimeout(`${supabaseUrl}/rest/v1/rpc/seed_menu_for_tenant`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ p_tenant_id: tenantId, p_business_type: businessType }),
+                }, 15000);
+                if (!r || !r.ok) {
+                    const errText = r ? await r.text() : "no response";
+                    return safeJson(200, { ok: false, error: `SQL: ${errText.slice(0, 200)}` });
+                }
+                return safeJson(200, await r.json());
+            } catch (e) {
+                return safeJson(200, { ok: false, error: e?.message });
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        // 7. 🧠 CHAT CONVERSACIONAL — "Habla con Riyad"
+        // ═════════════════════════════════════════════════════════════
+        if (action === "chat") {
+            const tenantId = (req.body?.tenantId || "").toString();
+            const text = (req.body?.text || req.query?.text || "").toString();
+            if (!text) return safeJson(200, { ok: false, error: "text requerido" });
+            if (!tenantId) return safeJson(200, { ok: false, error: "tenantId requerido" });
+
+            try {
+                // 1) Detectar intención via SQL pattern matching
+                const intentRes = await fetchWithTimeout(`${supabaseUrl}/rest/v1/rpc/parse_user_intent`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ p_text: text, p_tenant_id: tenantId }),
+                }, 5000);
+                let intent = null;
+                if (intentRes && intentRes.ok) {
+                    intent = await intentRes.json();
+                }
+                if (!intent || intent.intent === "unknown") {
+                    return safeJson(200, {
+                        ok: true,
+                        intent: "unknown",
+                        response: "🤔 No estoy seguro de qué quieres decir. Puedo ayudarte con ventas, stock, comandas, mesas y márgenes. ¿Qué necesitas?",
+                    });
+                }
+
+                // 2) Resolver cada intención con SQL puro
+                let responseData = {};
+                if (intent.intent === "query_sales") {
+                    const period = intent.params?.period || "today";
+                    let date_from = NULL;
+                    let date_label = "hoy";
+                    if (period === "yesterday") { date_from = new Date(Date.now() - 86400000).toISOString(); date_label = "ayer"; }
+                    else if (period === "week") { date_from = new Date(Date.now() - 7*86400000).toISOString(); date_label = "esta semana"; }
+                    else if (period === "month") { date_from = new Date(Date.now() - 30*86400000).toISOString(); date_label = "este mes"; }
+                    else { date_from = new Date(new Date().setHours(0,0,0,0)).toISOString(); }
+
+                    const r = await fetchWithTimeout(
+                        `${supabaseUrl}/rest/v1/orders?tenant_id=eq.${tenantId}&created_at=gte.${date_from}&select=total&limit=1000`,
+                        { headers }, 5000
+                    );
+                    if (r && r.ok) {
+                        const arr = await r.json();
+                        const total = (arr || []).reduce((s, o) => s + Number(o.total || 0), 0);
+                        const count = (arr || []).length;
+                        responseData = {
+                            total_ventas: total.toFixed(2),
+                            num_tickets: count,
+                            promedio_por_ticket: count > 0 ? (total / count).toFixed(2) : "0.00",
+                        };
+                    }
+                    return safeJson(200, {
+                        ok: true,
+                        intent: "query_sales",
+                        response: `📊 Ventas de ${date_label}: ${count} tickets, total ${total.toFixed(2)}€, promedio por ticket ${count > 0 ? (total/count).toFixed(2) : 0}€.`,
+                        data: responseData,
+                    });
+                }
+
+                if (intent.intent === "query_low_stock") {
+                    const r = await fetchWithTimeout(
+                        `${supabaseUrl}/rest/v1/products?tenant_id=eq.${tenantId}&select=id,name,current_stock,min_stock&current_stock=lte.5&limit=20`,
+                        { headers }, 5000
+                    );
+                    if (r && r.ok) {
+                        const arr = await r.json();
+                        responseData = { low_stock: arr };
+                    }
+                    return safeJson(200, {
+                        ok: true,
+                        intent: "query_low_stock",
+                        response: (responseData.low_stock?.length || 0) > 0
+                            ? `📦 Tienes ${responseData.low_stock.length} productos con stock bajo. Te he preparado pedidos automaticos: revisa Barista Fantasma.`
+                            : "✅ No tienes productos por debajo del minimo. Todo en orden.",
+                        data: responseData,
+                    });
+                }
+
+                if (intent.intent === "query_top_products") {
+                    const r = await fetchWithTimeout(
+                        `${supabaseUrl}/rest/v1/order_items?tenant_id=eq.${tenantId}&select=product_name,quantity&limit=5000`,
+                        { headers }, 5000
+                    );
+                    if (r && r.ok) {
+                        const arr = await r.json();
+                        const counts = {};
+                        for (const it of arr) {
+                            counts[it.product_name] = (counts[it.product_name] || 0) + Number(it.quantity || 0);
+                        }
+                        const top = Object.entries(counts)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 5)
+                            .map(([name, qty]) => ({ name, qty }));
+                        responseData = { top };
+                        return safeJson(200, {
+                            ok: true,
+                            intent: "query_top_products",
+                            response: top.length > 0
+                                ? `🏆 Top ${top.length} productos mas vendidos: ${top.map(t => `${t.name} (${t.qty}u)`).join(", ")}.`
+                                : "Aun no hay ventas registradas.",
+                            data: responseData,
+                        });
+                    }
+                }
+
+                if (intent.intent === "query_table_stats") {
+                    const r = await fetchWithTimeout(
+                        `${supabaseUrl}/rest/v1/dining_tables?tenant_id=eq.${tenantId}&select=status`,
+                        { headers }, 5000
+                    );
+                    if (r && r.ok) {
+                        const arr = await r.json();
+                        const total = (arr || []).length;
+                        const open = (arr || []).filter((t) => t.status === "open" || t.status === "occupied").length;
+                        const free = total - open;
+                        responseData = { total, open, free };
+                        return safeJson(200, {
+                            ok: true,
+                            intent: "query_table_stats",
+                            response: `🪑 ${total} mesas en total: ${open} abiertas, ${free} libres.`,
+                            data: responseData,
+                        });
+                    }
+                }
+
+                if (intent.intent === "create_order") {
+                    return safeJson(200, {
+                        ok: true,
+                        intent: "create_order",
+                        response: "📝 Tomo nota. Para registrar la comanda, dime: mesa, productos y cantidades. O usa el TPV.",
+                        data: { raw_text: text },
+                    });
+                }
+
+                if (intent.intent === "query_profit") {
+                    const r = await fetchWithTimeout(
+                        `${supabaseUrl}/rest/v1/rpc/get_profit_insights`,
+                        { method: "POST", headers, body: JSON.stringify({ p_tenant_id: tenantId }) },
+                        8000
+                    );
+                    if (r && r.ok) {
+                        const data = await r.json();
+                        const insights = data?.insights || [];
+                        return safeJson(200, {
+                            ok: true,
+                            intent: "query_profit",
+                            response: insights.length > 0
+                                ? `📈 Margen medio: ${data.avg_margin_pct}%. ${insights.length} platos necesitan atencion. Revisa Socio Oculto.`
+                                : `📈 Margen medio: ${data.avg_margin_pct}%. Todos tus platos tienen margen saludable.`,
+                            data: { ...data, top_insights: insights.slice(0, 3) },
+                        });
+                    }
+                }
+
+                return safeJson(200, {
+                    ok: true,
+                    intent: intent.intent,
+                    response: intent.params?.response_text || "Procesado.",
+                });
+            } catch (e) {
+                return safeJson(200, { ok: false, error: e?.message });
+            }
+        }
+
         return safeJson(200, { ok: false, error: `action desconocida: ${action}` });
     } catch (e) {
         return safeJson(200, { ok: false, error: e?.message || "Error" });
     }
 };
+
+// ★★ Zero-Tech: traducir errores tecnicos a mensajes humanos ★★
+function translateOtpError(code) {
+    const map = {
+        "email_no_valido":      "El formato del correo no es correcto. Revisa que esté bien escrito.",
+        "email_no_permitido":   "Por favor, usa un correo electronico real. No aceptamos correos temporales.",
+        "codigo_incorrecto":    "El codigo no coincide. Revisa el email y escribelo otra vez.",
+        "codigo_invalido_o_expirado": "El codigo ha caducado o ya lo usaste. Te enviamos uno nuevo.",
+        "demasiados_intentos":  "Has agotado los intentos. Por seguridad, solicita un codigo nuevo.",
+    };
+    return map[code] || "Algo no ha salido bien. Vuelve a intentarlo.";
+}
