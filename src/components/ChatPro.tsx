@@ -51,21 +51,20 @@ export function ChatPro() {
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLInputElement | null>(null);
 
-    // ★ Solo mostrar si hay sesion
-    if (!auth.user) return null;
-
-    // ★ Scroll automatico al fondo
+    // ★ Todos los useEffect deben ir ANTES de cualquier return temprano
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages, open]);
 
-    // ★ Contador de mensajes no leidos
     useEffect(() => {
         if (!open) return;
         setUnread(0);
     }, [open]);
+
+    // ★ Solo mostrar si hay sesion (DESPUES de los hooks)
+    if (!auth.user) return null;
 
     // ★ Enviar mensaje al backend
     const send = async (text: string) => {

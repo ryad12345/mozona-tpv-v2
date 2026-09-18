@@ -84,21 +84,32 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     render() {
         if (this.state.error) {
             if (this.props.fallback) return this.props.fallback(this.state.error, this.reset);
+            // ★ v4.0.2-hotfix: Zero-Tech UI (sin rastro del error tecnico)
             return (
-                <div className="min-h-dvh w-full flex flex-col items-center justify-center bg-slate-900 text-white p-4 text-center">
-                    <div className="text-[11.5px] font-bold uppercase tracking-wider text-rose-400 mb-1">
-                        Aviso del Sistema
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+                    <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
+                        <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center text-4xl">
+                            ⚠️
+                        </div>
+                        <h1 className="text-[22px] font-black text-slate-900 mb-2">
+                            Algo se ha desconfigurado
+                        </h1>
+                        <p className="text-[14px] text-slate-600 mb-6 leading-relaxed">
+                            La aplicacion se ha detenido para proteger tus datos.
+                            Esto puede pasar tras actualizaciones o por una conexion inestable.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => { this.reset(); window.location.reload(); }}
+                            className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-700 hover:to-blue-700 text-white font-black text-[14px] shadow-lg transition"
+                        >
+                            Reiniciar aplicacion
+                        </button>
+                        <p className="text-[11.5px] text-slate-400 mt-4">
+                            Si el problema continua, contacta con soporte.<br/>
+                            <span className="text-slate-500">WhatsApp +34 644 16 51 53</span>
+                        </p>
                     </div>
-                    <p className="text-xs text-slate-400 mb-4 max-w-md font-mono break-words">
-                        {this.state.error.message}
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => window.location.reload()}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold"
-                    >
-                        Reiniciar TPV
-                    </button>
                 </div>
             );
         }
