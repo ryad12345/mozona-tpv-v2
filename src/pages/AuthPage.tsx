@@ -26,6 +26,7 @@ import {
     IconCheck,
 } from "../components/icons";
 import { useRateLimit } from "../hooks/useRateLimit";
+import { apiJson } from "../lib/api-router";
 
 // ★ Email regex estricto (formato + dominios sospechosos)
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
@@ -131,12 +132,9 @@ export function AuthPage() {
 
         setBusy(true);
         try {
-            const r = await fetch("/api/business-intelligence?action=send-otp", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: email.trim(), purpose: mode }),
+            const json = await apiJson("business-intelligence?action=send-otp", {
+                body: { email: email.trim(), purpose: mode },
             });
-            const json = await r.json();
             setBusy(false);
 
             if (!json.ok) {
@@ -172,12 +170,9 @@ export function AuthPage() {
         setBusy(true);
         setMsg(null);
         try {
-            const r = await fetch("/api/business-intelligence?action=verify-otp", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: email.trim(), code: otpCode, purpose: mode }),
+            const json = await apiJson("business-intelligence?action=verify-otp", {
+                body: { email: email.trim(), code: otpCode, purpose: mode },
             });
-            const json = await r.json();
             setBusy(false);
             if (!json.ok) {
                 setMsg({ kind: "err", text: json.friendly_message || "El codigo no es correcto." });

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { apiJson } from "../lib/api-router";
 
 // ★ Rutas donde el ChatPro NO debe mostrarse (publicas y de autenticacion)
 const HIDDEN_ROUTES = new Set(["/auth", "/", "/reset-password", "/register", "/waiter/login", "/setup-caja"]);
@@ -89,15 +90,12 @@ export function ChatPro() {
         setBusy(true);
 
         try {
-            const r = await fetch("/api/business-intelligence?action=chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
+            const json = await apiJson("business-intelligence?action=chat", {
+                body: {
                     text: trimmed,
-                    tenantId: auth.tenant?.id || null,
-                }),
+                    tenant_id: auth.tenant?.id || null,
+                },
             });
-            const json = await r.json();
 
             const assistantMsg: ChatMessage = {
                 id: `a-${Date.now()}`,
