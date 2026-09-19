@@ -12,8 +12,9 @@ export default defineConfig({
         VitePWA({
             registerType: "autoUpdate",
             injectRegister: "auto",
-            strategies: "generateSW",
+            strategies: "injectManifest",
             filename: "sw.js",
+            disable: true,
             includeAssets: ["favicon.svg", "icons/icon.svg", "manifest.json"],
             manifest: {
                 name: "MOZONA TPV",
