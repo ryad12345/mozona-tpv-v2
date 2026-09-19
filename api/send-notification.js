@@ -10,7 +10,8 @@
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js");
+const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
@@ -108,10 +109,10 @@ module.exports = async (req, res) => {
     if (req.method !== "POST") return safeJson(200, { ok: false, error: "POST requerido" });
 
     // ★ Servicio de correo CORPORATIVO via nuestro relay
-    const EMAIL_RELAY_URL = (process.env.EMAIL_RELAY_URL || "https://mail.mozonatpv.com").replace(/\/$/, "");
-    const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || "Mozona TPV - Seguridad";
-    const EMAIL_FROM_ADDR = process.env.EMAIL_FROM_ADDR || "seguridad@mozonatpv.com";
-    const WHATSAPP_RELAY_URL = (process.env.WHATSAPP_RELAY_URL || "https://wa.mozonatpv.com").replace(/\/$/, "");
+    const EMAIL_RELAY_URL = (ENV.EMAIL_RELAY_URL || "https://mail.mozonatpv.com").replace(/\/$/, "");
+    const EMAIL_FROM_NAME = ENV.EMAIL_FROM_NAME || "Mozona TPV - Seguridad";
+    const EMAIL_FROM_ADDR = ENV.EMAIL_FROM_ADDR || "seguridad@mozonatpv.com";
+    const WHATSAPP_RELAY_URL = (ENV.WHATSAPP_RELAY_URL || "https://wa.mozonatpv.com").replace(/\/$/, "");
 
     let body = req.body || {};
     if (typeof body === "string") { try { body = JSON.parse(body); } catch (_) {} }
@@ -142,7 +143,7 @@ module.exports = async (req, res) => {
 
             const r = await fetchWithTimeout(`${EMAIL_RELAY_URL}/send`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "X-Service-Secret": process.env.EMAIL_RELAY_SECRET || "" },
+                headers: { "Content-Type": "application/json", "X-Service-Secret": ENV.EMAIL_RELAY_SECRET || "" },
                 body: JSON.stringify({
                     from: { name: EMAIL_FROM_NAME, address: EMAIL_FROM_ADDR },
                     to: recipient,
@@ -176,7 +177,7 @@ module.exports = async (req, res) => {
 
             await fetchWithTimeout(`${EMAIL_RELAY_URL}/send`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "X-Service-Secret": process.env.EMAIL_RELAY_SECRET || "" },
+                headers: { "Content-Type": "application/json", "X-Service-Secret": ENV.EMAIL_RELAY_SECRET || "" },
                 body: JSON.stringify({
                     from: { name: EMAIL_FROM_NAME, address: EMAIL_FROM_ADDR },
                     to: recipient,
@@ -210,8 +211,8 @@ module.exports = async (req, res) => {
 // ★ ACTION: telegram (consolidado desde notify-telegram.js)
 if (type === "telegram") {
     const message = body.message || body.text || "";
-    const chatId = body.chatId || process.env.TELEGRAM_CHAT_ID || "";
-    const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
+    const chatId = body.chatId || ENV.TELEGRAM_CHAT_ID || "";
+    const botToken = ENV.TELEGRAM_BOT_TOKEN || "";
 
     if (!botToken || !chatId) {
         return safeJson(200, { ok: false, error: "Telegram no configurado" });

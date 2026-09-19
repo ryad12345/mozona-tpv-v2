@@ -7,7 +7,8 @@
 let _rateLimitLib = undefined;
 function getRateLimit() {
     if (_rateLimitLib !== undefined) return _rateLimitLib;
-    try { _rateLimitLib = require("./_rateLimit.js"); } catch (_) { _rateLimitLib = null; }
+    try { _rateLimitLib = require("./_rateLimit.js");
+const ENV = require("./_env.js"); } catch (_) { _rateLimitLib = null; }
     return _rateLimitLib;
 }
 
@@ -68,9 +69,9 @@ module.exports = async (req, res) => {
         }
 
         // Configurar Supabase
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
-        const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        const anonKey     = process.env.VITE_SUPABASE_ANON_KEY || "";
+        const supabaseUrl = ENV.SUPABASE_URL || ENV.SUPABASE_URL || "";
+        const serviceKey  = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
+        const anonKey     = ENV.SUPABASE_ANON_KEY || "";
 
         if (!supabaseUrl) {
             return safeJson(200, { ok: true, tenant: null, method: "no_config" });

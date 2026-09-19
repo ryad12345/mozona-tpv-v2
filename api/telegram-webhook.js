@@ -13,6 +13,7 @@
 //   - Devuelve 200 OK en <100ms
 // =====================================================================
 
+const ENV = require("./_env.js");
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
@@ -20,11 +21,11 @@ function getSecurity() {
     return _securityLib;
 }
 
-const SUPERADMIN_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "";
+const SUPERADMIN_CHAT_ID = ENV.TELEGRAM_CHAT_ID || "";
+const BOT_TOKEN = ENV.TELEGRAM_BOT_TOKEN || "";
+const SUPABASE_URL = (ENV.SUPABASE_URL || ENV.SUPABASE_URL || "").replace(/\/$/, "");
+const SERVICE_KEY = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
+const ANON_KEY = ENV.SUPABASE_ANON_KEY || "";
 
 // ★ Fetch con timeout (10s)
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {

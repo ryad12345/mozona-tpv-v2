@@ -8,7 +8,8 @@
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js");
+const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
@@ -65,8 +66,8 @@ module.exports = async (req, res) => {
         // ★ Configurar Supabase
         // ⚠️ Usar SOLO VITE_SUPABASE_URL (validada en consola, dominio correcto)
         //    NO usar SUPABASE_URL sin prefijo porque puede estar mal configurada
-        const supabaseUrl = (process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-        const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const supabaseUrl = (ENV.SUPABASE_URL || "").replace(/\/$/, "");
+        const serviceKey  = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
 
         if (!supabaseUrl || !serviceKey) {
             return safeJson(200, {

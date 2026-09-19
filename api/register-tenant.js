@@ -11,7 +11,8 @@
 let _rateLimitLib = undefined;
 function getRateLimit() {
     if (_rateLimitLib !== undefined) return _rateLimitLib;
-    try { _rateLimitLib = require("./_rateLimit.js"); } catch (_) { _rateLimitLib = null; }
+    try { _rateLimitLib = require("./_rateLimit.js");
+const ENV = require("./_env.js"); } catch (_) { _rateLimitLib = null; }
     return _rateLimitLib;
 }
 
@@ -109,8 +110,8 @@ module.exports = async (req, res) => {
         }
 
         // Configurar Supabase
-        const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const supabaseUrl = (ENV.SUPABASE_URL || ENV.SUPABASE_URL || "").replace(/\/$/, "");
+        const serviceKey = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
 
         if (!supabaseUrl || !serviceKey) {
             return safeJson(200, {
@@ -263,8 +264,8 @@ module.exports = async (req, res) => {
         // ════════════════════════════════════════════════════
         // PASO 4: Notificar al admin (SOLO con tenantId real)
         // ════════════════════════════════════════════════════
-        const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-        const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+        const BOT_TOKEN = ENV.TELEGRAM_BOT_TOKEN || "";
+        const CHAT_ID = ENV.TELEGRAM_CHAT_ID || "";
         if (BOT_TOKEN && CHAT_ID) {
             const md = [
                 "🆕 *Nueva solicitud de alta*",

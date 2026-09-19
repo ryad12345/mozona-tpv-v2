@@ -14,7 +14,8 @@
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js");
+const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
@@ -56,10 +57,10 @@ module.exports = async (req, res) => {
         const action = (req.query?.action || req.body?.action || "").toString();
         if (!action) return safeJson(200, { ok: false, error: "action requerido" });
 
-        const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const supabaseUrl = (ENV.SUPABASE_URL || ENV.SUPABASE_URL || "").replace(/\/$/, "");
+        const serviceKey = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
         // ★ v3.6.0: IA CENTRALIZADA — apunta a NUESTRO servidor
-        const AI_BACKEND_URL = (process.env.AI_BACKEND_URL || "https://ai.mozonatpv.com").replace(/\/$/, "");
+        const AI_BACKEND_URL = (ENV.AI_BACKEND_URL || "https://ai.mozonatpv.com").replace(/\/$/, "");
 
         if (!supabaseUrl || !serviceKey) {
             return safeJson(200, { ok: false, error: "Sistema no configurado" });

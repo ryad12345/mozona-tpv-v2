@@ -10,7 +10,8 @@ const VALID_TOKENS = new Set(["mozona-approve-2025", "mozona-ryad-2025"]);
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js");
+const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
@@ -52,9 +53,9 @@ module.exports = async (req, res) => {
             return safeJson(200, { ok: false, error: "tenantId o email requerido" });
         }
 
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
-        const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        const anonKey     = process.env.VITE_SUPABASE_ANON_KEY || "";
+        const supabaseUrl = ENV.SUPABASE_URL || ENV.SUPABASE_URL || "";
+        const serviceKey  = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
+        const anonKey     = ENV.SUPABASE_ANON_KEY || "";
 
         if (!supabaseUrl) {
             return safeJson(200, { ok: false, error: "Sistema no configurado" });
@@ -154,8 +155,8 @@ module.exports = async (req, res) => {
         }
 
         // Notificar al admin
-        const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-        const CHAT_ID   = process.env.TELEGRAM_CHAT_ID || "";
+        const BOT_TOKEN = ENV.TELEGRAM_BOT_TOKEN || "";
+        const CHAT_ID   = ENV.TELEGRAM_CHAT_ID || "";
         if (BOT_TOKEN && CHAT_ID) {
             try {
                 await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {

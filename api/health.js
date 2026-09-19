@@ -1,3 +1,4 @@
+const ENV = require("./_env.js");
 // =====================================================================
 // MOZONA TPV — /api/health (v3.0.4)
 // =====================================================================
@@ -34,11 +35,11 @@ module.exports = async (req, res) => {
             timestamp: new Date().toISOString(),
             version: "3.0.4",
             env: {
-                SUPABASE_URL: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
-                SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-                VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY,
-                TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
-                TELEGRAM_CHAT_ID: !!process.env.TELEGRAM_CHAT_ID,
+                SUPABASE_URL: !!ENV.SUPABASE_URL || !!ENV.SUPABASE_URL,
+                SUPABASE_SERVICE_ROLE_KEY: !!ENV.SUPABASE_SERVICE_ROLE_KEY,
+                VITE_SUPABASE_ANON_KEY: !!ENV.SUPABASE_ANON_KEY,
+                TELEGRAM_BOT_TOKEN: !!ENV.TELEGRAM_BOT_TOKEN,
+                TELEGRAM_CHAT_ID: !!ENV.TELEGRAM_CHAT_ID,
             },
             endpoints: {
                 "/api/register-tenant": "ok",
@@ -57,11 +58,11 @@ module.exports = async (req, res) => {
         checks.status = checks.score === 100 ? "excellent" : checks.score >= 60 ? "good" : checks.score >= 40 ? "degraded" : "critical";
 
         // ★ Si no hay SERVICE_ROLE, añadir warning
-        if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        if (!ENV.SUPABASE_SERVICE_ROLE_KEY) {
             checks.warnings = checks.warnings || [];
             checks.warnings.push("SUPABASE_SERVICE_ROLE_KEY no configurada: approve-tenant usará ANON key (funciona solo si RLS está deshabilitado)");
         }
-        if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+        if (!ENV.TELEGRAM_BOT_TOKEN || !ENV.TELEGRAM_CHAT_ID) {
             checks.warnings = checks.warnings || [];
             checks.warnings.push("Telegram no configurado: las notificaciones al admin NO llegarán");
         }

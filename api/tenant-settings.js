@@ -8,7 +8,8 @@
 let _securityLib = undefined;
 function getSecurity() {
     if (_securityLib !== undefined) return _securityLib;
-    try { _securityLib = require("./_security.js"); } catch (_) { _securityLib = null; }
+    try { _securityLib = require("./_security.js");
+const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
@@ -76,8 +77,8 @@ module.exports = async (req, res) => {
             || token === "mozona-admin-2025"
             || token === "mozona-approve-2025";
 
-        const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const supabaseUrl = (ENV.SUPABASE_URL || ENV.SUPABASE_URL || "").replace(/\/$/, "");
+        const serviceKey = ENV.SUPABASE_SERVICE_ROLE_KEY || "";
 
         if (!supabaseUrl || !serviceKey) {
             return safeJson(200, { ok: false, error: "Sistema no configurado", settings: DEFAULT_SETTINGS });
