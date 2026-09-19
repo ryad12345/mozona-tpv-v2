@@ -470,15 +470,6 @@ export function AuthPage() {
                     {!busy && <IconArrowRight size={16} strokeWidth={2.5} />}
                 </button>
 
-                {/* ★ VIP notice */}
-                {isVipEmail && (mode === "login" || mode === "signup") && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11.5px] text-amber-800">
-                        <span>⭐</span>
-                        <span className="font-bold">Acceso VIP detectado.</span>
-                        <span className="opacity-80">Entraras sin pasos extra.</span>
-                    </div>
-                )}
-
                 {/* ★ Links */}
                 <div className="flex justify-between text-[12.5px] pt-2">
                     {mode === "login" && (
