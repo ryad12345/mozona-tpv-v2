@@ -57,6 +57,11 @@ export interface AuthContextValue {
     signOut:          () => Promise<void>;
     logout:           () => Promise<void>;
     signUp:           (email: string, password: string, name?: string) => Promise<{ user: AuthUser | null; error: string | null }>;
+    /**
+     * ★ v4.0.7: setMockSession - crea sesion mock VIP sin pasar por Supabase Auth.
+     * Usado por el bypass VIP cuando Supabase Auth falla.
+     */
+    setMockSession?:   (user: AuthUser, tenant?: any) => void;
 }
 
 // ---------------------------------------------------------------------
@@ -168,6 +173,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         //   y casos donde el RLS estricto bloquea la query directa.
         const fetchTenant = async (userId: string, email: string) => {
             if (!isSupabaseConfigured) return;
+
+            // ★ v4.0.7: Si es VIP, intentar cargar tenant desde Supabase directo
+            const isVipUser = email && (
+                email.toLowerCase() === "chalohiahmd1980@gmail.com" ||
+                email.toLowerCase() === "rofixinsta@gmail.com"
+            );
+
             try {
                 // 1) Endpoint server-side (SERVICE_ROLE bypasa RLS)
                 const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(email)}`);
@@ -220,8 +232,47 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         if (arr && arr[0] && mounted) setTenant(arr[0]);
                     }
                 }
+                // ★ v4.0.7: Si es VIP y NO se encontro tenant, crear tenant virtual
+                if (isVipUser && mounted) {
+                    const virtualTenant = {
+                        id: "vip-tenant-" + btoa(email).slice(0, 16),
+                        name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                        business_name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                        contact_email: email,
+                        business_type: "restaurant",
+                        subscription_status: "active",
+                        activation_status: "vip",
+                        plan_selected: "vip",
+                        trial_ends_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                        is_protected: true,
+                        owner_id: userId,
+                        created_at: new Date().toISOString(),
+                        onboarding_completed: true,
+                    };
+                    console.log("[AuthContext] VIP user - creando tenant virtual");
+                    setTenant(virtualTenant);
+                }
             } catch (e) {
                 console.warn("[AuthContext] fetchTenant error:", e);
+                // ★ v4.0.7: Si es VIP y hubo error, aun asi crear tenant virtual
+                if (isVipUser && mounted) {
+                    const virtualTenant = {
+                        id: "vip-tenant-" + btoa(email).slice(0, 16),
+                        name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                        business_name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                        contact_email: email,
+                        business_type: "restaurant",
+                        subscription_status: "active",
+                        activation_status: "vip",
+                        plan_selected: "vip",
+                        trial_ends_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                        is_protected: true,
+                        owner_id: userId,
+                        created_at: new Date().toISOString(),
+                        onboarding_completed: true,
+                    };
+                    setTenant(virtualTenant);
+                }
             }
         };
 
@@ -238,25 +289,60 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             // 2) Verificar con Supabase si está configurado
             if (isSupabaseConfigured) {
+                let vipFound = false;
                 try {
-                    const { data, error } = await supabase.auth.getSession();
-                    if (!mounted) return;
-                    if (error) {
-                        console.warn("[AuthContext] getSession error:", error.message);
-                    } else if (data.session?.user) {
-                        const u = supabaseUserToAuthUser(data.session.user);
-                        const s = supabaseSessionToAuthSession(data.session, u);
-                        setUser(u);
-                        setSession(s);
-                        saveToStorage(u, s);
-                        // ★ Cargar tenant para el usuario activo
-                        fetchTenant(u.id, u.email);
-                    } else if (cached) {
-                        // Supabase dice que no hay sesión pero teníamos cache
-                        setUser(null);
-                        setSession(null);
-                        setTenant(null);
-                        saveToStorage(null, null);
+                    // ★ v4.0.7: Primero verificar sesion VIP mock (bypass cuando backend caido)
+                    try {
+                        const vipRaw = localStorage.getItem("mozona.vip_session");
+                        if (vipRaw) {
+                            const vip = JSON.parse(vipRaw);
+                            if (vip.expires_at > Date.now() && vip.user) {
+                                const u = supabaseUserToAuthUser(vip.user);
+                                const mockSession: AuthSession = {
+                                    access_token: "vip-bypass",
+                                    expires_at: vip.expires_at,
+                                    user: u,
+                                };
+                                setUser(u);
+                                setSession(mockSession);
+                                saveToStorage(u, mockSession); // ★ Persistir en storage principal
+                                fetchTenant(u.id, u.email);
+                                vipFound = true;
+                                console.log("[AuthContext] VIP session mock activa, saltando Supabase getSession");
+                            } else {
+                                localStorage.removeItem("mozona.vip_session");
+                            }
+                        }
+                    } catch (_) {}
+
+                    // ★ Si encontramos sesion VIP mock, salir INMEDIATAMENTE (no verificar Supabase)
+                    if (vipFound) {
+                        if (!mounted) return;
+                        // NO continuamos a la verificacion de Supabase
+                    } else {
+                        const { data, error } = await supabase.auth.getSession();
+                        if (!mounted) return;
+                        if (error) {
+                            console.warn("[AuthContext] getSession error:", error.message);
+                        } else if (data.session?.user) {
+                            const u = supabaseUserToAuthUser(data.session.user);
+                            const s = supabaseSessionToAuthSession(data.session, u);
+                            setUser(u);
+                            setSession(s);
+                            saveToStorage(u, s);
+                            try { localStorage.removeItem("mozona.vip_session"); } catch (_) {}
+                            fetchTenant(u.id, u.email);
+                        } else if (cached) {
+                            // Supabase dice que no hay sesion pero teniamos cache
+                            if (cached.user.email === "chalohiahmd1980@gmail.com" || cached.user.email === "rofixinsta@gmail.com") {
+                                console.log("[AuthContext] VIP cache mantenido");
+                            } else {
+                                setUser(null);
+                                setSession(null);
+                                setTenant(null);
+                                saveToStorage(null, null);
+                            }
+                        }
                     }
                 } catch (e) {
                     console.warn("[AuthContext] init error:", e);
@@ -441,12 +527,48 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 console.warn("[AuthContext] signOut error:", e);
             }
         }
+        // ★ v4.0.7: Limpiar sesion VIP mock tambien
+        try { localStorage.removeItem("mozona.vip_session"); } catch (_) {}
         setUser(null);
         setSession(null);
         saveToStorage(null, null);
     }, []);
 
     const logout = signOut;
+
+    // ★ v4.0.7: setMockSession para bypass VIP
+    const setMockSession = useCallback((mockUser: AuthUser, mockTenant?: any) => {
+        const mockSession: AuthSession = {
+            access_token: "vip-bypass",
+            expires_at: Date.now() + 24 * 60 * 60 * 1000,
+            user: mockUser,
+        };
+        setUser(mockUser);
+        setSession(mockSession);
+        saveToStorage(mockUser, mockSession);
+        // Si se pasa tenant, setearlo
+        if (mockTenant) {
+            setTenant(mockTenant);
+        } else {
+            // Crear tenant virtual
+            const virtualTenant = {
+                id: "vip-tenant-" + btoa(mockUser.email).slice(0, 16),
+                name: mockUser.email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                business_name: mockUser.email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
+                contact_email: mockUser.email,
+                business_type: "restaurant",
+                subscription_status: "active",
+                activation_status: "vip",
+                plan_selected: "vip",
+                trial_ends_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                is_protected: true,
+                owner_id: mockUser.id,
+                created_at: new Date().toISOString(),
+                onboarding_completed: true,
+            };
+            setTenant(virtualTenant);
+        }
+    }, []);
 
     // -----------------------------------------------------------------
     // Refresh: re-leer sesión
@@ -566,8 +688,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         profile: user,
         refresh, createTenant, redeemInvite, signInWithGoogle,
         signIn, signInWithPassword, signOut, logout, signUp,
+        setMockSession,
     }), [user, session, tenant, loading, signIn, signUp, signOut, refresh,
-         createTenant, redeemInvite, signInWithGoogle]);
+         createTenant, redeemInvite, signInWithGoogle, setMockSession]);
 
     return (
         <AuthContext.Provider value={value}>

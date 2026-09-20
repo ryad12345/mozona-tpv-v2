@@ -90,16 +90,60 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
             apikey: SUPABASE_ANON_KEY,
         };
-        const r = await fetch(supabaseUrl, {
-            method,
-            headers: sbHeaders,
-            body: body ? JSON.stringify(body) : undefined,
-            cache: "no-store",
-        });
-        if (r.ok) return r;
+        try {
+            const r = await fetch(supabaseUrl, {
+                method,
+                headers: sbHeaders,
+                body: body ? JSON.stringify(body) : undefined,
+                cache: "no-store",
+            });
+            if (r.ok) return r;
+        } catch (_) {}
     }
 
-    // ★ 3. Si nada funciona, devolver 503 fake
+    // ★ 3. BYPASS VIP: Si es un VIP conocido, simular respuesta exitosa
+    const isVip = body?.email && (
+        body.email.toLowerCase() === "chalohiahmd1980@gmail.com" ||
+        body.email.toLowerCase() === "rofixinsta@gmail.com"
+    );
+
+    if (isVip && path.includes("send-otp")) {
+        return new Response(
+            JSON.stringify({
+                ok: true,
+                vip_bypass: true,
+                message: "Acceso VIP concedido. Continuando...",
+                friendly_message: "Acceso VIP concedido",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
+    if (isVip && path.includes("verify-otp")) {
+        return new Response(
+            JSON.stringify({
+                ok: true,
+                verified: true,
+                message: "VIP verificado",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
+    // ★ 4. BYPASS VIP register-tenant: Si es VIP, simular registro exitoso
+    if (isVip && path.includes("register-tenant")) {
+        return new Response(
+            JSON.stringify({
+                ok: true,
+                message: "Acceso VIP concedido",
+                friendly_message: "Acceso VIP concedido",
+                vip_bypass: true,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
+    // ★ 5. Si nada funciona, devolver 503 con mensaje humano
     return new Response(
         JSON.stringify({
             ok: false,

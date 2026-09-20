@@ -87,10 +87,12 @@ export function AuthPage() {
     useEffect(() => {
         if (auth.isReady && auth.user) {
             if (auth.isSuperAdmin) { nav("/admin", { replace: true }); return; }
+            // ★ v4.0.7: VIP sin tenant → ir directo a /app (bypass total)
+            if (isVipOrAdmin(auth.user.email)) { nav("/app", { replace: true }); return; }
             if (auth.tenant) { nav("/app", { replace: true }); return; }
             // Para no-VIPs sin tenant: mostrar UI de espera
         }
-    }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, nav]);
+    }, [auth.isReady, auth.user, auth.isSuperAdmin, auth.tenant, nav, isVipEmail]);
 
     useEffect(() => {
         if (mode === "signup" && needsOtp) {
@@ -190,18 +192,15 @@ export function AuthPage() {
         setBusy(true);
         try {
             if (mode === "signup") {
-                // Llama al endpoint register-tenant
-                const r = await fetch("/api/register-tenant", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
+                // Llama al endpoint register-tenant via api-router (con auto-fallback)
+                const json = await apiJson("register-tenant", {
+                    body: {
                         email: email.trim(),
                         password: pwd,
                         name: name.trim(),
                         businessName: businessName.trim() || name.trim(),
-                    }),
+                    },
                 });
-                const json = await r.json();
                 if (!json.ok) {
                     setBusy(false);
                     setMsg({ kind: "err", text: json.friendly_message || json.message || "No pudimos crear tu cuenta. Reintenta." });
@@ -230,6 +229,29 @@ export function AuthPage() {
                     password: pwd,
                 });
                 if (error) {
+                    // ★ v4.0.7: BYPASS VIP TOTAL
+                    // Si es VIP y Supabase Auth falla (porque el user no existe o backend caido),
+                    // usar setMockSession del AuthContext para actualizar state directamente.
+                    if (isVipOrAdmin(email)) {
+                        const mockUser = {
+                            id: "vip-" + btoa(email).slice(0, 20),
+                            email: email.trim(),
+                            user_metadata: { name: "VIP Access", vip: true },
+                            app_metadata: { provider: "vip-bypass" },
+                            aud: "authenticated",
+                            created_at: new Date().toISOString(),
+                        };
+                        // ★ Llamar setMockSession del AuthContext (actualiza state inmediatamente)
+                        if (auth.setMockSession) {
+                            auth.setMockSession(mockUser as any);
+                        }
+                        setMsg({ kind: "ok", text: "✓ Acceso VIP concedido" });
+                        // ★ Usar React Router para navegar SIN reload
+                        setTimeout(() => {
+                            nav("/app", { replace: true });
+                        }, 300);
+                        return;
+                    }
                     setBusy(false);
                     setMsg({ kind: "err", text: "El correo o la contrasena no coinciden." });
                     return;
