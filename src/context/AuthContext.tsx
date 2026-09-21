@@ -8,6 +8,7 @@ import {
 } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { isVipOrAdmin, isSuperAdminEmail } from "../lib/vip";
+import { safeFetch } from "../lib/safeFetch";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -82,6 +83,18 @@ function loadFromStorage(): { user: AuthUser; session: AuthSession } | null {
             localStorage.removeItem(STORAGE_KEY);
             return null;
         }
+
+        // ★ v4.0.7-cleanup: detectar tokens de la API key JWT vieja
+        //   Si el access_token empieza con "eyJ" (JWT formato antiguo) y
+        //   la anon_key actual es "sb_publishable_*", el token está invalidado.
+        //   Limpiar para forzar re-login con la key nueva.
+        const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+        if (ANON_KEY.startsWith("sb_publishable_") && parsed.session.access_token?.startsWith("eyJ")) {
+            console.warn("[AuthContext] Token JWT detectado con nueva anon_key. Limpiando sesión.");
+            localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
+
         return parsed;
     } catch {
         return null;
@@ -182,14 +195,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             try {
                 // 1) Endpoint server-side (SERVICE_ROLE bypasa RLS)
-                const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(email)}`);
-                const json = await r.json();
-                if (json && json.ok && json.settings && json.settings.tenant_id) {
+                // ★ v4.0.7-json-safe: Usar safeFetch para evitar SyntaxError
+                const { safeFetch } = await import("../lib/safeFetch");
+                const r = await safeFetch(`/api/tenant-settings?email=${encodeURIComponent(email)}`);
+                const json = r.data as any;
+                if (r.ok && json && json.ok && json.settings && json.settings.tenant_id) {
                     // Devolvió un tenant_id real → consultar el tenant directamente
                     const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
                     const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
                     if (url && key) {
-                        const tr = await fetch(
+                        const trResult = await safeFetch(
                             `${url}/rest/v1/tenants?id=eq.${json.settings.tenant_id}&select=*&limit=1`,
                             {
                                 headers: {
@@ -198,8 +213,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                                 },
                             }
                         );
-                        if (tr.ok) {
-                            const arr = await tr.json();
+                        if (trResult.ok) {
+                            const arr = trResult.data as any[];
                             if (arr && arr[0] && mounted) {
                                 setTenant(arr[0]);
                                 return;
@@ -208,34 +223,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     }
                 }
                 // 2) Fallback al query directo por owner_id (caso normal)
+                // ★ v4.0.7-json-safe: safeFetch para evitar SyntaxError
+                const { safeFetch: safeFetchAgain } = await import("../lib/safeFetch");
                 const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
                 const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
                 if (url && key) {
-                    let r2 = await fetch(
+                    const r2a = await safeFetchAgain(
                         `${url}/rest/v1/tenants?owner_id=eq.${userId}&select=*&limit=1`,
                         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
                     );
-                    if (r2.ok) {
-                        const arr = await r2.json();
+                    if (r2a.ok) {
+                        const arr = r2a.data as any[];
                         if (arr && arr[0] && mounted) {
                             setTenant(arr[0]);
                             return;
                         }
                     }
                     // 3) Fallback por contact_email
-                    r2 = await fetch(
+                    const r2b = await safeFetchAgain(
                         `${url}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
                         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
                     );
-                    if (r2.ok) {
-                        const arr = await r2.json();
+                    if (r2b.ok) {
+                        const arr = r2b.data as any[];
                         if (arr && arr[0] && mounted) setTenant(arr[0]);
                     }
                 }
                 // ★ v4.0.7: Si es VIP y NO se encontro tenant, crear tenant virtual
                 if (isVipUser && mounted) {
                     const virtualTenant = {
-                        id: "vip-tenant-" + btoa(email).slice(0, 16),
+                        id: "58a8e6f5-3172-409c-8aa5-ae02be0b7e76",
                         name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                         business_name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                         contact_email: email,
@@ -249,15 +266,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         created_at: new Date().toISOString(),
                         onboarding_completed: true,
                     };
-                    console.log("[AuthContext] VIP user - creando tenant virtual");
+                    console.log("[AuthContext] VIP mode active");
                     setTenant(virtualTenant);
                 }
             } catch (e) {
-                console.warn("[AuthContext] fetchTenant error:", e);
+                console.warn("[AuthContext] warn:", String(e));
                 // ★ v4.0.7: Si es VIP y hubo error, aun asi crear tenant virtual
                 if (isVipUser && mounted) {
                     const virtualTenant = {
-                        id: "vip-tenant-" + btoa(email).slice(0, 16),
+                        id: "58a8e6f5-3172-409c-8aa5-ae02be0b7e76",
                         name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                         business_name: email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                         contact_email: email,
@@ -454,7 +471,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 //   Esto usa la SERVICE_ROLE_KEY para saltarse la confirmacion.
                 //   Si el endpoint no esta configurado, falla silenciosamente.
                 try {
-                    const acResp = await fetch("/api/auto-confirm-user", {
+                    const acResult = await safeFetch("/api/auto-confirm-user", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -462,8 +479,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                             email: email.trim().toLowerCase(),
                         }),
                     });
-                    const acJson = await acResp.json().catch(() => ({}));
-                    console.log("[AuthContext] auto-confirm result:", acJson);
+                    console.log("[AuthContext] auto-confirm result:", acResult.ok ? acResult.data : acResult.error);
                 } catch (acErr) {
                     console.warn("[AuthContext] auto-confirm exception (sigue):", acErr);
                 }
@@ -552,7 +568,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         } else {
             // Crear tenant virtual
             const virtualTenant = {
-                id: "vip-tenant-" + btoa(mockUser.email).slice(0, 16),
+                id: "58a8e6f5-3172-409c-8aa5-ae02be0b7e76",
                 name: mockUser.email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                 business_name: mockUser.email === "chalohiahmd1980@gmail.com" ? "El Rincón de Casablanca" : "Mozona TPV Admin",
                 contact_email: mockUser.email,
@@ -586,24 +602,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 // ★ v3.4.11: Recargar tenant también vía endpoint server-side
                 try {
                     if (u.email) {
-                        const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(u.email)}`);
-                        const json = await r.json();
-                        if (json && json.ok && json.settings && json.settings.tenant_id) {
+                        // ★ v4.0.7-json-safe: safeFetch valida content-type
+                        const r = await safeFetch(`/api/tenant-settings?email=${encodeURIComponent(u.email)}`);
+                        const json = r.data as any;
+                        if (r.ok && json && json.ok && json.settings && json.settings.tenant_id) {
                             const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
                             const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
                             if (url && key) {
-                                const tr = await fetch(
+                                const tr = await safeFetch(
                                     `${url}/rest/v1/tenants?id=eq.${json.settings.tenant_id}&select=*&limit=1`,
                                     { headers: { apikey: key, Authorization: `Bearer ${key}` } }
                                 );
                                 if (tr.ok) {
-                                    const arr = await tr.json();
+                                    const arr = tr.data as any[];
                                     if (arr && arr[0]) setTenant(arr[0]);
                                 }
                             }
                         }
                     }
-                } catch (_) {}
+                } catch (e) {
+                    console.warn("[AuthContext] refresh:", String(e));
+                }
             }
         } catch (e) {
             console.warn("[AuthContext] refresh error:", e);

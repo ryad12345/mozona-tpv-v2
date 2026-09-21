@@ -49,14 +49,28 @@ const SAMPLE_ITEMS: Array<{ name: string; qty: number; price: number; tax: numbe
     { name: "Café Solo",          qty: 1, price:  1.50, tax: 10 },
 ];
 
-const PAPER_WIDTH = 280;     // px ≈ 80mm
-const CHARS_PER_LINE = 32;   // standard ESC/POS 80mm font A
+// ★ v4.0.7-ticket: Soporte para 48mm, 58mm y 80mm con tamaños proporcionales
+const PAPER_WIDTHS: Record<48 | 58 | 80, { px: number; chars: number }> = {
+    48: { px: 168, chars: 22 },  // ≈ 22 chars en font monospace 11px
+    58: { px: 200, chars: 28 },  // ≈ 28 chars
+    80: { px: 280, chars: 32 },  // ≈ 32 chars (estándar ESC/POS 80mm font A)
+};
+
+function getPaperWidth(width: 48 | 58 | 80 | undefined): { px: number; chars: number } {
+    const w = (width === 48 || width === 58 || width === 80) ? width : 48;
+    return PAPER_WIDTHS[w];
+}
 
 // ---------------------------------------------------------------------
 // Componente
 // ---------------------------------------------------------------------
 
 export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketPreviewProps) {
+    // ★ v4.0.7: Ancho dinámico según ticket_paper_width
+    const paperConfig = getPaperWidth(form.ticket_paper_width as any);
+    const PAPER_WIDTH = paperConfig.px;
+    const CHARS_PER_LINE = paperConfig.chars;
+
     // Cálculos de la pre-cuenta -----------------------------------------
     const { taxByRate, total } = useMemo(() => {
         const byRate = new Map<number, { base: number; tax: number }>();
@@ -87,13 +101,14 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
             `}
         >
             <div
-                className="
+                className={`
                     mx-auto bg-[#fafaf7] text-black
                     border border-slate-300
                     rounded-md
-                    px-4 py-3
+                    ${form.ticket_paper_width === 48 ? "px-2 py-2" : "px-4 py-3"}
                     shadow-inner
-                "
+                    box-border
+                `}
                 style={{ width: PAPER_WIDTH, maxWidth: "100%" }}
             >
                 {/* LOGO (opcional) ------------------------------------- */}
@@ -114,14 +129,14 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
                 {form.phone && <Center>Tel: {form.phone}</Center>}
                 <Center>CIF/NIF: {form.cif_nif || "—"}</Center>
 
-                <Sep />
+                <Sep chars={CHARS_PER_LINE} />
 
                 {/* Factura -------------------------------------------- */}
-                <Row label="Factura:" value={`${form.default_series}-000001`} />
-                <Row label="Fecha:"   value="26/08/2026 14:32" />
-                <Row label="Pago:"    value="TARJETA" />
+                <Row label="Factura:" chars={CHARS_PER_LINE} value={`${form.default_series}-000001`} />
+                <Row label="Fecha:" chars={CHARS_PER_LINE}   value="26/08/2026 14:32" />
+                <Row label="Pago:" chars={CHARS_PER_LINE}    value="TARJETA" />
 
-                <Sep dash />
+                <Sep dash chars={CHARS_PER_LINE} />
 
                 {/* Líneas --------------------------------------------- */}
                 {SAMPLE_ITEMS.map((it, i) => (
@@ -134,7 +149,7 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
                     </div>
                 ))}
 
-                <Sep dash />
+                <Sep dash chars={CHARS_PER_LINE} />
 
                 {/* Desglose IVA --------------------------------------- */}
                 {taxByRate.map(({ rate, base }) => (
@@ -150,7 +165,7 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
                     </div>
                 ))}
 
-                <Sep />
+                <Sep chars={CHARS_PER_LINE} />
 
                 {/* TOTAL ----------------------------------------------- */}
                 <div className="flex justify-between font-black text-[13px]">
@@ -158,7 +173,7 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
                     <span>{fmtEUR(total)}</span>
                 </div>
 
-                <Sep />
+                <Sep chars={CHARS_PER_LINE} />
 
                 {/* QR ------------------------------------------------- */}
                 <div className="flex justify-center my-2">
@@ -168,7 +183,7 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
                     {qrPayload ? "VeriFactu AEAT" : "QR VeriFactu (preview)"}
                 </Center>
 
-                <Sep dash />
+                <Sep dash chars={CHARS_PER_LINE} />
 
                 {/* Footer --------------------------------------------- */}
                 <Center className="mt-1 whitespace-pre-wrap text-[10px]">
@@ -178,12 +193,12 @@ export function LiveTicketPreview({ form, qrPayload, bare = false }: LiveTicketP
 
             {/* Dientes de corte --------------------------------------- */}
             <div className="mt-2 flex justify-center gap-[3px] opacity-60">
-                {Array.from({ length: 24 }).map((_, i) => (
+                {Array.from({ length: form.ticket_paper_width === 48 ? 14 : form.ticket_paper_width === 58 ? 18 : 24 }).map((_, i) => (
                     <span key={i} className="w-[6px] h-[3px] rounded-sm bg-slate-300" />
                 ))}
             </div>
             <div className="text-center text-[10px] text-slate-400 mt-1 font-sans">
-                Vista previa 80mm
+                Vista previa {form.ticket_paper_width || 48}mm
             </div>
         </div>
     );
@@ -208,12 +223,12 @@ function Center({ children, className = "" }: { children: React.ReactNode; class
     return <div className={`text-center ${className}`}>{children}</div>;
 }
 
-function Sep({ dash = false }: { dash?: boolean }) {
-    return <div className="my-1 text-slate-500">{dash ? "-".repeat(CHARS_PER_LINE) : "=".repeat(CHARS_PER_LINE)}</div>;
+function Sep({ dash = false, chars = 32 }: { dash?: boolean; chars?: number }) {
+    return <div className="my-1 text-slate-500">{dash ? "-".repeat(chars) : "=".repeat(chars)}</div>;
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-    const pad = Math.max(1, CHARS_PER_LINE - label.length - value.length);
+function Row({ label, value, chars = 32 }: { label: string; value: string; chars?: number }) {
+    const pad = Math.max(1, chars - label.length - value.length);
     return (
         <div className="flex justify-between">
             <span>{label}</span>

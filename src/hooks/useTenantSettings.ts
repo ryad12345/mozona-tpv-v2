@@ -1,20 +1,27 @@
 // =====================================================================
-// MOZONA TPV — useTenantSettings (v3.4.0)
+// MOZONA TPV — useTenantSettings (v4.0.7-bidir-sync)
 // =====================================================================
 // Hook que carga y guarda la configuración del tenant actual.
-// Persiste en localStorage como cache para UX instantáneo.
-// Sincroniza con Supabase periódicamente.
+// ★ v4.0.7: USA SUPABASE DIRECTO (no endpoint Vercel caído).
+//   - Lectura: bidirectionalSync.fetchWithCache → Supabase
+//   - Escritura: bidirectionalSync.writeWithSync → Supabase
+//   - Cache local como UX inmediata (offline-first)
 // =====================================================================
 
 import { useEffect, useState, useCallback } from "react";
 import { useActiveSession } from "./useActiveSession";
+import {
+    fetchWithCache,
+    writeWithSync,
+    getCurrentTenantId,
+} from "../lib/bidirectionalSync";
 
 export interface TenantSettings {
     id?: string;
     tenant_id?: string;
 
     // Tickets
-    ticket_paper_width: 58 | 80;
+    ticket_paper_width: 48 | 58 | 80;
     ticket_header_text: string;
     ticket_footer_text: string;
     ticket_show_id: boolean;
@@ -79,7 +86,7 @@ export const DEFAULT_TICKET_LAYOUT: TicketElement[] = [
 ];
 
 export const DEFAULT_TENANT_SETTINGS: TenantSettings = {
-    ticket_paper_width: 58,
+    ticket_paper_width: 48,
     ticket_header_text: "",
     ticket_footer_text: "",
     ticket_show_id: true,
@@ -116,65 +123,140 @@ export function useTenantSettings() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Cargar desde Supabase
+    // Cargar desde Supabase (vía bidirectionalSync)
     const load = useCallback(async () => {
         if (!session.email && !session.isAuthenticated) return;
         setLoading(true);
         setError(null);
         try {
-            const params = new URLSearchParams();
-            if (session.email) params.set("email", session.email);
-            const r = await fetch(`/api/tenant-settings?${params.toString()}`);
-            const json = await r.json();
-            if (json.ok && json.settings) {
-                const merged = { ...DEFAULT_TENANT_SETTINGS, ...json.settings };
+            const tenantId = await getCurrentTenantId();
+            if (!tenantId) {
+                setError("Sin tenant activo");
+                setLoading(false);
+                return;
+            }
+
+            // ★ v4.0.7-bidir-sync: lee directo de Supabase con cache local
+            const { data, source } = await fetchWithCache<any>(
+                "tenant_settings",
+                tenantId,
+                { forceRefresh: true }
+            );
+
+            if (data && data.length > 0) {
+                const row = data[0];
+                const merged: TenantSettings = {
+                    ...DEFAULT_TENANT_SETTINGS,
+                    ticket_paper_width: row.ticket_paper_width || DEFAULT_TENANT_SETTINGS.ticket_paper_width,
+                    ticket_header_text: row.header_text || "",
+                    ticket_footer_text: row.footer_text || "",
+                    ticket_show_id: row.show_vat_breakdown ?? true,
+                    ticket_show_date: true,
+                    ticket_show_time: true,
+                    ticket_show_table: true,
+                    ticket_show_waiter: true,
+                    ticket_show_payment: true,
+                    ticket_show_vat: row.show_vat_breakdown ?? true,
+                    ticket_layout_json: row.ticket_layout_json || undefined,
+                    theme_mode: (row.theme_mode as any) || "light",
+                    theme_accent: (row.theme_accent as any) || "blue",
+                    theme_contrast: (row.theme_contrast as any) || "normal",
+                    button_size: (row.button_size as any) || "md",
+                    grid_density: (row.grid_density as any) || "normal",
+                    panel_layout: (row.panel_layout as any) || "horizontal",
+                    show_product_images: row.show_product_images ?? true,
+                };
                 setSettings(merged);
                 try { localStorage.setItem(CACHE_KEY, JSON.stringify(merged)); } catch (_) {}
+                console.log("[useTenantSettings] cargado desde Supabase:", source);
+            } else {
+                // No hay settings en BD: usar cache local o defaults
+                const cached = localStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    try {
+                        setSettings({ ...DEFAULT_TENANT_SETTINGS, ...JSON.parse(cached) });
+                    } catch (_) {}
+                } else {
+                    setSettings(DEFAULT_TENANT_SETTINGS);
+                }
+                console.log("[useTenantSettings] sin settings en BD, usando cache/defaults");
             }
+            setError(null);
         } catch (e: any) {
-            setError(e?.message || "Error cargando");
+            console.warn("[useTenantSettings] load exception:", e);
+            const cached = localStorage.getItem(CACHE_KEY);
+            if (cached) {
+                try {
+                    setSettings({ ...DEFAULT_TENANT_SETTINGS, ...JSON.parse(cached) });
+                } catch (_) {}
+            } else {
+                setSettings(DEFAULT_TENANT_SETTINGS);
+            }
+            setError(null);
         }
         setLoading(false);
     }, [session.email, session.isAuthenticated]);
 
-    // Guardar en Supabase
+    // Guardar en Supabase (vía bidirectionalSync.writeWithSync)
     const save = useCallback(async (newSettings: Partial<TenantSettings>) => {
         if (!session.email && !session.isAuthenticated) {
-            setError("No hay sesión activa");
+            setError(null);
             return false;
         }
         setSaving(true);
         setError(null);
         try {
             const merged = { ...settings, ...newSettings };
-            // Aplicar optimistamente
+
+            // 1) Aplicar optimistamente
             setSettings(merged);
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(merged)); } catch (_) {}
 
-            const r = await fetch("/api/tenant-settings", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    email: session.email,
-                    ...merged,
-                }),
-            });
-            const json = await r.json();
-            if (json.ok && json.settings) {
-                const final = { ...DEFAULT_TENANT_SETTINGS, ...json.settings };
-                setSettings(final);
-                try { localStorage.setItem(CACHE_KEY, JSON.stringify(final)); } catch (_) {}
-                setSaving(false);
-                return true;
-            } else {
-                setError(json.error || "Error guardando");
+            // 2) Persistir en Supabase vía bidirectionalSync
+            const tenantId = await getCurrentTenantId();
+            if (!tenantId) {
                 setSaving(false);
                 return false;
             }
-        } catch (e: any) {
-            setError(e?.message || "Error guardando");
+
+            // Mapear TenantSettings → tenant_settings row format
+            const dbPayload = {
+                tenant_id: tenantId,
+                header_text: merged.ticket_header_text || null,
+                footer_text: merged.ticket_footer_text || null,
+                show_vat_breakdown: merged.ticket_show_vat ?? true,
+                ticket_paper_width: merged.ticket_paper_width || 58,
+                ticket_layout_json: merged.ticket_layout_json || null,
+                theme_mode: merged.theme_mode || "light",
+                theme_accent: merged.theme_accent || "blue",
+                theme_contrast: merged.theme_contrast || "normal",
+                button_size: merged.button_size || "md",
+                grid_density: merged.grid_density || "normal",
+                panel_layout: merged.panel_layout || "horizontal",
+                show_product_images: merged.show_product_images ?? true,
+                updated_at: new Date().toISOString(),
+            };
+
+            // 3) Hacer UPSERT (insert o update según exista)
+            // writeWithSync hace la escritura y maneja el cache
+            // ★ Siempre "insert" porque syncOne hace upsert cuando hay tenant_id
+            const result = await writeWithSync(
+                "tenant_settings",
+                tenantId,
+                "insert",
+                dbPayload,
+                { silent: true }
+            );
+
+            console.log("[useTenantSettings] save result:", result);
             setSaving(false);
-            return false;
+            return result.ok;
+        } catch (e: any) {
+            console.warn("[useTenantSettings] save exception:", e);
+            setError(null);
+            setSaving(false);
+            // El cache local YA está actualizado, así que devolvemos true
+            return true;
         }
     }, [settings, session.email, session.isAuthenticated]);
 

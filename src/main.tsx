@@ -19,6 +19,68 @@ console.log(
 // ★ Timestamp de cuando se cargo
 console.log("[MOZONA] cargado en", new Date().toISOString());
 
+// ★ v4.0.7-auto-cleanup: detecta y limpia caches obsoletos automáticamente
+(function autoCleanup() {
+    if (typeof window === "undefined") return;
+    const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+    const HAS_NEW_KEY = ANON_KEY.startsWith("sb_publishable_");
+
+    if (!HAS_NEW_KEY) return;  // Si la key actual es JWT, no hacemos nada
+
+    let cleaned = 0;
+
+    // 1. Limpiar tokens Supabase obsoletos (formato JWT viejo)
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+
+        // Tokens Supabase (sb-*) con JWT eyJ cuando la key nueva es publishable
+        if (key.startsWith("sb-") && key.includes("auth-token")) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw?.includes('"access_token":"eyJ')) {
+                    localStorage.removeItem(key);
+                    cleaned++;
+                }
+            } catch {}
+        }
+
+        // Cache de sesion vieja con tokens eyJ
+        if (key === "pos_current_user") {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw?.includes('"access_token":"eyJ')) {
+                    localStorage.removeItem(key);
+                    cleaned++;
+                }
+            } catch {}
+        }
+
+        // Caches de versiones anteriores que ya no se usan
+        const OBSOLETE_KEYS = [
+            "mozona.tenantSettings",
+            "mozona.products",
+            "mozona.categories",
+            "mozona.tables",
+            "mozona.empresa",
+            "mozona.business_info",
+            "mozona.ticket_config",
+            "pos_tables_total",
+            "pos_custom_products_",
+        ];
+        if (OBSOLETE_KEYS.some(prefix => key.startsWith(prefix))) {
+            try {
+                localStorage.removeItem(key);
+                cleaned++;
+            } catch {}
+        }
+    }
+
+    if (cleaned > 0) {
+        console.log(`[MOZONA] auto-cleanup: ${cleaned} claves obsoletas eliminadas`);
+    }
+})();
+
 // ★ Forzar al Service Worker a actualizarse inmediatamente
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then(regs => {

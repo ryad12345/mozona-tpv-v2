@@ -22,6 +22,7 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { TicketCanvas, ElementPalette } from "../components/TicketCanvas";
 import { IconShield, IconCheck, IconArrowLeft, IconTrash, IconDuplicate } from "../components/icons";
+import { compressImage, saveLogo, loadLogo, clearLogo, logoSizeKB, isValidLogoDataUrl } from "../lib/logoStorage";
 
 const SAMPLE_DATA = {
     id: "T-00042",
@@ -59,12 +60,28 @@ export function TenantSettingsPage() {
     }, [settings]);
 
     // ★ Layout (asegurar default si está vacío)
+    // ★ v4.0.7-tenant-replace: inyecta datos REALES del tenant en lugar de "MI RESTAURANTE"
     const layout: TicketElement[] = useMemo(() => {
+        let baseLayout: TicketElement[];
         if (localSettings.ticket_layout_json && Array.isArray(localSettings.ticket_layout_json) && localSettings.ticket_layout_json.length > 0) {
-            return localSettings.ticket_layout_json;
+            baseLayout = localSettings.ticket_layout_json;
+        } else {
+            baseLayout = JSON.parse(JSON.stringify(DEFAULT_TICKET_LAYOUT));
         }
-        return DEFAULT_TICKET_LAYOUT;
-    }, [localSettings.ticket_layout_json]);
+
+        // ★ Reemplazar textos genéricos con datos REALES del tenant
+        const tenantName = (settings as any)?.tenant?.name || "Restaurante";
+
+        return baseLayout.map(el => {
+            if (el.type !== "text") return el;
+            const content = (el.content || "").trim();
+            // Reemplazar textos genéricos hardcoded
+            if (content === "MI RESTAURANTE" || content === "RESTAURANT NAME" || content === "") {
+                return { ...el, content: tenantName };
+            }
+            return el;
+        });
+    }, [localSettings.ticket_layout_json, settings]);
 
     const updateLayout = useCallback((newLayout: TicketElement[]) => {
         setLocalSettings(prev => ({ ...prev, ticket_layout_json: newLayout }));
@@ -112,18 +129,40 @@ export function TenantSettingsPage() {
         updateLayout(layout.map(e => e.id === id ? { ...e, visible: !e.visible } : e));
     };
 
-    // ★ Subir logo
+    // ★ v4.0.7-logo-fix: Subir logo con compresión + persistencia robusta
+    const [logoBusy, setLogoBusy] = useState(false);
+    const [logoError, setLogoError] = useState<string | null>(null);
+
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 200_000) {
-            alert("Logo demasiado grande (max 200KB). Usa una imagen comprimida.");
+        if (!file.type.startsWith("image/")) {
+            setLogoError("Selecciona un archivo de imagen válido.");
             return;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = reader.result as string;
-            // Actualizar o añadir elemento logo
+        if (file.size > 4 * 1024 * 1024) {
+            setLogoError("Imagen demasiado grande (>4MB). Usa una imagen más pequeña.");
+            return;
+        }
+
+        setLogoBusy(true);
+        setLogoError(null);
+        try {
+            // Comprimir a <100KB antes de guardar
+            const dataUrl = await compressImage(file, 100 * 1024, 400);
+
+            // Validar antes de persistir
+            if (!isValidLogoDataUrl(dataUrl)) {
+                throw new Error("La imagen comprimida no es válida");
+            }
+
+            // Persistir con manejo de cuota
+            const result = saveLogo(dataUrl);
+            if (!result.ok) {
+                throw new Error(result.error || "No se pudo guardar el logo");
+            }
+
+            // Actualizar el layout (estado visual)
             const existingLogo = layout.find(e => e.type === "logo");
             if (existingLogo) {
                 updateLayout(layout.map(el => el.type === "logo" ? { ...el, src: dataUrl, visible: true } : el));
@@ -137,9 +176,41 @@ export function TenantSettingsPage() {
                 };
                 updateLayout([logoEl, ...layout]);
             }
-        };
-        reader.readAsDataURL(file);
+
+            // Limpia el input file para permitir re-subir el mismo archivo
+            e.target.value = "";
+        } catch (err: any) {
+            setLogoError(err?.message || "Error al procesar el logo");
+        } finally {
+            setLogoBusy(false);
+        }
     };
+
+    // ★ v4.0.7-logo-fix: Eliminar logo (limpia storage + layout)
+    const handleLogoRemove = () => {
+        clearLogo();
+        updateLayout(layout.map(el => el.type === "logo" ? { ...el, src: "", visible: false } : el));
+        setLogoError(null);
+    };
+
+    // ★ v4.0.7-logo-fix: Restaurar logo desde localStorage al montar
+    useEffect(() => {
+        const persistedLogo = loadLogo();
+        if (!persistedLogo) return;
+        // Solo restaura si el layout no tiene ya un logo válido
+        const existing = layout.find(e => e.type === "logo");
+        if (existing && isValidLogoDataUrl(existing.src)) return;
+        if (existing) {
+            updateLayout(layout.map(el => el.type === "logo" ? { ...el, src: persistedLogo, visible: true } : el));
+        } else {
+            updateLayout([
+                { id: `logo-${Date.now()}`, type: "logo", x: 35, y: 0, w: 30, h: 14, visible: true, src: persistedLogo },
+                ...layout,
+            ]);
+        }
+        // Solo restaurar una vez al montar
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const updateSelected = (id: string, patch: Partial<TicketElement>) => {
         updateLayout(layout.map(e => e.id === id ? { ...e, ...patch } : e));
@@ -210,6 +281,13 @@ export function TenantSettingsPage() {
                     </div>
                 )}
 
+                {/* ★ v4.0.7-modo-offline: aviso sutil si no hay conexión con backend */}
+                {saving && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
+                        <span className="text-[11px] text-slate-600 font-medium">Guardando en local...</span>
+                    </div>
+                )}
+
                 {/* ★ EDITOR CANVAS + PALETA + PROPIEDADES */}
                 <div className="grid grid-cols-12 gap-3">
                     {/* Paleta */}
@@ -219,18 +297,19 @@ export function TenantSettingsPage() {
 
                         <div className="pt-2 border-t border-slate-200">
                             <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Ancho del rollo</label>
-                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                {[
-                                    { v: 58, l: "58mm" },
-                                    { v: 80, l: "80mm" },
-                                ].map(p => (
+                            <div className="grid grid-cols-3 gap-2 mt-2">
+                                {([
+                                    { v: 48 as const, l: "48mm" },
+                                    { v: 58 as const, l: "58mm" },
+                                    { v: 80 as const, l: "80mm" },
+                                ]).map(p => (
                                     <button
                                         key={p.v}
-                                        onClick={() => update("ticket_paper_width", p.v as 58 | 80)}
-                                        className={`h-9 rounded-lg text-[12px] font-bold border-2 ${
+                                        onClick={() => update("ticket_paper_width", p.v)}
+                                        className={`h-9 rounded-lg text-[12px] font-bold border-2 transition ${
                                             localSettings.ticket_paper_width === p.v
                                                 ? "bg-blue-600 text-white border-blue-600"
-                                                : "bg-white text-slate-700 border-slate-200"
+                                                : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                                         }`}
                                     >
                                         {p.l}
@@ -240,13 +319,39 @@ export function TenantSettingsPage() {
                         </div>
 
                         <div>
-                            <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Subir logo (max 200KB)</label>
+                            <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest">Logo del ticket</label>
                             <input
                                 type="file"
                                 accept="image/*"
                                 onChange={handleLogoUpload}
-                                className="block w-full mt-2 text-[11px] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-bold"
+                                disabled={logoBusy}
+                                className="block w-full mt-2 text-[11px] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-bold disabled:opacity-50"
                             />
+                            {logoBusy && (
+                                <p className="mt-1 text-[10px] text-blue-600 font-medium">Comprimiendo imagen...</p>
+                            )}
+                            {logoError && (
+                                <p className="mt-1 text-[10px] text-rose-600 font-semibold">⚠ {logoError}</p>
+                            )}
+                            {(() => {
+                                const existingLogo = layout.find(e => e.type === "logo");
+                                if (existingLogo && isValidLogoDataUrl(existingLogo.src)) {
+                                    const size = logoSizeKB(existingLogo.src);
+                                    return (
+                                        <div className="mt-1 flex items-center justify-between">
+                                            <p className="text-[10px] text-emerald-600 font-medium">✓ Logo guardado ({size} KB)</p>
+                                            <button
+                                                type="button"
+                                                onClick={handleLogoRemove}
+                                                className="text-[10px] text-rose-600 hover:text-rose-800 font-bold underline"
+                                            >
+                                                Quitar
+                                            </button>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
                         </div>
 
                         <div className="pt-2 border-t border-slate-200 text-[10.5px] text-slate-500">

@@ -38,7 +38,7 @@ export interface TicketOptions {
     headerMsg?: string;
     footerMsg?: string;
     settings?: TicketSettings | null;
-    paperWidth?: 58 | 80;       // ancho del rollo
+    paperWidth?: 48 | 58 | 80;       // ancho del rollo (v4.0.7: 48mm añadido)
 }
 
 const DEFAULT_COMPANY = {
@@ -52,8 +52,11 @@ const FONT_STACK = `'Courier New', Courier, ui-monospace, SFMono-Regular, Menlo,
 
 // ★ v3.2.0: CHARS_PER_LINE según ancho del rollo
 //  - 58mm Font A: 32 chars
+//  - 48mm Font A: 24 chars
+//  - 58mm Font A: 32 chars
 //  - 80mm Font A: 42 chars
 const CHARS_BY_WIDTH: Record<number, number> = {
+    48: 24,
     58: 32,
     80: 42,
 };
@@ -138,22 +141,55 @@ function truncStr(s: string, n: number): string {
     return s.slice(0, n - 1) + ".";
 }
 
-/** Wrap multi-línea (corta por palabras) */
+/** Wrap multi-línea ROBUSTO: corta por palabras y, si una palabra es
+ *  más larga que el ancho, la divide con guion. Garantiza que ninguna
+ *  línea exceda `width` caracteres. */
 function wrap(s: string, width: number): string[] {
     s = cleanText(s);
     if (!s) return [""];
+    if (width <= 0) return [s];
     if (s.length <= width) return [s];
     const out: string[] = [];
     let remaining = s;
     while (remaining.length > width) {
-        // buscar último espacio antes de width
+        // buscar último espacio dentro del rango permitido
         let cut = remaining.lastIndexOf(" ", width);
-        if (cut <= 0) cut = width; // sin espacios, cortar duro
+        if (cut <= 0) {
+            // No hay espacio: buscar último espacio DESPUÉS para no cortar palabras
+            const after = remaining.indexOf(" ", width);
+            if (after > 0) {
+                cut = after;
+            } else {
+                // Ni antes ni después: palabra más larga que width → cortar con guion
+                cut = width - 1;
+                out.push(remaining.slice(0, cut) + "-");
+                remaining = remaining.slice(cut);
+                continue;
+            }
+        }
         out.push(remaining.slice(0, cut));
-        remaining = remaining.slice(cut).trimStart();
+        remaining = remaining.slice(cut + 1); // +1 para saltar el espacio
     }
     if (remaining) out.push(remaining);
     return out;
+}
+
+/** Wrap específico para texto legal: prioriza mantener palabras enteras,
+ *  añade elipsis si el texto es demasiado largo para caber en W líneas. */
+function wrapLegal(text: string, width: number, maxLines: number = 3): string[] {
+    text = cleanText(text);
+    if (!text) return [""];
+    // Si cabe en una línea, perfecto
+    if (text.length <= width) return [text];
+
+    const lines = wrap(text, width);
+    if (lines.length <= maxLines) return lines;
+
+    // Demasiadas líneas: truncar y añadir elipsis
+    const truncated = lines.slice(0, maxLines);
+    const last = truncated[truncated.length - 1];
+    truncated[truncated.length - 1] = last.slice(0, Math.max(0, width - 1)) + ".";
+    return truncated;
 }
 
 /** Formato EUR sin símbolo (las impresoras a veces no lo tienen) */
@@ -294,9 +330,9 @@ export function buildTicketText(opts: TicketOptions): string {
     lines.push(fmtLine("TOTAL (IVA incl.):", fmtEUR(total), W));
     lines.push(sep(W, "="));
 
-    // 6. PIE
+    // 6. PIE - texto legal con wrap robusto
     if (opts.footerMsg) {
-        for (const ln of wrap(opts.footerMsg, W)) {
+        for (const ln of wrapLegal(opts.footerMsg, W, 3)) {
             lines.push(center(ln, W));
         }
     }
@@ -328,49 +364,74 @@ export function buildTicketHTML(opts: TicketOptions): string {
         return `<div class="line">${safe || "&nbsp;"}</div>`;
     }).join("\n");
 
-    // ★ v3.4.6: CSS optimizado para 58mm/80mm con ancho EFECTIVO de 48/72mm
-    //   (deja margen para los dientes de la tiquetera)
+    // ★ v3.4.6 + v4.0.7-print-dynamic: CSS optimizado para 48mm/58mm/80mm
+    //   Ancho físico: 48/58/80mm, ancho efectivo (con margen para dientes) ligeramente menor
     const cssWidth = opts.paperWidth || 58;
-    // 58mm físico → 48mm efectivo, 80mm físico → 72mm efectivo
-    const effectiveWidth = cssWidth === 58 ? 48 : 72;
+    // 48mm físico → 44mm efectivo, 58mm físico → 48mm efectivo, 80mm físico → 72mm efectivo
+    const effectiveWidth = cssWidth === 48 ? 44 : cssWidth === 58 ? 48 : 72;
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Ticket</title>
+<title>Ticket - ${cssWidth}mm</title>
 <style>
+/* ★ v4.0.7-print-fix: CSS reforzado para Firefox + Chrome + Safari */
+/* Reglas con !important para sobrescribir defaults del navegador */
 @page {
-    margin: 0;
-    size: ${cssWidth}mm auto;
+    margin: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding: 0 !important;
+    size: ${cssWidth}mm auto !important;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
 html, body {
-    margin: 0;
-    padding: 2mm;
-    background: #fff;
-    color: #000;
-    font-family: ${FONT_STACK};
-    font-size: 10px;
-    font-weight: 800;
-    line-height: 1.2;
-    -webkit-font-smoothing: none;
-    -webkit-print-color-adjust: exact;
-    width: ${effectiveWidth}mm;
-    max-width: ${effectiveWidth}mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: ${FONT_STACK} !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    -webkit-font-smoothing: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    width: ${effectiveWidth}mm !important;
+    max-width: ${effectiveWidth}mm !important;
+    min-width: ${effectiveWidth}mm !important;
 }
 .ticket {
-    width: 100%;
-    white-space: pre;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0;
+    width: 100% !important;
+    max-width: ${effectiveWidth}mm !important;
+    min-width: ${effectiveWidth}mm !important;
+    white-space: pre !important;
+    font-variant-numeric: tabular-nums !important;
+    letter-spacing: 0 !important;
 }
 .line {
-    width: 100%;
-    white-space: pre;
-    overflow: hidden;
-    text-overflow: clip;
-    word-break: normal;
-    hyphens: none;
+    width: 100% !important;
+    white-space: pre !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    word-break: normal !important;
+    hyphens: none !important;
+}
+@media print {
+    @page {
+        size: ${cssWidth}mm auto !important;
+        margin: 0 !important;
+    }
+    html, body {
+        width: ${effectiveWidth}mm !important;
+        max-width: ${effectiveWidth}mm !important;
+    }
 }
 </style>
 </head>
@@ -452,11 +513,41 @@ export interface PrintPreBillOptions {
 
 export async function printPreBill(input: PrintPreBillOptions): Promise<PrintResult> {
     try {
-        // Cargar settings
+        // ★ v4.0.7-bidir-sync: cargar settings desde Supabase + cache
         const { loadTicketSettings } = await import("./ticketSettings");
-        const settings = input.companyOverride || loadTicketSettings();
+        let settings = input.companyOverride || loadTicketSettings();
 
-        const paperWidth: 58 | 80 = 58; // por defecto 58mm
+        // ★ Si hay tenantId, sincronizar con datos reales del tenant
+        if (input.tenantId && !input.companyOverride) {
+            try {
+                const { fetchTenantFull } = await import("./bidirectionalSync");
+                const tenant = await fetchTenantFull(input.tenantId);
+                if (tenant) {
+                    settings = {
+                        ...settings,
+                        tenant_id: tenant.id,
+                        company_name: tenant.business_name || settings.company_name,
+                        nif: tenant.cif_nif || settings.nif,
+                        address: tenant.address || settings.address,
+                        phone: tenant.phone || settings.phone,
+                    };
+                }
+            } catch (e) {
+                console.warn("[printPreBill] tenant sync warn:", String(e));
+            }
+        }
+
+        // ★ v4.0.7-print-dynamic: leer ancho desde cache local
+        let paperWidth: 48 | 58 | 80 = 58; // por defecto 58mm
+        try {
+            const cached = localStorage.getItem("mozona.tenantSettings");
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                const w = parsed?.ticket_paper_width;
+                if (w === 48 || w === 58 || w === 80) paperWidth = w;
+            }
+        } catch (_) {}
+
         const opts: TicketOptions = {
             lines: input.lines.map(l => ({
                 name: l.name,
