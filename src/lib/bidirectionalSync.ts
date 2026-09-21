@@ -157,6 +157,21 @@ async function fetchFromSupabase<T>(
 ): Promise<T[]> {
     if (!supabase) return [];
 
+    // ★ v4.0.7-bidir-jwt: si tenemos JWT del usuario, usar REST directo
+    //   para que RLS funcione correctamente (RLS usa auth.uid())
+    const jwt = getUserJwt();
+    if (jwt) {
+        let url = `${table}?tenant_id=eq.${tenantId}&select=${encodeURIComponent(options.select || "*")}`;
+        if (options.orderBy) {
+            const dir = options.orderBy.ascending === false ? "desc" : "asc";
+            url += `&order=${encodeURIComponent(options.orderBy.column)}.${dir}`;
+        }
+        if (options.limit) {
+            url += `&limit=${options.limit}`;
+        }
+        return await fetchWithJwt(url, { method: "GET" }, false);
+    }
+
     let q = supabase.from(table).select(options.select || "*").eq("tenant_id", tenantId);
 
     if (options.orderBy) {
@@ -227,14 +242,90 @@ export async function writeWithSync<T = any>(
     }
 }
 
+// ★ v4.0.7-bidir-jwt: obtiene el JWT del usuario activo para queries autenticadas
+function getUserJwt(): string | null {
+    try {
+        const raw = localStorage.getItem("pos_current_user");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const token = parsed?.session?.access_token;
+        // Solo usar tokens que NO sean JWT formato viejo cuando la anon_key es publishable
+        const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+        if (ANON_KEY.startsWith("sb_publishable_") && token?.startsWith("eyJ")) {
+            // El token es del formato viejo pero la anon_key es nueva
+            // Necesitamos refrescar el token via supabase.auth
+            return null;
+        }
+        return token || null;
+    } catch {
+        return null;
+    }
+}
+
+async function fetchWithJwt(table: string, options: RequestInit, returnRepresentation = false): Promise<any> {
+    const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+    const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "https://hcqkpokodrqimkulporw.supabase.co";
+    const jwt = getUserJwt();
+
+    const headers: any = {
+        "apikey": ANON_KEY,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+    };
+
+    // Si hay JWT del usuario, usarlo para que RLS funcione (auth.uid())
+    if (jwt) {
+        headers["Authorization"] = `Bearer ${jwt}`;
+    } else {
+        headers["Authorization"] = `Bearer ${ANON_KEY}`;
+    }
+
+    if (returnRepresentation) {
+        headers["Prefer"] = "return=representation";
+    }
+
+    const url = `${SUPABASE_URL}/rest/v1/${table}`;
+    const res = await fetch(url, {
+        ...options,
+        headers,
+    });
+
+    const contentType = res.headers.get("content-type") || "";
+    let data: any = null;
+    if (contentType.includes("application/json")) {
+        try { data = await res.json(); } catch (_) {}
+    } else {
+        try { data = await res.text(); } catch (_) {}
+    }
+
+    if (!res.ok) {
+        const msg = typeof data === "object" ? (data?.message || data?.error || JSON.stringify(data)) : String(data);
+        throw new Error(`HTTP ${res.status}: ${msg}`);
+    }
+    return data;
+}
+
 async function syncOne(table: SyncTable, operation: "insert" | "update" | "delete", payload: any): Promise<void> {
     if (!supabase) throw new Error("Supabase no configurado");
+
+    const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+    const jwt = getUserJwt();
 
     let result;
     switch (operation) {
         case "insert":
             // ★ v4.0.7-bidir-sync: UPSERT si la tabla tiene tenant_id
-            //   (en lugar de insert puro, evita UNIQUE constraint violation)
+            // Si tenemos JWT del usuario, usamos REST API directo para que RLS funcione
+            if (payload.tenant_id && jwt) {
+                // ★ v4.0.7-bidir-jwt: usar REST directo con JWT del usuario
+                await fetchWithJwt(table, {
+                    method: "POST",
+                    body: JSON.stringify(payload),
+                    headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+                }, false);
+                return;  // Success
+            }
+            // Si no hay JWT, intentar via supabase (con anon key + RLS fallará)
             if (payload.tenant_id && (
                 table === "tenant_settings" || table === "ticket_settings" ||
                 table === "products" || table === "categories" || table === "dining_tables"
@@ -251,10 +342,23 @@ async function syncOne(table: SyncTable, operation: "insert" | "update" | "delet
             break;
         case "update":
             if (!payload.id) throw new Error("UPDATE requires id");
+            if (jwt) {
+                await fetchWithJwt(`${table}?id=eq.${payload.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify(payload),
+                }, false);
+                return;
+            }
             result = await supabase.from(table).update(payload).eq("id", payload.id);
             break;
         case "delete":
             if (!payload.id) throw new Error("DELETE requires id");
+            if (jwt) {
+                await fetchWithJwt(`${table}?id=eq.${payload.id}`, {
+                    method: "DELETE",
+                }, false);
+                return;
+            }
             result = await supabase.from(table).delete().eq("id", payload.id);
             break;
     }
