@@ -133,8 +133,9 @@ export function WaiterLoginPage() {
             setMsg({ kind: "ok", text: `Bienvenido, ${session.name}` });
             setTimeout(() => nav(redirectTo, { replace: true }), 400);
         } catch (e) {
+            console.warn("[waiterLogin] error:", e);
             setMsg({ kind: "err",
-                text: e instanceof Error ? e.message : "Error desconocido" });
+                text: "No pudimos validar tu PIN. Por favor, inténtalo de nuevo." });
         }
         setBusy(false);
     };

@@ -194,59 +194,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
             );
 
             try {
-                // 1) Endpoint server-side (SERVICE_ROLE bypasa RLS)
-                // ★ v4.0.7-json-safe: Usar safeFetch para evitar SyntaxError
+                // ★ v4.0.7-definer-rpc: Resolucion de tenant SIN Vercel
+                //    - Query directo a Supabase REST por owner_id (caso normal)
+                //    - Fallback por contact_email
+                //    - VIP virtual tenant como ultimo recurso
                 const { safeFetch } = await import("../lib/safeFetch");
-                const r = await safeFetch(`/api/tenant-settings?email=${encodeURIComponent(email)}`);
-                const json = r.data as any;
-                if (r.ok && json && json.ok && json.settings && json.settings.tenant_id) {
-                    // Devolvió un tenant_id real → consultar el tenant directamente
-                    const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-                    const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
-                    if (url && key) {
-                        const trResult = await safeFetch(
-                            `${url}/rest/v1/tenants?id=eq.${json.settings.tenant_id}&select=*&limit=1`,
-                            {
-                                headers: {
-                                    apikey: key,
-                                    Authorization: `Bearer ${key}`,
-                                },
-                            }
-                        );
-                        if (trResult.ok) {
-                            const arr = trResult.data as any[];
-                            if (arr && arr[0] && mounted) {
-                                setTenant(arr[0]);
-                                return;
-                            }
-                        }
-                    }
-                }
-                // 2) Fallback al query directo por owner_id (caso normal)
-                // ★ v4.0.7-json-safe: safeFetch para evitar SyntaxError
-                const { safeFetch: safeFetchAgain } = await import("../lib/safeFetch");
                 const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
                 const key = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
                 if (url && key) {
-                    const r2a = await safeFetchAgain(
+                    // 1) Por owner_id
+                    const r1 = await safeFetch(
                         `${url}/rest/v1/tenants?owner_id=eq.${userId}&select=*&limit=1`,
                         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
                     );
-                    if (r2a.ok) {
-                        const arr = r2a.data as any[];
+                    if (r1.ok) {
+                        const arr = r1.data as any[];
                         if (arr && arr[0] && mounted) {
                             setTenant(arr[0]);
                             return;
                         }
                     }
-                    // 3) Fallback por contact_email
-                    const r2b = await safeFetchAgain(
+                    // 2) Por contact_email
+                    const r2 = await safeFetch(
                         `${url}/rest/v1/tenants?contact_email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
                         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
                     );
-                    if (r2b.ok) {
-                        const arr = r2b.data as any[];
-                        if (arr && arr[0] && mounted) setTenant(arr[0]);
+                    if (r2.ok) {
+                        const arr = r2.data as any[];
+                        if (arr && arr[0] && mounted) {
+                            setTenant(arr[0]);
+                            return;
+                        }
                     }
                 }
                 // ★ v4.0.7: Si es VIP y NO se encontro tenant, crear tenant virtual
@@ -467,22 +445,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (data.user && !data.session) {
                 console.log("[AuthContext] signUp sin session, intentando signIn inmediato...");
 
-                // ★ v1.9.85: AUTO-CONFIRMAR el email via serverless endpoint
-                //   Esto usa la SERVICE_ROLE_KEY para saltarse la confirmacion.
-                //   Si el endpoint no esta configurado, falla silenciosamente.
-                try {
-                    const acResult = await safeFetch("/api/auto-confirm-user", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            userId: data.user.id,
-                            email: email.trim().toLowerCase(),
-                        }),
-                    });
-                    console.log("[AuthContext] auto-confirm result:", acResult.ok ? acResult.data : acResult.error);
-                } catch (acErr) {
-                    console.warn("[AuthContext] auto-confirm exception (sigue):", acErr);
-                }
+                // ★ v4.0.7-definer-rpc: Ya no usamos /api/auto-confirm-user (Vercel caído)
+                //    El usuario puede confirmar via:
+                //    - Email de Supabase (si está configurado)
+                //    - OTP via rpc_verify_email_code (sistema propio)
+                //    - Re-login automático más abajo (signInWithPassword)
 
                 try {
                     const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({

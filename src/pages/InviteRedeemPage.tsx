@@ -87,7 +87,8 @@ export function InviteRedeemPage() {
                 setInvite(data as InviteInfo);
             }
         } catch (e: any) {
-            setError(e?.message ?? "Error al validar la invitación");
+            console.warn("[inviteRedeem] error:", e);
+            setError("No pudimos validar tu invitación. Por favor, inténtalo de nuevo.");
         }
         setLoading(false);
     };
@@ -153,7 +154,8 @@ export function InviteRedeemPage() {
                 }
             }
         } catch (e: any) {
-            setError(e?.message ?? "Error al activar la cuenta");
+            console.warn("[inviteActivate] error:", e);
+            setError("No pudimos activar tu cuenta. Por favor, inténtalo de nuevo.");
         }
         setSubmitting(false);
     };

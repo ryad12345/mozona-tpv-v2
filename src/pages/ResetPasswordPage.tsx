@@ -70,7 +70,8 @@ export function ResetPasswordPage() {
             // Damos 2 segundos para que vea el check y redirigimos
             setTimeout(() => nav("/auth", { replace: true }), 2000);
         } catch (e: any) {
-            setError(e?.message ?? "Error inesperado");
+            console.warn("[resetPassword] error:", e);
+            setError("No pudimos restablecer tu contraseña. Por favor, inténtalo de nuevo.");
         }
         setBusy(false);
     };

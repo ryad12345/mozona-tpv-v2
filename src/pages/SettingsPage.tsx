@@ -74,10 +74,16 @@ export function SettingsPage() {
             if (!isSupabaseConfigured || !auth.user) return;
             setLoading(true);
             try {
+                // ★ v4.0.7: usar tenant.id directamente (no owner_id) para que funcione con VIP mock
+                const tenantId =
+                    (auth.tenant && auth.tenant.id && auth.tenant.id !== "vip-bypass")
+                        ? auth.tenant.id
+                        : (await resolveRealTenantId(null)) || "58a8e6f5-3172-409c-8aa5-ae02be0b7e76";
+
                 const { data, error } = await supabase
                     .from("tenants")
                     .select("name, cif_nif, address, phone, ticket_header_msg, ticket_footer_msg, ticket_show_tax")
-                    .eq("owner_id", auth.user.id)
+                    .eq("id", tenantId)
                     .maybeSingle();
                 if (cancelled) return;
                 if (error) {
@@ -90,16 +96,16 @@ export function SettingsPage() {
                         address: data.address  ?? '',
                         phone:   data.phone    ?? '',
                     });
-                    setTicketForm({
-                        ...ticketForm,
+                    setTicketForm(prev => ({
+                        ...prev,
                         name:        data.name     ?? '',
                         nif:         data.cif_nif  ?? '',
                         address:     data.address  ?? '',
                         phone:       data.phone    ?? '',
-                        header_msg:  (data as any).ticket_header_msg ?? '',
-                        footer_msg:  data.ticket_footer_msg ?? '¡Gracias por su visita!',
-                        showTax:     (data as any).ticket_show_tax ?? true,
-                    });
+                        header_msg:  (data as any).ticket_header_msg ?? prev.header_msg ?? '',
+                        footer_msg:  data.ticket_footer_msg ?? prev.footer_msg ?? '¡Gracias por su visita!',
+                        showTax:     (data as any).ticket_show_tax ?? prev.showTax ?? true,
+                    }));
                 }
                 // ★ v1.9.13: además cargar config de ticket_settings
                 const ts = await loadTicketSettings();
@@ -119,7 +125,7 @@ export function SettingsPage() {
         })();
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [auth.user]);
+    }, [auth.user, auth.tenant?.id]);
 
     const saveEmpresa = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -333,6 +339,27 @@ export function SettingsPage() {
                     <form onSubmit={saveTicket} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
                         <h3 className="text-base font-bold text-slate-900">Diseño del Ticket</h3>
                         <p className="text-[11px] text-slate-500 -mt-2">Personaliza cabecera y pie del ticket impreso.</p>
+                        <Field label="Ancho del rollo de impresión">
+                            <div className="flex gap-2">
+                                {([48, 58, 80] as const).map((mm) => (
+                                    <button
+                                        key={mm}
+                                        type="button"
+                                        onClick={() => setTicketForm({ ...ticketForm, ticket_paper_width: mm })}
+                                        className={`flex-1 h-10 rounded-lg border-2 text-[13px] font-bold transition ${
+                                            (ticketForm.ticket_paper_width ?? 48) === mm
+                                                ? "border-blue-500 bg-blue-50 text-blue-700"
+                                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                                        }`}
+                                    >
+                                        {mm}mm
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-[10.5px] text-slate-400 mt-1.5">
+                                Selecciona el ancho físico del rollo de tu impresora térmica.
+                            </p>
+                        </Field>
                         <Field label="Cabecera (texto libre, encima del nombre)">
                             <textarea
                                 rows={2}

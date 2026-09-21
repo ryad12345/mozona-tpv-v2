@@ -11,7 +11,7 @@ import type { TicketElement, TicketElementType } from "../hooks/useTenantSetting
 interface TicketCanvasProps {
     layout: TicketElement[];
     onChange: (layout: TicketElement[]) => void;
-    paperWidth: 58 | 80;
+    paperWidth: 48 | 58 | 80;
     sampleData: {
         id: string;
         date: string;
@@ -46,7 +46,7 @@ export function TicketCanvas({ layout, onChange, paperWidth, sampleData, readOnl
     } | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
 
-    const pxPerPercent = (paperWidth === 58 ? 220 : 300) / 100;
+    const pxPerPercent = (paperWidth === 48 ? 180 : paperWidth === 58 ? 220 : 300) / 100;
 
     // ★ Mover elemento
     const handleMove = useCallback((clientX: number, clientY: number) => {
@@ -147,7 +147,7 @@ export function TicketCanvas({ layout, onChange, paperWidth, sampleData, readOnl
             onClick={onCanvasClick}
             className="relative bg-white shadow-lg mx-auto"
             style={{
-                width: paperWidth === 58 ? "220px" : "300px",
+                width: paperWidth === 48 ? "180px" : paperWidth === 58 ? "220px" : "300px",
                 minHeight: "420px",
                 border: `1px solid ${COLORS.border}`,
                 fontFamily: "'Courier New', monospace",

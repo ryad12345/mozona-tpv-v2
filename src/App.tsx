@@ -39,8 +39,8 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
-import { FloatingAssistantButton } from "./components/assistant/FloatingAssistantButton";
 import { ChatPro } from "./components/ChatPro";
+import { PrintStyles } from "./components/settings/PrintStyles";
 
 // ★ Spinner reutilizable para Suspense
 function PageLoader({ label = "Cargando…" }: { label?: string }) {
@@ -149,6 +149,8 @@ export function App() {
             <AuthProvider>
                 <ThemeProvider>
                 <WebSocketProvider>
+                    {/* ★ v4.0.7-print-dynamic: CSS @media print con ancho DINÁMICO (48/58/80mm) */}
+                    <PrintStyles />
                     <BrowserRouter>
                         <Suspense fallback={<PageLoader />}>
                             <Routes>
@@ -200,10 +202,7 @@ export function App() {
                                 <Route path="*"        element={<Navigate to="/" replace />} />
                             </Routes>
                         </Suspense>
-                    {/* ★ v1.9.38 + v1.9.43: Botón flotante GLOBAL del asistente Riyad
-                        ★ DEBE estar dentro de BrowserRouter porque el modal usa useNavigate() */}
-                    <FloatingAssistantButton />
-                    {/* ★ v4.0.2: Chat Pro "Habla con Riyad" (SQL puro) */}
+                    {/* ★ v4.0.7-cleanup: SOLO ChatPro (eliminado FloatingAssistantButton duplicado) */}
                     <ChatPro />
                     </BrowserRouter>
                 </WebSocketProvider>

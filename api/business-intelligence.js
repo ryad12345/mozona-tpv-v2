@@ -19,6 +19,102 @@ const ENV = require("./_env.js"); } catch (_) { _securityLib = null; }
     return _securityLib;
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ★ v4.0.7-secure: AUTORIZACION DE TENANT
+//   - VIP emails (whitelist) pueden acceder a cualquier tenant
+//   - Usuarios normales: solo al tenant donde están en tenant_users
+//   - Sin sesion o tenant invalido = denegado
+// ═════════════════════════════════════════════════════════════════════
+const VIP_EMAILS = new Set([
+    "chalohiahmd1980@gmail.com",
+    "rofixinsta@gmail.com",
+]);
+
+function isValidUuid(s) {
+    return typeof s === "string"
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+/**
+ * Extrae el email del usuario del request.
+ *   Prioridad: x-user-email header > body.userEmail > query.userEmail
+ *   En modo mock (VIP), tambien acepta x-mock-user.
+ */
+function extractUserEmail(req) {
+    return (
+        (req.headers?.["x-user-email"] || req.headers?.["X-User-Email"] || "").toString().toLowerCase() ||
+        (req.body?.userEmail || "").toString().toLowerCase() ||
+        (req.query?.userEmail || "").toString().toLowerCase() ||
+        (req.headers?.["x-mock-user"] || "").toString().toLowerCase() ||
+        ""
+    );
+}
+
+/**
+ * Verifica que el usuario puede acceder al tenant solicitado.
+ * Retorna { ok: true } si pasa, { ok: false, error: "..." } si falla.
+ *
+ * Reglas:
+ *   1. Sin email + sin tenantId valido = 403
+ *   2. tenantId no es UUID = 400
+ *   3. Email VIP (whitelist) = siempre OK
+ *   4. Usuario normal = debe estar en tenant_users para ese tenant
+ */
+async function authorizeTenantAccess({ userEmail, tenantId, headers, supabaseUrl }) {
+    if (!isValidUuid(tenantId)) {
+        return { ok: false, status: 400, error: "tenantId invalido (debe ser UUID)" };
+    }
+    if (!userEmail) {
+        return { ok: false, status: 401, error: "Sesion requerida (sin email)" };
+    }
+
+    // ★ VIP bypass - emails en whitelist tienen acceso a cualquier tenant
+    if (VIP_EMAILS.has(userEmail)) {
+        console.log(`[auth] ✓ VIP bypass para ${userEmail} → tenant ${tenantId}`);
+        return { ok: true, vip: true };
+    }
+
+    // ★ Usuario normal: verificar tenant_users
+    try {
+        const url = `${supabaseUrl}/rest/v1/tenant_users?user_email=eq.${encodeURIComponent(userEmail)}&tenant_id=eq.${tenantId}&select=id&limit=1`;
+        const r = await fetchWithTimeout(url, { headers }, 5000);
+        if (r && r.ok) {
+            const arr = await r.json();
+            if (Array.isArray(arr) && arr.length > 0) {
+                console.log(`[auth] ✓ ${userEmail} autorizado para tenant ${tenantId}`);
+                return { ok: true, vip: false };
+            }
+        }
+    } catch (e) {
+        console.warn("[auth] tenant_users lookup error:", e);
+    }
+
+    // ★ Tambien verificar si es owner del tenant (campo owner_id en tenants)
+    try {
+        const url = `${supabaseUrl}/rest/v1/tenants?id=eq.${tenantId}&select=owner_email,contact_email&limit=1`;
+        const r = await fetchWithTimeout(url, { headers }, 5000);
+        if (r && r.ok) {
+            const arr = await r.json();
+            if (Array.isArray(arr) && arr.length > 0) {
+                const t = arr[0];
+                if (t.owner_email?.toLowerCase() === userEmail
+                    || t.contact_email?.toLowerCase() === userEmail) {
+                    console.log(`[auth] ✓ ${userEmail} es owner/contact de tenant ${tenantId}`);
+                    return { ok: true, vip: false };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("[auth] tenant owner lookup error:", e);
+    }
+
+    return {
+        ok: false,
+        status: 403,
+        error: "No tienes acceso a este tenant. Inicia sesion con la cuenta correcta.",
+    };
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), timeoutMs);
@@ -64,6 +160,33 @@ module.exports = async (req, res) => {
 
         if (!supabaseUrl || !serviceKey) {
             return safeJson(200, { ok: false, error: "Sistema no configurado" });
+        }
+
+        // ★ v4.0.7-secure: Validar sesion y tenant ANTES de procesar
+        //   Cualquier action (excepto las publicas) requiere autorizacion
+        const userEmail = extractUserEmail(req);
+        const requestedTenantId = (req.body?.tenantId || req.query?.tenantId || "").toString();
+
+        // Actions publicas (no requieren tenant)
+        const PUBLIC_ACTIONS = new Set(["health", "ping"]);
+        if (!PUBLIC_ACTIONS.has(action) && requestedTenantId) {
+            const auth = await authorizeTenantAccess({
+                userEmail,
+                tenantId: requestedTenantId,
+                headers: {
+                    apikey: serviceKey,
+                    Authorization: `Bearer ${serviceKey}`,
+                },
+                supabaseUrl,
+            });
+            if (!auth.ok) {
+                console.warn(`[biz] ❌ Acceso denegado: ${userEmail || "(sin email)"} → ${requestedTenantId}`);
+                return safeJson(auth.status || 403, {
+                    ok: false,
+                    error: auth.error,
+                    hint: "Verifica tu sesion. Si acabas de crear el tenant, espera unos segundos.",
+                });
+            }
         }
 
         const headers = {

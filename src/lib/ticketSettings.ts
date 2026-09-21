@@ -71,18 +71,32 @@ function writeLocal(s: TicketSettings): void {
 }
 
 /** Carga la configuración del ticket del tenant activo.
- *  Orden: BD (ticket_settings) → localStorage → defaults. */
+ *  Orden: BD (ticket_settings) → localStorage → defaults.
+ *  Si la columna paper_width_mm no existe en la tabla, fallback automático sin ella. */
 export async function loadTicketSettings(): Promise<TicketSettings> {
     const tenantId = (await resolveRealTenantId(null)) || FALLBACK_TENANT_ID;
     const local = readLocal(tenantId);
 
     if (!supabase) return local;
     try {
-        const { data, error } = await supabase
+        // ★ v4.0.7-rls-fix: Primer intento CON paper_width_mm
+        let result = await supabase
             .from("ticket_settings")
             .select("tenant_id, header_text, footer_text, show_vat_breakdown, paper_width_mm, company_name, nif, address, phone")
             .eq("tenant_id", tenantId)
             .maybeSingle();
+
+        // ★ Si falla por columna inexistente, reintentar SIN paper_width_mm
+        if (result.error && /paper_width_mm.*does not exist|column.*paper_width_mm/i.test(result.error.message)) {
+            console.warn("[ticketSettings] columna paper_width_mm no existe, reintentando sin ella");
+            result = await supabase
+                .from("ticket_settings")
+                .select("tenant_id, header_text, footer_text, show_vat_breakdown, company_name, nif, address, phone")
+                .eq("tenant_id", tenantId)
+                .maybeSingle();
+        }
+
+        const { data, error } = result;
         if (error) {
             console.warn("[ticketSettings] load BD error:", error.message);
             return local;
@@ -122,7 +136,8 @@ export async function saveTicketSettings(input: Partial<TicketSettings>): Promis
 
     if (!supabase) return { ok: true, source: "local" };
     try {
-        const { error } = await supabase
+        // ★ v4.0.7-rls-fix: Primer intento CON paper_width_mm
+        let result = await supabase
             .from("ticket_settings")
             .upsert({
                 tenant_id:          payload.tenant_id,
@@ -136,6 +151,26 @@ export async function saveTicketSettings(input: Partial<TicketSettings>): Promis
                 phone:              payload.phone        || null,
                 updated_at:         new Date().toISOString(),
             }, { onConflict: "tenant_id" });
+
+        // ★ Si falla por columna inexistente, reintentar SIN paper_width_mm
+        if (result.error && /paper_width_mm.*does not exist|column.*paper_width_mm/i.test(result.error.message)) {
+            console.warn("[ticketSettings] paper_width_mm no existe en BD, guardando sin esa columna");
+            result = await supabase
+                .from("ticket_settings")
+                .upsert({
+                    tenant_id:          payload.tenant_id,
+                    header_text:        payload.header_text || null,
+                    footer_text:        payload.footer_text || null,
+                    show_vat_breakdown: payload.show_vat_breakdown,
+                    company_name:       payload.company_name || null,
+                    nif:                payload.nif          || null,
+                    address:            payload.address      || null,
+                    phone:              payload.phone        || null,
+                    updated_at:         new Date().toISOString(),
+                }, { onConflict: "tenant_id" });
+        }
+
+        const { error } = result;
         if (error) {
             console.warn("[ticketSettings] save BD error:", error.message);
             return { ok: true, source: "local", error: error.message };

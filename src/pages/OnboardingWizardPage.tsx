@@ -121,7 +121,7 @@ export function OnboardingWizardPage() {
                 }
             }
             if (e1) {
-                setError("No se pudo guardar: " + e1.message);
+                setError("No pudimos guardar la información. Por favor, inténtalo de nuevo.");
                 setSaving(false);
                 return;
             }
@@ -130,7 +130,8 @@ export function OnboardingWizardPage() {
             // Redirigir a /app
             nav("/app", { replace: true });
         } catch (e: any) {
-            setError(e?.message ?? "Error al guardar");
+            console.warn("[Onboarding] save error:", e);
+            setError("No pudimos guardar la información. Por favor, inténtalo de nuevo.");
         }
         setSaving(false);
     };

@@ -511,20 +511,20 @@ export function AIAssistantModal({
                     });
                     clearTimeout(timeoutId);
                     const json = await resp.json().catch(() => ({}));
-                    console.log("[AIAssistantModal] /api/register-tenant result:", json);
+                    console.log("[AIAssistantModal] result:", json);
 
                     if (json?.ok) {
                         setSavedOk(true);
                         setBackend("supabase");
                     } else {
                         // ★ No es fatal: navegamos igualmente
-                        console.warn("[AIAssistantModal] register-tenant returned not-ok:", json);
+                        console.warn("[AIAssistantModal] not-ok:", json);
                         setSavedOk(true);
                         setBackend("none");
                     }
                 } catch (e: any) {
                     // ★ Timeout o error de red: navegamos IGUAL
-                    console.warn("[AIAssistantModal] /api/register-tenant error (sigue):", e?.message || e);
+                    console.warn("[AIAssistantModal] error:", e?.message || e);
                     setSavedOk(true);
                     setBackend("none");
                 }

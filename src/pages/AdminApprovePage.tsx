@@ -1,14 +1,15 @@
 // =====================================================================
-// MOZONA TPV — AdminApprovePage (v3.0.2)
+// MOZONA TPV — AdminApprovePage (v4.0.7-json-safe)
 // =====================================================================
-// Página para que el admin apruebe tenants manualmente.
-// Acceso: /admin/approve?token=mozona-approve-2025
-// O:      /admin/approve?token=mozona-approve-2025&email=user@example.com
+// Panel de aprobación de tenants. Acceso: /admin/approve?token=...
+// v4.0.7: TODAS las llamadas usan safeFetch para evitar SyntaxError
+// por respuestas no-JSON (404 HTML, 500 error, Vercel caído, etc).
 // =====================================================================
 
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { IconCheck, IconArrowRight, IconUser, IconShield } from "../components/icons";
+import { safeFetch } from "../lib/safeFetch";
 
 const VALID_TOKENS = ["mozona-approve-2025", "mozona-ryad-2025"];
 
@@ -21,6 +22,8 @@ interface Tenant {
     activation_status?: string;
     created_at?: string;
 }
+
+const FRIENDLY_ERROR = "No pudimos completar la operación. Por favor, inténtalo de nuevo.";
 
 export function AdminApprovePage() {
     const [searchParams] = useSearchParams();
@@ -50,71 +53,76 @@ export function AdminApprovePage() {
         }
     }, [authorized, initialEmail]);
 
+    // ★ v4.0.7-json-safe: blindado con safeFetch
     const fetchPending = useCallback(async () => {
         setLoading(true);
         setError(null);
-        try {
-            const r = await fetch("/api/check-status?email=__list_all_pending__");
-            if (r.ok) {
-                const json = await r.json();
-                setTenants(json.tenants || (json.tenant ? [json.tenant] : []));
-            } else {
-                setError("No se pudo cargar la lista. Usa la query directa desde el cliente.");
-            }
-        } catch (e) {
-            setError(String(e));
+        const result = await safeFetch("/api/check-status?email=__list_all_pending__");
+        if (!result.ok) {
+            console.warn("[AdminApprove] fetchPending error:", result.error);
+            setError("No pudimos cargar la lista de cuentas pendientes. Por favor, recarga la página.");
+        } else {
+            const json = result.data as any;
+            setTenants(json?.tenants || (json?.tenant ? [json.tenant] : []));
         }
         setLoading(false);
     }, []);
 
+    // ★ v4.0.7-json-safe: blindado con safeFetch
     const approveByEmail = useCallback(async (email: string) => {
         setApprovingId(email);
         setError(null);
         setSuccess(null);
         setManualInstructions(null);
-        try {
-            const r = await fetch(`/api/approve-tenant?token=${token}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, approvedBy: "admin-panel" }),
-            });
-            const json = await r.json().catch(() => ({}));
-            console.log("[AdminApprove] result:", json);
-            if (json.ok) {
-                setSuccess(`✅ Tenant aprobado: ${email}. Trial: ${json.trialEndsAt}`);
+
+        const result = await safeFetch(`/api/approve-tenant?token=${token}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, approvedBy: "admin-panel" }),
+        });
+
+        if (!result.ok) {
+            console.warn("[AdminApprove] approveByEmail error:", result.error);
+            setError(result.friendly_message || FRIENDLY_ERROR);
+        } else {
+            const json = result.data as any;
+            console.log("[AdminApprove] approveByEmail result:", json);
+            if (json && json.ok) {
+                setSuccess(`✅ Tenant aprobado: ${email}. Trial: ${json.trialEndsAt || "(configurado)"}`);
             } else {
-                setError(json.error || "Error desconocido");
-                if (json.manualInstructions) {
+                setError((json && json.error && !String(json.error).includes("Error")) ? json.error : FRIENDLY_ERROR);
+                if (json?.manualInstructions) {
                     setManualInstructions(json.manualInstructions);
                 }
             }
-        } catch (e) {
-            setError(String(e));
         }
         setApprovingId(null);
     }, [token]);
 
+    // ★ v4.0.7-json-safe: blindado con safeFetch
     const approveById = useCallback(async (id: string) => {
         setApprovingId(id);
         setError(null);
         setSuccess(null);
-        try {
-            const r = await fetch(`/api/approve-tenant?token=${token}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tenantId: id, approvedBy: "admin-panel" }),
-            });
-            const json = await r.json().catch(() => ({}));
-            if (json.ok) {
-                setSuccess(`✅ Tenant aprobado: ${id}. Trial: ${json.trialEndsAt}`);
-                // Quitar de la lista
+
+        const result = await safeFetch(`/api/approve-tenant?token=${token}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tenantId: id, approvedBy: "admin-panel" }),
+        });
+
+        if (!result.ok) {
+            console.warn("[AdminApprove] approveById error:", result.error);
+            setError(result.friendly_message || FRIENDLY_ERROR);
+        } else {
+            const json = result.data as any;
+            if (json && json.ok) {
+                setSuccess(`✅ Tenant aprobado: ${id}. Trial: ${json.trialEndsAt || "(configurado)"}`);
                 setTenants(t => t.filter(x => x.id !== id));
             } else {
-                setError(json.error || "Error desconocido");
-                if (json.manualInstructions) setManualInstructions(json.manualInstructions);
+                setError((json && json.error && !String(json.error).includes("Error")) ? json.error : FRIENDLY_ERROR);
+                if (json?.manualInstructions) setManualInstructions(json.manualInstructions);
             }
-        } catch (e) {
-            setError(String(e));
         }
         setApprovingId(null);
     }, [token]);
@@ -145,7 +153,7 @@ export function AdminApprovePage() {
                         <h1 className="text-xl font-black">Panel de aprobación</h1>
                     </div>
                     <p className="text-[12px] text-slate-500">
-                        Aprueba altas de tenants. El usuario recibirá 7 días de trial.
+                        Aprueba altas de tenants. El usuario recibirá 14 días de trial.
                     </p>
                 </div>
 
@@ -275,6 +283,7 @@ function EmailApprover({ onSubmit, loading, initialEmail }: { onSubmit: (e: stri
     );
 }
 
+// ★ v4.0.7-json-safe: UserCreator con safeFetch
 function UserCreator({ token }: { token: string }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -287,16 +296,22 @@ function UserCreator({ token }: { token: string }) {
         if (!email.trim() || password.length < 6) return;
         setLoading(true);
         setResult(null);
-        try {
-            const r = await fetch(`/api/create-user?token=${token}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: email.trim().toLowerCase(), password, name }),
+
+        const r = await safeFetch(`/api/create-user?token=${token}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email.trim().toLowerCase(), password, name }),
+        });
+
+        if (!r.ok) {
+            console.warn("[UserCreator] error:", r.error);
+            setResult({
+                ok: false,
+                success: false,
+                error: r.friendly_message || r.error || FRIENDLY_ERROR,
             });
-            const json = await r.json();
-            setResult(json);
-        } catch (e) {
-            setResult({ ok: false, error: String(e) });
+        } else {
+            setResult(r.data || { ok: false, success: false, error: "Respuesta vacía del servidor" });
         }
         setLoading(false);
     };
@@ -316,50 +331,36 @@ function UserCreator({ token }: { token: string }) {
             </div>
             <div className="grid grid-cols-2 gap-2">
                 <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="Nombre (opcional)"
-                    className="h-10 px-3 rounded-lg border border-slate-300 text-[12.5px]"
-                />
-                <input
-                    type="text"
+                    type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Contraseña (min 6)"
+                    minLength={6}
                     className="h-10 px-3 rounded-lg border border-slate-300 text-[12.5px]"
                     required
-                    minLength={6}
+                />
+                <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Nombre del negocio"
+                    className="h-10 px-3 rounded-lg border border-slate-300 text-[12.5px]"
                 />
             </div>
             <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-10 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-[12.5px] font-black flex items-center justify-center gap-1"
+                className="w-full h-10 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12.5px] font-black flex items-center justify-center gap-1"
             >
-                {loading ? "Creando..." : <>Crear cuenta <IconArrowRight size={12} /></>}
+                {loading ? "Creando..." : <><IconCheck size={12} /> Crear usuario y enviar credenciales</>}
             </button>
             {result && (
-                <div className={`mt-2 p-3 rounded-lg text-[11px] ${result.ok ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
-                    {result.ok ? (
-                        <div>
-                            <p className="font-bold mb-1">✅ {result.message}</p>
-                            <p className="font-mono text-[10px] text-emerald-700">User ID: {result.userId}</p>
-                        </div>
-                    ) : (
-                        <div>
-                            <p className="font-bold mb-1">❌ {result.error}</p>
-                            {result.manualInstructions && (
-                                <ol className="mt-2 list-decimal list-inside space-y-0.5">
-                                    {Object.values(result.manualInstructions).map((s: any, i) => <li key={i}>{s}</li>)}
-                                </ol>
-                            )}
-                        </div>
-                    )}
+                <div className={`p-3 rounded-lg text-[12px] ${(result.ok || result.success) ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
+                    {(result.ok || result.success)
+                        ? `✅ Usuario creado: ${result.email || email}`
+                        : `❌ ${result.error || FRIENDLY_ERROR}`}
                 </div>
             )}
         </form>
     );
 }
-
-export default AdminApprovePage;

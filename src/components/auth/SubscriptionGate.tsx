@@ -116,7 +116,7 @@ export function SubscriptionPaywall({
                         <IconShield size={28} strokeWidth={1.8} />
                     </div>
                     <h2 className="text-[20px] font-black tracking-tight">
-                        Tu periodo de prueba de 7 días ha finalizado
+                        Tu periodo de prueba ha finalizado
                     </h2>
                     <p className="mt-1 text-[12.5px] text-rose-100">
                         El acceso al TPV está temporalmente bloqueado.

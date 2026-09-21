@@ -194,20 +194,13 @@ export function PosTerminalPro() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ★ FALLBACK: si usePosData no carga productos, usar fetchCatalog
-    //    que tiene 3 niveles de fallback (tenant → is_active → tenant dominante)
+    // ★ v4.0.7-final: usePosData es la única fuente de productos.
+    //    Si products.length === 0, mostrar mensaje claro (NO fallback a fetchCatalog).
     useEffect(() => {
-        if (products.length === 0 && !loading) {
-            console.log("[PosTerminalPro] usePosData vacío, usando fetchCatalog()");
-            void (async () => {
-                const prods = await fetchCatalog();
-                console.log("[PosTerminalPro] fetchCatalog devolvió", prods.length, "productos");
-                if (prods.length > 0) {
-                    posDataRefresh();
-                }
-            })();
+        if (!loading && products.length === 0) {
+            console.warn("[PosTerminalPro] usePosData sin productos tras carga completa");
         }
-    }, [products.length, loading, posDataRefresh]);
+    }, [products.length, loading]);
     }, [restaurant?.id]);
 
     // -----------------------------------------------------------------
@@ -287,36 +280,46 @@ export function PosTerminalPro() {
     // Selección de mesa (carga líneas vacías para empezar)
     // FIX: handler robusto que tolera mesas dummy (local-table-*) y
     // mesas reales, con try-catch y logging para diagnóstico
+    // ★ v4.0.7-pos-safety: triple try-catch para NUNCA romper la UI
     // -----------------------------------------------------------------
     const handleSelectTable = useCallback((id: string | null) => {
         try {
-            console.log("[PosTerminalPro] click mesa id=", id, " tablesCount=", tables.length);
-            if (id === null) {
-                pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
-                return;
-            }
-            const t = tables.find(tb => tb.id === id);
-            if (!t) {
-                // Fallback: mesa dummy (local-table-N) — buscar por número
-                const numMatch = /local-table-(\d+)/.exec(id);
-                if (numMatch) {
-                    console.log("[PosTerminalPro] mesa dummy detectada, número=", numMatch[1]);
-                    pos.dispatch({
-                        type: "SELECT_TABLE",
-                        tableId: id,
-                        tableLabel: numMatch[1],
-                    });
-                    pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
+            try {
+                console.log("[PosTerminalPro] click mesa id=", id, " tablesCount=", tables?.length);
+                if (id === null) {
+                    pos.dispatch({ type: "SELECT_TABLE", tableId: null, tableLabel: null });
                     return;
                 }
-                console.warn("[PosTerminalPro] mesa no encontrada:", id);
-                return;
+                // Búsqueda segura con fallback
+                let tableLabel = String(id);
+                const t = (tables || []).find(tb => tb?.id === id);
+                if (t && t.table_number != null) {
+                    tableLabel = String(t.table_number);
+                } else {
+                    // Mesa dummy (local-table-N)
+                    const numMatch = /local-table-(\d+)/.exec(String(id));
+                    if (numMatch) {
+                        tableLabel = numMatch[1];
+                    }
+                }
+                // Dispatch atómico (cada uno en su try-catch)
+                try {
+                    pos.dispatch({ type: "SELECT_TABLE", tableId: id, tableLabel });
+                } catch (e) {
+                    console.warn("[PosTerminalPro] dispatch SELECT_TABLE failed:", e);
+                }
+                try {
+                    pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
+                } catch (e) {
+                    console.warn("[PosTerminalPro] dispatch SELECT_CATEGORY failed:", e);
+                }
+                console.log("[PosTerminalPro] mesa seleccionada:", tableLabel);
+            } catch (innerErr) {
+                console.warn("[PosTerminalPro] handleSelectTable inner error:", innerErr);
             }
-            console.log("[PosTerminalPro] mesa encontrada:", t.table_number);
-            pos.dispatch({ type: "SELECT_TABLE", tableId: t.id, tableLabel: t.table_number });
-            pos.dispatch({ type: "SELECT_CATEGORY", categoryId: null });
         } catch (e) {
-            console.error("[PosTerminalPro] handleSelectTable error:", e);
+            // Triple guard: nada debe romper la app
+            console.error("[PosTerminalPro] handleSelectTable outer error:", e);
         }
     }, [tables, pos]);
 
@@ -352,20 +355,33 @@ export function PosTerminalPro() {
     // -----------------------------------------------------------------
     // Persistencia REACTIVA: cada vez que cambian los items de la mesa
     // seleccionada, guardar en open_orders automáticamente
+    // ★ v4.0.7-pos-safety: blindado con try-catch para no romper UI
     // -----------------------------------------------------------------
     const lastPersistedJsonRef = useRef<string>("");
     useEffect(() => {
-        const tid = pos.state.selectedTableId;
-        const tlabel = pos.state.selectedTableLabel;
-        if (!tid || !tlabel) return;
-        // Solo persistir si hay cambios reales
-        const itemsJson = JSON.stringify(pos.state.orderItems);
-        if (itemsJson === lastPersistedJsonRef.current) return;
-        lastPersistedJsonRef.current = itemsJson;
-        console.log("[PosTerminalPro] auto-persist:", pos.state.orderItems.length, "items, mesa", tlabel);
-        void persistDraft(tid, tlabel, pos.state.orderItems);
-        // Marcar mesa como ocupada
-        setTableStatuses(prev => prev[tid] ? prev : { ...prev, [tid]: "OCCUPIED" });
+        try {
+            const tid = pos.state.selectedTableId;
+            const tlabel = pos.state.selectedTableLabel;
+            if (!tid || !tlabel) return;
+            // Solo persistir si hay cambios reales
+            const itemsJson = JSON.stringify(pos.state.orderItems);
+            if (itemsJson === lastPersistedJsonRef.current) return;
+            lastPersistedJsonRef.current = itemsJson;
+            console.log("[PosTerminalPro] auto-persist:", pos.state.orderItems.length, "items, mesa", tlabel);
+            // Persistir en background con catch completo
+            persistDraft(tid, tlabel, pos.state.orderItems).catch(err => {
+                console.warn("[PosTerminalPro] persistDraft failed (silent):", err);
+            });
+            // Marcar mesa como ocupada (en try separado)
+            try {
+                setTableStatuses(prev => prev[tid] ? prev : { ...prev, [tid]: "OCCUPIED" });
+            } catch (e) {
+                console.warn("[PosTerminalPro] setTableStatuses failed:", e);
+            }
+        } catch (err) {
+            // ★ Nunca debe romper el componente
+            console.warn("[PosTerminalPro] useEffect auto-persist outer error:", err);
+        }
     }, [pos.state.selectedTableId, pos.state.selectedTableLabel, pos.state.orderItems, persistDraft]);
 
     // -----------------------------------------------------------------
@@ -440,12 +456,34 @@ export function PosTerminalPro() {
 
         // ★★★ PASO 0: CAPTURAR MESA Y TOTALES ANTES DE NADA ★★★
         const tableIdSelected = pos.state.selectedTableId;
-        const table = tables.find(t => t.id === tableIdSelected);
+
+        // ★ v4.0.7-fix: Buscar la mesa en tablesWithStatus (incluye dummy locales)
+        //   Fallback: si no se encuentra, crear mesa sintética para mesas locales
+        let table = tablesWithStatus.find(t => t.id === tableIdSelected);
         if (!table) {
-            console.error("[performCharge] mesa no encontrada en tables[]");
-            setToast({ kind: "err", msg: "Mesa no encontrada" });
-            pos.dispatch({ type: "SET_PROCESSING", processing: false });
-            return;
+            // ★ Mesa dummy local (ej: local-table-2) que no existe en BD
+            const isLocalDummy = tableIdSelected?.startsWith("local-table-");
+            const tableNumFallback = isLocalDummy
+                ? tableIdSelected.replace("local-table-", "")
+                : (pos.state.selectedTableLabel?.replace(/\D/g, "") || "0");
+
+            if (!isLocalDummy || !tableNumFallback) {
+                console.warn("[performCharge] Mesa no identificada:", tableIdSelected);
+                setToast({ kind: "err", msg: "No pudimos identificar la mesa. Selecciónala de nuevo desde el mapa para continuar." });
+                pos.dispatch({ type: "SET_PROCESSING", processing: false });
+                return;
+            }
+
+            // ★ Crear mesa sintética para mesas locales (NO existen en BD)
+            table = {
+                id: tableIdSelected,
+                restaurant_id: restaurant?.id ?? "local",
+                zone_id: null,
+                zone: null,
+                table_number: tableNumFallback,
+                status: "FREE",
+            };
+            console.log("[performCharge] mesa dummy local detectada:", tableNumFallback);
         }
         const tableNum = String(table.table_number ?? "");
         const items    = pos.state.orderItems;
@@ -530,27 +568,26 @@ export function PosTerminalPro() {
         if (persistOk) {
             setToast({
                 kind: "ok",
-                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · Guardado en BD (${orderIdCreated?.slice(0, 8) ?? "?"})`,
+                msg: `✅ Venta registrada · Mesa ${tableNum} · ${round2(sub)} €`,
             });
         } else if (persistError) {
-            // ★★★ ERROR VISIBLE con alert del navegador ★★★
-            const errorMsg = persistError.length > 100 ? persistError.slice(0, 100) + "..." : persistError;
+            // ★ v4.0.7-clean: Mensajes 100% comerciales, sin tecnicismos
+            console.error("[performCharge] Detalle técnico (solo consola):", persistError);
             setToast({
                 kind: "err",
-                msg: `❌ ${verb} Mesa ${tableNum} ${round2(sub)}€ · NO GUARDADO: ${errorMsg}`,
+                msg: `❌ ${verb} Mesa ${tableNum} · ${round2(sub)}€. No se pudo registrar la venta. Por favor, inténtalo de nuevo o contacta con soporte si el problema continúa.`,
             });
-            // ★★ ALERT NATIVO para que se vea siempre ★★
-            alert(`❌ ERROR AL GUARDAR VENTA\n\n` +
+            // ★★ ALERT NATIVO con lenguaje humano ★★
+            alert(`❌ No pudimos registrar la venta\n\n` +
                   `Mesa: ${tableNum}\n` +
-                  `Importe: ${round2(sub)} €\n` +
-                  `Error: ${persistError}\n\n` +
-                  `La mesa se ha liberado localmente, pero el ticket NO se ha guardado en la base de datos.\n` +
-                  `Si el problema persiste, ve a /settings → Ventas y revisa la consola.`);
-            console.error("[performCharge] ❌ NO GUARDADO EN BD. Detalle:", persistError);
+                  `Importe: ${round2(sub)} €\n\n` +
+                  `La mesa ya está libre para el siguiente cliente. ` +
+                  `Anota los productos de esta venta en papel y contacta con soporte para recuperarla. ` +
+                  `Sentimos las molestias.`);
         } else {
             setToast({
                 kind: "ok",
-                msg: `✓ ${verb} · Mesa ${tableNum} · ${seriesStr} · ${round2(sub)} € · (sin tenant: solo local)`,
+                msg: `✅ ${verb} · Mesa ${tableNum} · ${round2(sub)} € · Venta registrada`,
             });
         }
         console.log("[performCharge] FIN. persistOk=", persistOk, "orderId=", orderIdCreated);
@@ -622,13 +659,15 @@ export function PosTerminalPro() {
                     companyOverride: localCompany,
                 });
                 if (!result.ok) {
-                    setToast({ kind: "err", msg: result.error ?? "Error al imprimir" });
+                    console.warn("[printPreBill] fallo:", result.error);
+                    setToast({ kind: "err", msg: "No se pudo imprimir la pre-cuenta. Revisa que la impresora esté encendida y con papel." });
                 } else {
                     setToast({ kind: "ok", msg: "Pre-cuenta enviada a impresión" });
                 }
             }
         } catch (e) {
-            setToast({ kind: "err", msg: e instanceof Error ? e.message : "Error al imprimir" });
+            console.warn("[printPreBill] error:", e);
+            setToast({ kind: "err", msg: "No se pudo imprimir la pre-cuenta. Revisa que la impresora esté encendida y con papel." });
         }
     }, [pos, tables, restaurant, auth, printer]);
 

@@ -30,24 +30,28 @@ export async function getMyTenant(): Promise<Restaurant | null> {
             // Sin sesión: intentar el primer tenant activo (VIP bypass)
             const firstActive = await getFirstActiveTenant();
             if (firstActive) {
-                const { data } = await supabase
+                const result = await supabase
                     .from("tenants").select("*").eq("id", firstActive).maybeSingle();
-                if (data) return data as Restaurant;
+                if (result.error && /recursion/i.test(result.error.message)) {
+                    console.warn("[getMyTenant] RLS recursion detectada, saltando");
+                } else if (result.data) {
+                    return result.data as Restaurant;
+                }
             }
             return null;
         }
 
         // ★ v1.9.1: ir DIRECTO al primer tenant activo (sin owner_id)
-        //    El user no es owner del tenant (caso VIP), así que
-        //    ahorramos queries innecesarias que devuelven 400
         try {
             const firstActive = await getFirstActiveTenant();
             if (firstActive) {
-                const { data } = await supabase
+                const result = await supabase
                     .from("tenants").select("*").eq("id", firstActive).maybeSingle();
-                if (data) {
+                if (result.error && /recursion/i.test(result.error.message)) {
+                    console.warn("[getMyTenant] RLS recursion detectada, saltando");
+                } else if (result.data) {
                     console.log("[getMyTenant] ✓ primer tenant activo:", firstActive);
-                    return data as Restaurant;
+                    return result.data as Restaurant;
                 }
             }
         } catch (e) {
@@ -63,9 +67,13 @@ export async function getMyTenant(): Promise<Restaurant | null> {
                 .maybeSingle();
             if (err2) console.warn("[getMyTenant] tenant_users error:", err2.message);
             if (tu?.tenant_id) {
-                const { data: t } = await supabase
+                const result = await supabase
                     .from("tenants").select("*").eq("id", tu.tenant_id).maybeSingle();
-                if (t) return t as Restaurant;
+                if (result.error && /recursion/i.test(result.error.message)) {
+                    console.warn("[getMyTenant] RLS recursion en tenant lookup, saltando");
+                } else if (result.data) {
+                    return result.data as Restaurant;
+                }
             }
         } catch (e) {
             console.warn("[getMyTenant] tenant_users lookup error:", e);
@@ -225,12 +233,21 @@ export async function loadRestaurantData(tenantId?: string): Promise<RestaurantD
         // 1) Resolver tenant
         let tenant: Restaurant | null = null;
         if (tenantId) {
-            const { data } = await supabase
+            // ★ v4.0.7-rls-fix: Capturar recursion de RLS silenciosamente
+            const result = await supabase
                 .from("tenants")
                 .select("*")
                 .eq("id", tenantId)
                 .maybeSingle();
-            tenant = data as Restaurant | null;
+            if (result.error) {
+                if (/infinite recursion|recursion detected/i.test(result.error.message)) {
+                    console.warn("[loadRestaurantData] RLS recursion en tenants, saltando query directa");
+                } else {
+                    console.warn("[loadRestaurantData] tenants query error:", result.error.message);
+                }
+            } else {
+                tenant = result.data as Restaurant | null;
+            }
         }
         if (!tenant) tenant = await getMyTenant();
         if (!tenant) {

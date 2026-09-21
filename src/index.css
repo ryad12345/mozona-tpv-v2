@@ -1,8 +1,10 @@
 
 /* =====================================================================
-   MOZONA TPV — Estilos de impresión térmica (v3.4.6)
+   MOZONA TPV — Estilos de impresión térmica (v4.0.7-print-dynamic)
    =====================================================================
-   Configuración definitiva para impresoras de tickets:
+   v4.0.7: CSS print DINÁMICO según ticket_paper_width (48/58/80mm)
+   - El CSS dinámico se inyecta en runtime desde <PrintStyles />
+   - Aquí solo dejamos reglas base/fallback para 58mm
    - @page { size: 58mm auto; margin: 0 } fuerza el formato del rollo
    - Ancho efectivo de 48mm deja margen para los dientes de la tiquetera
    - Solo se imprime el contenedor #thermal-ticket-print

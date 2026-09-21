@@ -15,7 +15,7 @@ import {
 import { Logo } from "../components/Logo";
 import { HeroMockup } from "../components/HeroMockup";
 import { useAuth } from "../lib/auth";
-import { openAssistant } from "../components/assistant/FloatingAssistantButton";
+import { openAssistant } from "../lib/assistant";
 import { cn } from "../lib/cn";
 
 const FEATURES = [
@@ -217,7 +217,7 @@ export function LandingPage() {
                                 </ul>
                                 <button type="button"
                                         onClick={() => openAssistant({
-                                            source: "pricing",
+                                            source: "landing",
                                             ctxPlan: p.id as any,
                                         })}
                                         className="mt-6 w-full h-11 inline-flex items-center justify-center

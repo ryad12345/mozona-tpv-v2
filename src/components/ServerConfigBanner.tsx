@@ -52,7 +52,7 @@ export function ServerConfigBanner({ isConnected, onSaved }: ServerConfigBannerP
     const handleSave = () => {
         const normalized = normalizeServerInput(ip, parseInt(port || "3001", 10));
         if (!normalized) {
-            setError("IP no válida.  Ejemplo: 192.168.1.50");
+            setError("La dirección indicada no es válida. Introduce la IP local de la caja, por ejemplo: 192.168.1.50");
             return;
         }
         // Parsear host y puerto

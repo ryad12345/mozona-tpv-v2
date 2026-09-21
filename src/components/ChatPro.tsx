@@ -1,10 +1,14 @@
 // =====================================================================
-// MOZONA TPV — ChatPro (v4.0.2) "Habla con Riyad"
+// MOZONA TPV — ChatPro (v4.0.7-realdb) "Habla con Riyad"
 // =====================================================================
 // Asistente conversacional flotante.
 //
 // Conecta con /api/business-intelligence?action=chat
 // usa SQL puro (parse_user_intent + queries directas).
+//
+// ★ v4.0.7-realdb: Si el backend devuelve fallback_to_client,
+//   ejecuta queries REALES directamente en Supabase con el tenant_id
+//   del usuario autenticado. NUNCA devuelve datos mock.
 //
 // UI Dark Premium. Mensajes siempre en lenguaje humano.
 // VIP bypass automatico en backend.
@@ -14,6 +18,8 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { apiJson } from "../lib/api-router";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { chatQuery } from "../lib/chatApi";
 
 // ★ Rutas donde el ChatPro NO debe mostrarse (publicas y de autenticacion)
 const HIDDEN_ROUTES = new Set(["/auth", "/", "/reset-password", "/register", "/waiter/login", "/setup-caja"]);
@@ -44,6 +50,281 @@ const WELCOME: ChatMessage = {
     content: "¡Hola! Soy Riyad. Pregúntame lo que quieras sobre tu local: ventas, stock, comandas o márgenes. Sin tecnicismos.",
 };
 
+// ═════════════════════════════════════════════════════════════════════
+// ★ v4.0.7-realdb: Parser de intenciones en cliente (regex)
+//   Cuando el backend devuelve fallback_to_client=true,
+//   ejecutamos las queries REALES directamente en Supabase.
+// ═════════════════════════════════════════════════════════════════════
+
+type Intent = "query_sales" | "query_low_stock" | "query_top_products" | "query_table_stats" | "query_profit" | "greeting" | "help" | "unknown";
+
+interface IntentResult {
+    intent: Intent;
+    params?: { period?: "today" | "yesterday" | "week" | "month" };
+}
+
+function parseIntentLocal(text: string): IntentResult {
+    const t = (text || "").toLowerCase().trim();
+
+    if (/^hola|^buen[oa]s|^saludos|^qu[eé]\s*tal/.test(t)) return { intent: "greeting" };
+    if (/ayuda|qu[eé]\s*puedes|qu[eé]\s*sabes/.test(t)) return { intent: "help" };
+
+    if (/v[ei]nt[ae]s/.test(t)) {
+        let period: any = "today";
+        if (/ayer/.test(t)) period = "yesterday";
+        else if (/semana/.test(t)) period = "week";
+        else if (/mes/.test(t)) period = "month";
+        return { intent: "query_sales", params: { period } };
+    }
+
+    if (/stock|reponer|baj[ao]/.test(t)) return { intent: "query_low_stock" };
+    if (/m[áa]s\s*vend|top|popular|estrella/.test(t)) return { intent: "query_top_products" };
+    if (/mesa/.test(t)) return { intent: "query_table_stats" };
+    if (/margen|rentab|profit|ganancia/.test(t)) return { intent: "query_profit" };
+
+    return { intent: "unknown" };
+}
+
+/**
+ * Ejecuta query REAL contra Supabase con tenant_id.
+ * Esta función se usa cuando el backend no responde.
+ */
+async function executeRealQuery(tenantId: string, intent: Intent, params: any = {}): Promise<any> {
+    if (!isSupabaseConfigured || !supabase) {
+        return {
+            ok: false,
+            intent,
+            response: "No puedo acceder a tu base de datos ahora mismo. Intenta en unos segundos.",
+        };
+    }
+
+    try {
+        if (intent === "query_sales") {
+            const period = params.period || "today";
+            let date_from = new Date(new Date().setHours(0,0,0,0)).toISOString();
+            let date_label = "hoy";
+            if (period === "yesterday") {
+                date_from = new Date(Date.now() - 86400000).toISOString();
+                date_label = "ayer";
+            } else if (period === "week") {
+                date_from = new Date(Date.now() - 7*86400000).toISOString();
+                date_label = "esta semana";
+            } else if (period === "month") {
+                date_from = new Date(Date.now() - 30*86400000).toISOString();
+                date_label = "este mes";
+            }
+
+            const { data, error } = await supabase
+                .from("orders")
+                .select("id, total, created_at")
+                .eq("tenant_id", tenantId)
+                .gte("created_at", date_from)
+                .limit(1000);
+
+            if (error) throw new Error(error.message);
+
+            const arr = data || [];
+            const total = arr.reduce((s, o) => s + Number(o.total || 0), 0);
+            const count = arr.length;
+            const avg = count > 0 ? total / count : 0;
+
+            return {
+                ok: true,
+                intent: "query_sales",
+                response: count > 0
+                    ? `📊 Ventas de ${date_label}: ${count} tickets, ${total.toFixed(2)}€ en total, promedio ${avg.toFixed(2)}€ por ticket.`
+                    : `📊 ${date_label.charAt(0).toUpperCase() + date_label.slice(1)} aún no hay ventas registradas.`,
+                data: {
+                    total_ventas: total.toFixed(2),
+                    num_tickets: count,
+                    promedio_por_ticket: avg.toFixed(2),
+                    periodo: date_label,
+                },
+            };
+        }
+
+        if (intent === "query_low_stock") {
+            // ★ La tabla products NO tiene current_stock (solo is_active)
+            //   Productos NO disponibles = "sin stock" o desactivados
+            const { data, error } = await supabase
+                .from("products")
+                .select("id, name, is_active, is_available")
+                .eq("tenant_id", tenantId)
+                .or("is_active.eq.false,is_available.eq.false")
+                .limit(20);
+
+            if (error) throw new Error(error.message);
+
+            const arr = data || [];
+            if (arr.length === 0) {
+                // Si no hay productos desactivados, mostrar total de productos
+                const { count } = await supabase
+                    .from("products")
+                    .select("*", { count: "exact", head: true })
+                    .eq("tenant_id", tenantId);
+                return {
+                    ok: true,
+                    intent: "query_low_stock",
+                    response: `✅ Tienes ${count ?? 0} producto(s) en tu carta y todos están disponibles. La gestión detallada de stock por unidades requiere actualizar el módulo de inventario.`,
+                    data: { total_products: count, low_stock: [] },
+                };
+            }
+
+            return {
+                ok: true,
+                intent: "query_low_stock",
+                response: `📦 Tienes ${arr.length} producto(s) no disponible(s): ${arr.slice(0, 5).map(p => p.name).join(", ")}. Revisa si necesitas reponer o reactivar.`,
+                data: { low_stock: arr },
+            };
+        }
+
+        if (intent === "query_top_products") {
+            // ★ v4.0.7-fix: order_items NO tiene tenant_id ni product_name.
+            //   Tiene 'name' (nombre del producto) y 'order_id' (FK a orders).
+            //   Hacemos 2 queries:
+            //   1) Obtener IDs de orders del tenant
+            //   2) Obtener order_items filtrados por order_id IN (...)
+            const { data: ordersData, error: ordersErr } = await supabase
+                .from("orders")
+                .select("id")
+                .eq("tenant_id", tenantId)
+                .limit(5000);
+
+            if (ordersErr) throw new Error(ordersErr.message);
+
+            const orderIds = (ordersData || []).map(o => o.id);
+            if (orderIds.length === 0) {
+                return {
+                    ok: true,
+                    intent: "query_top_products",
+                    response: "📊 Aún no hay ventas registradas en tu local.",
+                    data: { top: [] },
+                };
+            }
+
+            const { data: itemsData, error: itemsErr } = await supabase
+                .from("order_items")
+                .select("name, quantity, price")
+                .in("order_id", orderIds.slice(0, 100))    // ★ límite para URLs razonables
+                .limit(5000);
+
+            if (itemsErr) throw new Error(itemsErr.message);
+
+            const counts: Record<string, { qty: number; revenue: number }> = {};
+            for (const it of itemsData || []) {
+                const name = it.name || "Sin nombre";
+                const qty = Number(it.quantity || 0);
+                const price = Number(it.price || 0);
+                if (!counts[name]) counts[name] = { qty: 0, revenue: 0 };
+                counts[name].qty += qty;
+                counts[name].revenue += qty * price;
+            }
+            const top = Object.entries(counts)
+                .sort((a, b) => b[1].qty - a[1].qty)
+                .slice(0, 5)
+                .map(([name, v]) => ({ name, qty: v.qty, revenue: v.revenue.toFixed(2) }));
+
+            return {
+                ok: true,
+                intent: "query_top_products",
+                response: top.length > 0
+                    ? `🏆 Top ${top.length} más vendido(s): ${top.map((t, i) => `${i+1}) ${t.name} (${t.qty} uds, ${parseFloat(t.revenue).toFixed(2)}€)`).join(", ")}.`
+                    : "Aún no hay productos vendidos.",
+                data: { top },
+            };
+        }
+
+        if (intent === "query_table_stats") {
+            // ★ v4.0.7-tables: Sincronizar con la vista del TPV.
+            //   El TPV muestra 16 mesas por defecto (rellena con dummy locales si la BD tiene menos).
+            //   Para determinar mesas abiertas, contamos órdenes ACTIVAS (status IN sent/open/draft)
+            //   con table_id no nulo del tenant.
+
+            // 1) Mesas reales en BD
+            const { data: tablesData, error: tablesErr } = await supabase
+                .from("dining_tables")
+                .select("id, name, status")
+                .eq("tenant_id", tenantId);
+
+            if (tablesErr) throw new Error(tablesErr.message);
+            const dbTables = tablesData || [];
+            const dbTotal = dbTables.length;
+
+            // 2) Órdenes activas con mesa asignada (no cerradas)
+            const { data: ordersData, error: ordersErr } = await supabase
+                .from("orders")
+                .select("id, table_id, status")
+                .eq("tenant_id", tenantId)
+                .in("status", ["draft", "open", "sent"])
+                .not("table_id", "is", null);
+
+            if (ordersErr) throw new Error(ordersErr.message);
+            const activeOrders = ordersData || [];
+            const occupiedTableIds = new Set(activeOrders.map(o => o.table_id));
+
+            // 3) TPV por defecto muestra 16 mesas (constante en PosTerminalPro.tsx línea 738)
+            const TPV_DEFAULT_TABLES = 16;
+            const total = Math.max(dbTotal, TPV_DEFAULT_TABLES);
+
+            // Mesas ocupadas:
+            //   - De BD: si su id está en occupiedTableIds
+            //   - Dummy locales: 1 activa por cada orden activa que tenga un table_id
+            //     que NO esté en dbTables (mesa dummy virtual)
+            const dbOccupied = dbTables.filter(t => occupiedTableIds.has(t.id)).length;
+            const virtualOccupied = dbTotal === 0
+                ? Math.min(activeOrders.length, TPV_DEFAULT_TABLES)  // si no hay mesas en BD, todas las órdenes son virtuales
+                : Math.max(0, activeOrders.length - dbOccupied);
+            const occupied = Math.min(total, dbOccupied + virtualOccupied);
+            const free = Math.max(0, total - occupied);
+
+            return {
+                ok: true,
+                intent: "query_table_stats",
+                response: `🪑 Tienes ${total} mesa(s) en total (como ve el cajero): ${occupied} abierta(s) con comanda activa, ${free} libre(s). ${
+                    dbTotal < total ? `(Solo ${dbTotal} en BD, el resto las genera el TPV automáticamente.)` : ""
+                }`,
+                data: {
+                    total,
+                    occupied,
+                    free,
+                    in_db: dbTotal,
+                    tpv_visible: total,
+                    active_orders: activeOrders.length,
+                },
+            };
+        }
+
+        if (intent === "greeting") {
+            return {
+                ok: true,
+                intent: "greeting",
+                response: "¡Hola! Soy Riyad. Puedo ayudarte con ventas, stock bajo, mesas, top productos o rentabilidad. ¿Qué necesitas?",
+            };
+        }
+
+        if (intent === "help") {
+            return {
+                ok: true,
+                intent: "help",
+                response: "Puedo responder preguntas sobre:\n• Ventas (hoy, ayer, semana, mes)\n• Stock bajo de productos\n• Estado de las mesas\n• Lo más vendido\n• Márgenes y rentabilidad",
+            };
+        }
+
+        return {
+            ok: true,
+            intent: "unknown",
+            response: "🤔 No estoy seguro de qué quieres decir. Pregúntame sobre ventas, stock, mesas, top productos o márgenes.",
+        };
+    } catch (e) {
+        console.warn("[ChatPro] Query error (solo consola):", e);
+        return {
+            ok: false,
+            intent,
+            response: "Ahora mismo no puedo consultar tu información. Por favor, inténtalo de nuevo en unos segundos.",
+        };
+    }
+}
+
 export function ChatPro() {
     const auth = useAuth();
     const navigate = useNavigate();
@@ -68,6 +349,18 @@ export function ChatPro() {
         setUnread(0);
     }, [open]);
 
+    // ★ Escuchar eventos globales openAssistant()/closeAssistant()
+    useEffect(() => {
+        const openHandler = () => setOpen(true);
+        const closeHandler = () => setOpen(false);
+        window.addEventListener("mozona:open-assistant", openHandler);
+        window.addEventListener("mozona:close-assistant", closeHandler);
+        return () => {
+            window.removeEventListener("mozona:open-assistant", openHandler);
+            window.removeEventListener("mozona:close-assistant", closeHandler);
+        };
+    }, []);
+
     // ★ Solo mostrar si hay sesion Y NO estamos en ruta publica
     if (!auth.user) return null;
     if (HIDDEN_ROUTES.has(location.pathname)) return null;
@@ -90,18 +383,59 @@ export function ChatPro() {
         setBusy(true);
 
         try {
-            const json = await apiJson("business-intelligence?action=chat", {
-                body: {
-                    text: trimmed,
-                    tenant_id: auth.tenant?.id || null,
-                },
-            });
+            // ★ v4.0.7-secure: Validar sesion antes de enviar
+            if (!auth.user) {
+                throw new Error("Inicia sesión para usar el asistente.");
+            }
+            if (!auth.tenant?.id || auth.tenant.id === "vip-bypass") {
+                throw new Error("Por favor, recarga la página para continuar.");
+            }
+
+            let json: any = null;
+
+            // ★ Intentar backend primero
+            try {
+                json = await apiJson("business-intelligence?action=chat", {
+                    headers: {
+                        "x-user-email": auth.user.email || "",
+                    },
+                    body: {
+                        text: trimmed,
+                        tenantId: auth.tenant.id,
+                        userEmail: auth.user.email || "",
+                    },
+                });
+            } catch (e) {
+                console.warn("[ChatPro] Backend no responde, usando fallback de cliente con Supabase directo");
+                json = null;
+            }
+
+            // ★ v4.0.7-chat-secure: Primero intenta Edge Function (vía admin-ops),
+            //   fallback a query directa solo si Edge Function no responde
+            if (!json || json.fallback_to_client || json.ok === false) {
+                const parsed = parseIntentLocal(trimmed);
+                console.log("[ChatPro] query:", parsed.intent);
+                // ★ v4.0.7-chat-secure: usa chatApi.ts que prioriza Edge Function
+                const chatResult = await chatQuery(parsed.intent, parsed.params);
+                json = {
+                    ok: chatResult.ok,
+                    intent: chatResult.intent,
+                    response: chatResult.response,
+                    data: chatResult.data,
+                    source: chatResult.source,  // "edge_function" | "direct" | "error"
+                };
+            }
+
+            // ★ Si el backend rechaza por autorizacion, mostrar mensaje claro
+            if (json && json.ok === false && (json.error?.includes("acceso") || json.error?.includes("sesion") || json.error?.includes("tenant"))) {
+                throw new Error("Por favor, recarga la página para continuar.");
+            }
 
             const assistantMsg: ChatMessage = {
                 id: `a-${Date.now()}`,
                 role: "assistant",
                 timestamp: Date.now(),
-                content: json.response || json.friendly_message || "No he podido procesar tu mensaje.",
+                content: json.response || json.friendly_message || "Disculpa, ahora mismo no puedo responder a tu pregunta. Inténtalo de nuevo en unos segundos.",
                 data: json.data,
             };
 

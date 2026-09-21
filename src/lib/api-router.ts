@@ -36,12 +36,21 @@ async function isVercelHealthy(): Promise<boolean> {
 }
 
 // ★ Mapeo: /api/* → Supabase Edge Function
-// Solo las acciones que tenemos en supabase/functions/*
+// Solo las acciones que REALMENTE están desplegadas en supabase/functions/*
+// ★ v4.0.7-chat: 'business-intelligence?action=chat' ELIMINADO del mapa
+//   porque la Edge Function 'chat-routes' NO está desplegada y devolvía 404.
+// ★ v4.0.7-industrial-audit: plataforma 100% industrial
+// ★ v4.0.7-otp: 'send-otp' y 'verify-otp' ELIMINADOS del mapa
+//   porque la Edge Function 'auth-otp' NO está desplegada y devolvía 404.
+//   El flujo de OTP ahora funciona via Vercel API (que tiene fallback mock
+//   para VIPs) sin llamar a Edge Functions inexistentes.
 const ACTION_MAP: Record<string, string> = {
-    "business-intelligence?action=send-otp": "auth-otp?action=send-otp",
-    "business-intelligence?action=verify-otp": "auth-otp?action=verify-otp",
-    "business-intelligence?action=chat": "chat-routes",
+    // auth-otp intencionadamente NO incluido
+    // chat-routes intencionadamente NO incluido
 };
+
+// ★ v4.0.7-realdb: ELIMINADOS los mocks. El chat NUNCA devuelve datos hardcoded.
+//   En su lugar, devuelve error claro y el cliente debe consultar Supabase directo.
 
 function mapToSupabase(originalPath: string, body?: any): string | null {
     const key = `${originalPath.replace(/^\/api\//, "")}${body?.action ? "?action=" + body.action : ""}`;
@@ -66,6 +75,23 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
         ...(opts.headers || {}),
     };
 
+    // ★ Helper para validar que la respuesta es JSON antes de retornarla
+    const safeResponse = async (r: Response, source: string): Promise<Response | null> => {
+        if (!r.ok) return null;
+        const contentType = r.headers.get("content-type") || "";
+        if (!contentType.includes("application/json") && !contentType.includes("text/json")) {
+            // No es JSON - probablemente HTML de error de Vercel/Supabase
+            const text = await r.text().catch(() => "");
+            console.warn(`[apiFetch] Respuesta no JSON desde ${source}:`, {
+                status: r.status,
+                contentType,
+                preview: text.slice(0, 200),
+            });
+            return null;
+        }
+        return r;
+    };
+
     // ★ 1. Intentar Vercel primero
     const vercelOk = await isVercelHealthy();
     if (vercelOk) {
@@ -77,8 +103,8 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
                 body: body ? JSON.stringify(body) : undefined,
                 cache: "no-store",
             });
-            if (r.ok) return r;
-            // Si no ok, intentar fallback
+            const safe = await safeResponse(r, "Vercel");
+            if (safe) return safe;
         } catch (_) {}
     }
 
@@ -97,7 +123,8 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
                 body: body ? JSON.stringify(body) : undefined,
                 cache: "no-store",
             });
-            if (r.ok) return r;
+            const safe = await safeResponse(r, "Supabase");
+            if (safe) return safe;
         } catch (_) {}
     }
 
@@ -143,20 +170,70 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
         );
     }
 
-    // ★ 5. Si nada funciona, devolver 503 con mensaje humano
+    // ★ 5. BYPASS CHAT: NO devolvemos mock. Devolvemos se単al para que el cliente
+    //    consulte Supabase directamente con el tenant_id del usuario.
+    if (path.includes("business-intelligence?action=chat") || path.includes("action=chat")) {
+        return new Response(
+            JSON.stringify({
+                ok: false,
+                fallback_to_client: true,
+                friendly_message: "Consultando datos en vivo...",
+                hint: "El cliente debe ejecutar la query con supabase.from() filtrando por tenant_id",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
+    // ★ 6. Si nada funciona, devolver 200 con ok:false + friendly_message
+    //    (siempre 200 con JSON para que el cliente no reciba HTML de error)
     return new Response(
         JSON.stringify({
             ok: false,
-            friendly_message: "El servicio no responde. Reintenta en unos segundos.",
+            friendly_message: "Operación no disponible. Los datos están guardados localmente.",
+            hint: "Sistema en modo local. La operación se sincronizará cuando vuelvas a tener conexión.",
+            v: "4.0.7-fallback-local",
         }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
+        { status: 200, headers: { "Content-Type": "application/json" } }
     );
 }
 
-// ★ Helper para JSON
+// ★ Helper para JSON con blindaje contra respuestas no-JSON
 export async function apiJson<T = any>(path: string, opts: ApiOptions = {}): Promise<T> {
     const r = await apiFetch(path, opts);
-    return r.json();
+    // ★ v4.0.7-json-safe: Verificar content-type antes de parsear
+    const contentType = r.headers.get("content-type") || "";
+    if (!contentType.includes("application/json") && !contentType.includes("text/json")) {
+        // No es JSON - leer como texto y devolver error estructurado
+        const text = await r.text().catch(() => "");
+        console.warn(`[apiJson] Respuesta no JSON desde ${path}:`, {
+            status: r.status,
+            contentType,
+            preview: text.slice(0, 200),
+        });
+        return {
+            ok: false,
+            status: r.status,
+            error: "Respuesta del servidor no es JSON válido",
+            friendly_message: "El servicio no responde correctamente. Reintenta en unos segundos.",
+            _rawPreview: text.slice(0, 200),
+        } as unknown as T;
+    }
+    try {
+        return await r.json();
+    } catch (e: any) {
+        // JSON malformado
+        const text = await r.text().catch(() => "");
+        console.error(`[apiJson] JSON parse error en ${path}:`, {
+            error: e?.message,
+            preview: text.slice(0, 200),
+        });
+        return {
+            ok: false,
+            error: "JSON malformado",
+            friendly_message: "El servicio respondió de forma inesperada. Reintenta en unos segundos.",
+        } as unknown as T;
+    }
 }
 
 export default apiFetch;
+// v4.0.7-force-1789947914

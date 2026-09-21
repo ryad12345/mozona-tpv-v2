@@ -1,34 +1,39 @@
 // =====================================================================
-// MOZONA TPV — usePosData: hook de datos del terminal
+// MOZONA TPV — usePosData: hook de datos del terminal (v4.0.7-bidir-sync)
 // =====================================================================
-// Fuente de datos en orden de prioridad:
-//   1. Supabase (si hay sesión del usuario) → tenant real del usuario
-//   2. Caché IndexedDB (offline)
-//   3. Mock vacío (sin mostrar datos ficticios de "Casa Manolo")
-//
-// Cuando el usuario se autentica con Supabase, se carga SU tenant real
-// (buscando por owner_id o por tenant_users), y de ahí se cargan
-// categorías, productos (con sus image_url reales) y mesas.
+// Usa bidirectionalSync.ts para conexión bidireccional OFFLINE-FIRST con Supabase.
+// - Lectura: Supabase → cache local → UI
+// - Escritura: cache local → Supabase (background con retry)
 // =====================================================================
 
 import { useEffect, useState, useCallback } from "react";
-import { isSupabaseConfigured } from "../lib/supabase";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
-import { loadRestaurantData, getMyTenant } from "../lib/restaurantData";
+import {
+    fetchWithCache,
+    writeWithSync,
+    processQueue,
+    getCurrentTenantId,
+    fetchTenantFull,
+    onSyncProgress,
+    type TenantFull,
+} from "../lib/bidirectionalSync";
 import {
     putCategories, putProducts, putTables,
-    getAllCategories, getAllProducts, getAllTables, getMeta,
 } from "../lib/offlineStorage";
 import type {
     Restaurant, Category, Product, RestaurantTable, ConnectionStatus,
 } from "../lib/types";
 
-// ---------------------------------------------------------------------
-// Tipos
-// ---------------------------------------------------------------------
+// ★ VIP tenant IDs hardcoded (último recurso si resolveRealTenantId falla)
+const VIP_HARDCODED: Record<string, string> = {
+    "chalohiahmd1980@gmail.com": "58a8e6f5-3172-409c-8aa5-ae02be0b7e76",
+    "rofixinsta@gmail.com":      "58a8e6f5-3172-409c-8aa5-ae02be0b7e76",
+};
 
 export interface PosDataState {
     restaurant:  Restaurant | null;
+    tenantFull:  TenantFull | null;
     categories:  Category[];
     products:    Product[];
     tables:      RestaurantTable[];
@@ -36,182 +41,240 @@ export interface PosDataState {
     loading:     boolean;
     error:       string | null;
     refresh:     () => Promise<void>;
+    saveProduct: (product: Partial<Product>) => Promise<{ ok: boolean; source: string }>;
+    saveTable:   (table: Partial<RestaurantTable>) => Promise<{ ok: boolean; source: string }>;
     source:      "supabase" | "lan" | "cache" | "empty";
+    syncQueueSize: number;
 }
-
-const DEFAULT_RESTAURANT: Restaurant = {
-    id: "",
-    slug: "cargando",
-    business_name: "Cargando…",
-    cif_nif: "",
-    address: "",
-    phone: null,
-    primary_color: "#2563EB",
-    ticket_footer_msg: "",
-    created_at: new Date().toISOString(),
-};
-
-// ---------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------
 
 export function usePosData(): PosDataState {
     const auth = useAuth();
-    const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [products,   setProducts]   = useState<Product[]>([]);
-    const [tables,     setTables]     = useState<RestaurantTable[]>([]);
-    const [connection, setConnection] = useState<ConnectionStatus>({
-        printer: false, network: false, supabase: false,
+    const [restaurant, setRestaurant]   = useState<Restaurant | null>(null);
+    const [tenantFull, setTenantFull]   = useState<TenantFull | null>(null);
+    const [categories, setCategories]   = useState<Category[]>([]);
+    const [products,   setProducts]     = useState<Product[]>([]);
+    const [tables,     setTables]       = useState<RestaurantTable[]>([]);
+    const [connection, setConnection]   = useState<ConnectionStatus>({
+        printer: false, network: navigator.onLine, supabase: isSupabaseConfigured,
     });
-    const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState<string | null>(null);
-    const [source,  setSource]  = useState<"supabase" | "lan" | "cache" | "empty">("empty");
+    const [loading,    setLoading]      = useState(true);
+    const [error,      setError]        = useState<string | null>(null);
+    const [source,     setSource]       = useState<"supabase" | "cache" | "empty">("empty");
+    const [syncQueueSize, setSyncQueueSize] = useState(0);
 
     const refresh = useCallback(async () => {
         setLoading(true);
+        setError(null);
+
         try {
-            // ★ v1.9: 100% directo a Supabase, sin IndexedDB ni mocks
-            console.log("[usePosData] 🔄 refresh directo a Supabase (sin caché)...");
-
-            // 1) Si hay sesión de camarero (vía /waiter/login), usar
-            //    su tenant_id directamente
-            let waiterTenantId: string | null = null;
-            if (!auth.user) {
-                try {
-                    const cached = localStorage.getItem("mozona.waiter_session");
-                    if (cached) {
-                        const parsed = JSON.parse(cached);
-                        if (parsed.ok && parsed.tenant_id) {
-                            waiterTenantId = parsed.tenant_id;
-                        }
-                    }
-                } catch (e) { /* noop */ }
+            if (!isSupabaseConfigured || !supabase) {
+                setRestaurant(null);
+                setTenantFull(null);
+                setCategories([]);
+                setProducts([]);
+                setTables([]);
+                setSource("empty");
+                setError("Supabase no configurado");
+                setLoading(false);
+                return;
             }
 
-            // 1) ★ Si hay sesión Supabase o de camarero, cargar del tenant real
-            if (isSupabaseConfigured && (auth.user || waiterTenantId)) {
-                try {
-                    let data;
-                    if (waiterTenantId) {
-                        data = await loadRestaurantData(waiterTenantId);
-                    } else if (auth.isSuperAdmin || auth.user) {
-                        // ★ v3.4.13: Para VIP / SuperAdmin, si el AuthContext
-                        //   YA cargó el tenant real (vía /api/tenant-settings),
-                        //   usarlo directamente. Si no, hacer fallback server-side.
-                        const realId = (auth.tenant && auth.tenant.id && auth.tenant.id !== "vip-bypass")
-                            ? auth.tenant.id
-                            : null;
+            // ★ Resolver tenant_id
+            const userEmail = (auth.user?.email || "").toLowerCase();
+            const candidate = auth.tenant?.id || userEmail || null;
 
-                        if (realId) {
-                            data = await loadRestaurantData(realId);
-                            console.log("[usePosData] ✓ Cargado desde tenant real", realId);
-                        } else {
-                            // Sin tenant real → cargar vía endpoint server-side
-                            // (bypasa RLS con SERVICE_ROLE)
-                            try {
-                                const r = await fetch(`/api/tenant-settings?email=${encodeURIComponent(auth.user?.email || "")}`);
-                                const json = await r.json();
-                                if (json && json.ok && json.tenant_id) {
-                                    data = await loadRestaurantData(json.tenant_id);
-                                    console.log("[usePosData] ✓ Cargado vía endpoint server-side, tenant=", json.tenant_id);
-                                }
-                            } catch (e) {
-                                console.warn("[usePosData] Server-side resolve failed:", e);
-                            }
-                        }
-
-                        if (!data || !data.restaurant) {
-                            // Fallback extremo: primer tenant activo vía cliente
-                            // (puede fallar por RLS pero es seguro intentarlo)
-                            data = await loadRestaurantData();
-                            if (!data.restaurant) {
-                                try {
-                                    const sb = (await import("../lib/supabase")).supabase;
-                                    const { data: firstTenant } = await sb
-                                        .from("tenants")
-                                        .select("*")
-                                        .order("created_at", { ascending: true })
-                                        .limit(1)
-                                        .maybeSingle();
-                                    if (firstTenant) {
-                                        data = await loadRestaurantData(firstTenant.id);
-                                    }
-                                } catch (e) {
-                                    console.warn("[usePosData] VIP fallback tenant lookup:", e);
-                                }
-                            }
-                        }
-                    } else {
-                        data = await loadRestaurantData();
-                    }
-                    if (data.error) {
-                        console.warn("[usePosData] loadRestaurantData:", data.error);
-                    }
-                    if (data.restaurant) {
-                        setRestaurant(data.restaurant);
-                        setCategories(data.categories);
-                        setProducts(data.products);
-                        setTables(data.tables);
-                        setConnection({
-                            printer: false, network: true, supabase: true,
-                        });
-                        setSource("supabase");
-                        setError(null);
-                        // ★ DEBUG POS: log de productos cargados
-                        console.log("[DEBUG POS] Productos cargados para la caja:", {
-                            tenant: data.restaurant.id,
-                            count: data.products.length,
-                            productos: data.products.map((p: any) => ({
-                                id: p.id,
-                                name: p.name,
-                                category: p.category,
-                                price: p.price,
-                            })),
-                        });
-                        // Persistir en caché
-                        try {
-                            await Promise.all([
-                                putCategories(data.categories),
-                                putProducts(data.products),
-                                putTables(data.tables),
-                            ]);
-                        } catch {/* ignore */}
-                        return;
-                    }
-                    // Sesión pero sin tenant: UI vacía
-                    setRestaurant(null);
-                    setCategories([]);
-                    setProducts([]);
-                    setTables([]);
-                    setConnection({ printer: false, network: true, supabase: true });
-                    setSource("empty");
-                    setError(data.error ?? "No se encontró un tenant para tu cuenta");
-                    return;
-                } catch (e) {
-                    console.warn("[usePosData] Supabase falló, usando caché:", e);
-                    setError("Sin conexión con Supabase.  Mostrando datos en caché.");
-                }
+            let realTenantId = "";
+            try {
+                realTenantId = (await getCurrentTenantId()) || "";
+            } catch (e) {
+                console.warn("[usePosData] tenant resolve warn:", String(e));
             }
 
-            // 2) ★★★ CONEXIÓN DIRECTA A SUPABASE ★★★
-            //    Sin IndexedDB, sin localStorage, sin fallback estático.
-            //    La caja se conecta EXCLUSIVAMENTE a Supabase.
-            setRestaurant(null);
-            setCategories([]);
-            setProducts([]);
-            setTables([]);
-            setConnection({ printer: false, network: false, supabase: isSupabaseConfigured });
-            setSource("empty");
-            setError("Inicia sesión para cargar tu menú");
+            // Fallback VIP
+            if ((!realTenantId || realTenantId === "00000000-0000-0000-0000-000000000000")
+                && VIP_HARDCODED[userEmail]) {
+                realTenantId = VIP_HARDCODED[userEmail];
+            }
+
+            if (!realTenantId || realTenantId === "00000000-0000-0000-0000-000000000000") {
+                setRestaurant(null);
+                setTenantFull(null);
+                setCategories([]);
+                setProducts([]);
+                setTables([]);
+                setSource("empty");
+                setError("No se pudo resolver tenant_id");
+                setLoading(false);
+                return;
+            }
+
+            // ★ Cargar en paralelo: tenant full, products, categories, tables
+            const [tenantFullRes, productsRes, categoriesRes, tablesRes] = await Promise.all([
+                fetchTenantFull(realTenantId),
+                fetchWithCache<Product>("products", realTenantId, {
+                    orderBy: { column: "name", ascending: true },
+                    forceRefresh: true,
+                }),
+                fetchWithCache<Category>("categories", realTenantId, {
+                    orderBy: { column: "sort_order", ascending: true },
+                    forceRefresh: true,
+                }),
+                fetchWithCache<RestaurantTable>("dining_tables", realTenantId, {
+                    forceRefresh: true,
+                }),
+            ]);
+
+            // Productos
+            const productsArr = productsRes.data.map((p: any) => ({
+                ...p,
+                price: Number(p.price ?? 0),
+                tax_rate: Number(p.tax_rate ?? 10),
+                is_available: p.is_active ?? true,
+                restaurant_id: p.tenant_id,
+            })) as Product[];
+
+            // Mesas: si no hay en BD, generar dummy locales
+            let tablesArr = tablesRes.data as RestaurantTable[];
+            if (tablesArr.length === 0) {
+                // Generar 16 mesas dummy locales
+                tablesArr = Array.from({ length: 16 }, (_, i) => ({
+                    id: `local-table-${i + 1}`,
+                    tenant_id: realTenantId,
+                    table_number: i + 1,
+                    name: `Mesa ${i + 1}`,
+                    seats: 4,
+                    status: "available",
+                    is_active: true,
+                } as any));
+            }
+
+            // Update state
+            setTenantFull(tenantFullRes);
+            setRestaurant((tenantFullRes as any) || { id: realTenantId });
+            setProducts(productsArr);
+            setCategories(categoriesRes.data as Category[]);
+            setTables(tablesArr);
+            setConnection({
+                printer: false,
+                network: navigator.onLine,
+                supabase: productsRes.source === "supabase" || categoriesRes.source === "supabase",
+            });
+            setSource(productsRes.source);
+            setError(null);
+
+            // Cache en offlineStorage
+            try {
+                await Promise.all([
+                    putCategories(categoriesRes.data as Category[]),
+                    putProducts(productsArr),
+                    putTables(tablesArr),
+                ]);
+            } catch {/* ignore */}
+
+            // Auto-sync queue
+            processQueue().catch(() => {});
         } catch (e) {
+            console.error("[usePosData] ERROR:", e);
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setLoading(false);
         }
-    }, [auth.user?.id]);
+    }, [auth.user?.email, auth.tenant?.id]);
 
+    // ★ Guardar producto (con sync bidireccional + SECURITY DEFINER fallback)
+    const saveProduct = useCallback(async (product: Partial<Product>) => {
+        const tenantId = await getCurrentTenantId();
+        if (!tenantId) return { ok: false, source: "none" };
+
+        const payload = {
+            ...product,
+            tenant_id: tenantId,
+            price: Number(product.price ?? 0),
+            tax_rate: Number(product.tax_rate ?? 10),
+            is_active: product.is_available ?? true,
+        };
+
+        // 1) SECURITY DEFINER RPC (sin Vercel, bypasa RLS anon)
+        try {
+            const { rpcSaveProduct } = await import("../lib/secureRpc");
+            const rpc = await rpcSaveProduct(payload);
+            if (rpc.ok) {
+                if (refresh) await refresh();
+                return { ok: true, source: "rpc" };
+            }
+        } catch (e) {
+            console.warn("[usePosData] rpcSaveProduct fallback:", e);
+        }
+
+        // 2) Fallback writeWithSync (intenta con cache local + queue)
+        const operation = payload.id ? "update" : "insert";
+        const result = await writeWithSync("products", tenantId, operation, payload);
+        if (result.ok && refresh) await refresh();
+        return { ok: result.ok, source: result.source };
+    }, [refresh]);
+
+    // ★ Guardar mesa
+    const saveTable = useCallback(async (table: Partial<RestaurantTable>) => {
+        const tenantId = await getCurrentTenantId();
+        if (!tenantId) return { ok: false, source: "none" };
+
+        const payload = { ...table, tenant_id: tenantId };
+
+        // Si es mesa local (no tiene UUID), guardar solo local
+        if (table.id?.startsWith("local-table-")) {
+            return { ok: true, source: "local" };
+        }
+
+        // 1) SECURITY DEFINER RPC (preferido para bypasar RLS)
+        try {
+            const { rpcSaveTable } = await import("../lib/secureRpc");
+            const rpc = await rpcSaveTable(payload);
+            if (rpc.ok) {
+                if (refresh) await refresh();
+                return { ok: true, source: "rpc" };
+            }
+        } catch (e) {
+            console.warn("[usePosData] rpcSaveTable fallback:", e);
+        }
+
+        // 2) Fallback writeWithSync
+        const operation = payload.id ? "update" : "insert";
+        const result = await writeWithSync("dining_tables", tenantId, operation, payload);
+        if (result.ok && refresh) await refresh();
+        return { ok: result.ok, source: result.source };
+    }, [refresh]);
+
+    // Suscribirse a cambios de sync
+    useEffect(() => {
+        const unsub = onSyncProgress(() => {
+            setSyncQueueSize(0); // recalcular si es necesario
+        });
+        return unsub;
+    }, []);
+
+    // Suscribirse a online/offline
+    useEffect(() => {
+        const onOnline = () => {
+            setConnection(c => ({ ...c, network: true }));
+            processQueue().catch(() => {});
+        };
+        const onOffline = () => {
+            setConnection(c => ({ ...c, network: false }));
+        };
+        window.addEventListener("online", onOnline);
+        window.addEventListener("offline", onOffline);
+        return () => {
+            window.removeEventListener("online", onOnline);
+            window.removeEventListener("offline", onOffline);
+        };
+    }, []);
+
+    // Initial load
     useEffect(() => { void refresh(); }, [refresh]);
 
-    return { restaurant, categories, products, tables, connection, loading, error, refresh, source };
+    return {
+        restaurant, tenantFull, categories, products, tables,
+        connection, loading, error, refresh, saveProduct, saveTable,
+        source, syncQueueSize,
+    };
 }

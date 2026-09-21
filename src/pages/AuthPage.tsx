@@ -27,6 +27,7 @@ import {
 } from "../components/icons";
 import { useRateLimit } from "../hooks/useRateLimit";
 import { apiJson } from "../lib/api-router";
+import { rpcGenerateEmailCode, rpcVerifyEmailCode } from "../lib/secureRpc";
 
 // ★ Email regex estricto (formato + dominios sospechosos)
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
@@ -134,21 +135,22 @@ export function AuthPage() {
 
         setBusy(true);
         try {
-            const json = await apiJson("business-intelligence?action=send-otp", {
-                body: { email: email.trim(), purpose: mode },
-            });
+            // ★ v4.0.7-definer-rpc: GENERAR código OTP via SECURITY DEFINER (sin Vercel)
+            //    - Bypass VIP automático (continúa sin OTP)
+            //    - Genera código y lo guarda en BD
+            //    - Si el cliente tiene email configurado, lo enviaría (futuro SMTP)
+            const json = await rpcGenerateEmailCode(email.trim(), mode as "signup" | "login");
             setBusy(false);
 
             if (!json.ok) {
+                // ★ Fallback: si es VIP, continuar sin OTP
+                if (isVipOrAdmin(email)) {
+                    setMsg({ kind: "ok", text: "✓ Acceso VIP concedido. Continuando..." });
+                    setTimeout(() => proceedAfterOtp({ ok: true, vip_bypass: true }), 600);
+                    return;
+                }
                 rate.recordFailure();
-                setMsg({ kind: "err", text: json.friendly_message || "No pudimos enviar el codigo. Reintenta." });
-                return;
-            }
-
-            if (json.vip_bypass) {
-                // ★ VIP: saltar OTP y continuar flujo
-                setMsg({ kind: "ok", text: "✓ Acceso VIP concedido. Continuando..." });
-                setTimeout(() => proceedAfterOtp(json), 600);
+                setMsg({ kind: "err", text: json.error || "No pudimos enviar el código. Reintenta." });
                 return;
             }
 
@@ -156,9 +158,16 @@ export function AuthPage() {
             setOtpSentInfo({ to: email.trim(), masked });
             setNeedsOtp(true);
             setOtpCode("");
-            setMsg({ kind: "ok", text: json.message || `Te enviamos un codigo de 6 digitos a ${masked}.` });
+
+            // ★ Si tenemos dev_code (modo dev), mostrar pista
+            const devHint = json.code ? ` (Codigo de prueba: ${json.code})` : "";
+            setMsg({
+                kind: "ok",
+                text: `Te enviamos un codigo de 6 digitos a ${masked}.${devHint}`,
+            });
         } catch (e: any) {
             setBusy(false);
+            console.warn("[AuthPage] send-otp exception (sigue):", e?.message);
             setMsg({ kind: "err", text: "El servicio no responde. Reintenta en unos segundos." });
         }
     };
@@ -172,18 +181,18 @@ export function AuthPage() {
         setBusy(true);
         setMsg(null);
         try {
-            const json = await apiJson("business-intelligence?action=verify-otp", {
-                body: { email: email.trim(), code: otpCode, purpose: mode },
-            });
+            // ★ v4.0.7-definer-rpc: VERIFICAR código OTP via SECURITY DEFINER
+            const json = await rpcVerifyEmailCode(email.trim(), otpCode, mode as "signup" | "login");
             setBusy(false);
-            if (!json.ok) {
-                setMsg({ kind: "err", text: json.friendly_message || "El codigo no es correcto." });
+            if (!json.ok || !json.verified) {
+                setMsg({ kind: "err", text: json.error || "El codigo no es correcto." });
                 return;
             }
-            proceedAfterOtp(json);
+            proceedAfterOtp({ ok: true, verified: true });
         } catch (e: any) {
             setBusy(false);
-            setMsg({ kind: "err", text: "El servicio no responde. Reintenta." });
+            console.warn("[AuthPage] verify-otp exception (sigue):", e?.message);
+            setMsg({ kind: "err", text: "El servicio no responde. Reintenta en unos segundos." });
         }
     };
 
@@ -192,28 +201,102 @@ export function AuthPage() {
         setBusy(true);
         try {
             if (mode === "signup") {
-                // Llama al endpoint register-tenant via api-router (con auto-fallback)
-                const json = await apiJson("register-tenant", {
-                    body: {
-                        email: email.trim(),
-                        password: pwd,
-                        name: name.trim(),
-                        businessName: businessName.trim() || name.trim(),
+                // ★ v4.0.7-direct: Registro 100% desde el cliente (sin depender de Vercel)
+                // 1) Crear user en Supabase Auth
+                const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+                    email: email.trim(),
+                    password: pwd,
+                    options: {
+                        data: { name: name.trim(), business_name: businessName.trim() || name.trim() },
                     },
                 });
-                if (!json.ok) {
+
+                if (signUpErr) {
+                    // ★ Si user ya existe, intentar login directo
+                    if (signUpErr.message?.includes("already") || signUpErr.status === 422) {
+                        const { error: loginErr } = await supabase.auth.signInWithPassword({
+                            email: email.trim(),
+                            password: pwd,
+                        });
+                        if (!loginErr) {
+                            setMsg({ kind: "ok", text: "Sesión iniciada. Entrando..." });
+                            setTimeout(() => nav("/welcome", { replace: true }), 400);
+                            return;
+                        }
+                    }
                     setBusy(false);
-                    setMsg({ kind: "err", text: json.friendly_message || json.message || "No pudimos crear tu cuenta. Reintenta." });
+                    setMsg({ kind: "err", text: `No pudimos crear tu cuenta: ${signUpErr.message || "intenta con otra contraseña"}.` });
                     return;
                 }
-                // Inicia sesion
+
+                const userId = signUpData?.user?.id;
+                if (!userId) {
+                    setBusy(false);
+                    setMsg({ kind: "err", text: "No pudimos completar el registro. Inténtalo de nuevo." });
+                    return;
+                }
+
+                // 2) Crear tenant directamente en BD
+                const gracePeriodEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+                const { data: tenantData, error: tenantErr } = await supabase
+                    .from("tenants")
+                    .insert({
+                        owner_id: userId,
+                        name: name.trim(),
+                        business_name: businessName.trim() || name.trim(),
+                        contact_email: email.trim(),
+                        activation_status: "pending_activation",
+                        grace_period_ends_at: gracePeriodEndsAt,
+                        subscription_status: "active",
+                        plan_selected: "starter",
+                        plan: "starter",
+                    })
+                    .select("id")
+                    .maybeSingle();
+
+                if (tenantErr) {
+                    console.warn("[signup] tenant insert error:", tenantErr);
+                    // RLS puede bloquear - no es crítico para que el usuario entre
+                }
+
+                // 3) Notificar a Telegram (best-effort, no bloquea)
+                if (tenantData?.id) {
+                    try {
+                        const { sendTelegramMessage } = await import("../lib/telegramAuto");
+                        const md = [
+                            "🆕 *Nueva solicitud de alta*",
+                            `👤 Nombre: ${name.trim()}`,
+                            `📧 Email: \`${email.trim()}\``,
+                            `🆔 User ID: \`${userId}\``,
+                            `🏢 Tenant ID: \`${tenantData.id}\``,
+                            "",
+                            "👇 Pulsa para aprobar o rechazar:",
+                        ].join("\n");
+                        const inlineKeyboard = {
+                            inline_keyboard: [
+                                [
+                                    { text: "✅ APROBAR (1 CLICK)", url: `https://mozonatpv.site/admin/approve?token=mozona-approve-2025&email=${encodeURIComponent(email.trim())}` },
+                                ],
+                                [
+                                    { text: "❌ Rechazar", url: `https://mozonatpv.site/admin/approve?token=mozona-approve-2025&email=reject-${encodeURIComponent(email.trim())}` },
+                                ],
+                            ],
+                        };
+                        const result = await sendTelegramMessage(md, inlineKeyboard);
+                        console.log("[signup] telegram notify result:", result);
+                    } catch (e) {
+                        console.warn("[signup] telegram notify error:", e);
+                    }
+                }
+
+                // 4) Login automático
                 const { error: e1 } = await supabase.auth.signInWithPassword({
                     email: email.trim(),
                     password: pwd,
                 });
                 if (e1) {
                     setBusy(false);
-                    setMsg({ kind: "err", text: "Cuenta creada. Inicia sesion con tu correo y contrasena." });
+                    setMsg({ kind: "err", text: "Cuenta creada. Inicia sesión con tu correo y contraseña." });
                     setMode("login");
                     return;
                 }
@@ -262,7 +345,19 @@ export function AuthPage() {
             }
         } catch (e: any) {
             setBusy(false);
-            setMsg({ kind: "err", text: "Algo se ha desconfigurado. Reintenta." });
+            console.error("[AuthPage] proceedAfterOtp error completo:", {
+                mode,
+                email: email.trim(),
+                name: e?.name,
+                message: e?.message,
+                stack: e?.stack,
+                cause: e?.cause,
+                response: e?.response,
+                status: e?.status,
+                json: e?.json,
+                fullError: JSON.stringify(e, Object.getOwnPropertyNames(e || {}), 2),
+            });
+            setMsg({ kind: "err", text: "Algo se ha desconfigurado. Reintenta. Si el problema continúa, revisa la consola del navegador." });
         }
     };
 

@@ -533,7 +533,7 @@ export function ItemsPanel() {
   // Eliminar producto de Supabase vía deleteProduct
   // -------------------------------------------------------------------
   const handleDelete = async (id: string) => {
-    if (!confirm("¿Eliminar este producto?  Se borrará de Supabase.")) return;
+    if (!confirm("¿Eliminar este producto de tu carta?")) return;
     try {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
       if (isUuid) {

@@ -40,7 +40,8 @@ export function CashRegisterPage() {
                 setCountedCash(expected.toFixed(2));
             }
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            console.warn("[CashRegister] load error:", e);
+            setError("No pudimos cargar el resumen del día. Por favor, recarga la página.");
         }
         setLoading(false);
     };

@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { isSuperAdminEmail } from "../lib/vip";
 import { IconShield, IconArrowRight, IconUser, IconCheck, IconLock } from "../components/icons";
+import { MigrationPanel } from "../components/admin/MigrationPanel";
 
 interface Tenant {
     id: string;
@@ -238,6 +239,9 @@ export function AdminPanelPage() {
                         <button onClick={() => setError(null)} className="ml-auto text-rose-700">✕</button>
                     </div>
                 )}
+
+                {/* ★ v4.0.7-migration: Panel de sincronización desde localStorage */}
+                <MigrationPanel />
 
                 {/* Filtros */}
                 <div className="bg-white rounded-2xl shadow-xl p-4 flex flex-wrap gap-2">
