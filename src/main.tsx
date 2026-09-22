@@ -13,6 +13,9 @@ import "./styles/globals.css";
 import { activateActiveDefense } from "./lib/security/activeDefense";
 
 // ★ v4.0.7-no-demo: Detector de bundle viejo SIN env vars
+//   Si las env vars no están inyectadas en el bundle, esto significa
+//   que el navegador está usando un bundle cacheado de un deploy viejo.
+//   Limpiamos TODO y recargamos con cache-busting.
 (function detectStaleBundle() {
     if (typeof window === "undefined") return;
     const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
@@ -22,36 +25,43 @@ import { activateActiveDefense } from "./lib/security/activeDefense";
     if (!ANON_KEY.startsWith("sb_publishable_") || !SUPABASE_URL.startsWith("https://")) {
         console.warn("[MOZONA] Bundle viejo detectado (sin env vars). Forzando recarga...");
 
-        // Limpiar TODO el storage
+        // Limpiar TODO el storage (silencioso)
         try {
-            if (typeof localStorage !== "undefined") {
-                localStorage.clear();
-            }
-            if (typeof sessionStorage !== "undefined") {
-                sessionStorage.clear();
-            }
-            // Limpiar caches
+            if (typeof localStorage !== "undefined") localStorage.clear();
+            if (typeof sessionStorage !== "undefined") sessionStorage.clear();
             if (typeof caches !== "undefined") {
-                caches.keys().then(keys => {
-                    keys.forEach(k => caches.delete(k));
-                });
+                caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
             }
-            // Limpiar service workers
             if (typeof navigator !== "undefined" && navigator.serviceWorker) {
-                navigator.serviceWorker.getRegistrations().then(regs => {
-                    regs.forEach(r => r.unregister());
-                });
+                navigator.serviceWorker.getRegistrations()
+                    .then(regs => regs.forEach(r => r.unregister()))
+                    .catch(() => {});
             }
-        } catch (e) {}
+        } catch (e) {
+            // Silenciar errores de limpieza
+        }
+
+        // ★ Mostrar UI de "Actualizando..." antes de recargar
+        //   (así el usuario sabe qué está pasando en lugar de ver "Modo demo")
+        const root = document.getElementById("root");
+        if (root) {
+            root.innerHTML = `
+                <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#f8fafc,#ede9fe);color:#0f172a;padding:24px;text-align:center">
+                    <div style="width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;margin-bottom:24px;box-shadow:0 10px 30px rgba(124,58,237,0.3);font-size:36px">🔄</div>
+                    <h1 style="font-size:22px;font-weight:900;margin:0 0 8px 0">Actualizando MOZONA TPV</h1>
+                    <p style="font-size:14px;color:#64748b;margin:0 0 24px 0;max-width:340px">Hemos detectado una version antigua. Limpiando cache y recargando con la ultima version.</p>
+                    <div style="width:48px;height:48px;border:3px solid #e2e8f0;border-top-color:#7c3aed;border-radius:50%;animation:spin 1s linear infinite"></div>
+                    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+                </div>
+            `;
+        }
 
         // Forzar recarga con cache-busting (timestamp único)
-        const cb = "?v=" + Date.now();
         setTimeout(() => {
-            window.location.href = window.location.pathname + cb;
-        }, 100);
-
-        // No continuar cargando React
-        throw new Error("Recargando bundle con env vars...");
+            window.location.href = window.location.pathname + "?v=" + Date.now();
+        }, 1500);
+        // Salir sin lanzar error (que rompería React)
+        return;
     }
 })();
 
