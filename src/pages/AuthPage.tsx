@@ -61,7 +61,13 @@ export function AuthPage() {
 
     const [searchParams] = useSearchParams();
     const justApproved = searchParams.get("approved") === "1";
-    const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+    // ★ v4.0.7-cta-fix: lee mode del query string (?mode=signup) o fallback a login
+    const initialMode = (() => {
+        const m = searchParams.get("mode");
+        if (m === "signup" || m === "forgot" || m === "login") return m;
+        return "login";
+    })();
+    const [mode, setMode] = useState<"login" | "signup" | "forgot">(initialMode);
 
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");

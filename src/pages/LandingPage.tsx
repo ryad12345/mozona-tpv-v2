@@ -5,7 +5,7 @@
 // pricing preview, FAQ, footer, CTA principal a /auth.
 // =====================================================================
 
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
     IconStore, IconUser, IconReceipt, IconShield, IconSparkles,
     IconCheck, IconArrowRight, IconPrint, IconWifi,
@@ -45,6 +45,28 @@ const FAQS = [
 
 export function LandingPage() {
     const auth = useAuth();
+    const navigate = useNavigate();
+
+    // ★ v4.0.7-cta-fix: handler único para todos los botones "Probar"
+    //    - Si está autenticado: va directo al TPV (/app)
+    //    - Si NO está autenticado: va a /auth con modo signup activado
+    //    - Funciona en móvil y desktop (touch + click)
+    const handleProbar = (ctxPlan?: string) => {
+        try {
+            if (auth.user) {
+                navigate("/app");
+            } else {
+                // ctxPlan se guarda en sessionStorage para que /auth lo recoja
+                if (ctxPlan) {
+                    try { sessionStorage.setItem("mozona.signup.plan", ctxPlan); } catch {}
+                }
+                navigate("/auth?mode=signup");
+            }
+        } catch {
+            // Fallback duro: navega por window si router falla
+            window.location.href = auth.user ? "/app" : "/auth?mode=signup";
+        }
+    };
 
     return (
         <div className="min-h-dvh bg-white text-slate-900">
@@ -87,12 +109,15 @@ export function LandingPage() {
                                     <span className="hidden sm:inline">Iniciar sesión</span>
                                 </Link>
                                 <button type="button"
-                                        onClick={() => openAssistant({ source: "landing" })}
+                                        onClick={() => handleProbar()}
+                                        title={auth.user ? "Ir al panel" : "Empezar 7 días gratis"}
+                                        aria-label={auth.user ? "Ir a mi panel" : "Probar 7 días gratis"}
                                         className="h-9 px-3 sm:px-4 inline-flex items-center gap-1.5 rounded-xl
                                                    bg-blue-600 text-white text-[12.5px] font-bold
                                                    shadow-sm shadow-blue-600/30
+                                                   hover:bg-blue-700
                                                    active:scale-95 transition
-                                                   touch-manipulation">
+                                                   touch-manipulation cursor-pointer">
                                     <span className="hidden sm:inline">Probar 7 días</span>
                                     <span className="sm:hidden">Probar</span>
                                     <IconArrowRight size={14} strokeWidth={2.4} />
@@ -123,11 +148,15 @@ export function LandingPage() {
                     </p>
                     <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
                         <button type="button"
-                              onClick={() => openAssistant({ source: "landing" })}
+                              onClick={() => handleProbar()}
+                              title={auth.user ? "Ir al panel" : "Empezar 7 días gratis"}
+                              aria-label={auth.user ? "Ir a mi panel" : "Probar 7 días gratis"}
                               className="h-12 px-6 inline-flex items-center gap-2 rounded-2xl
                                          bg-slate-900 text-white text-[15px] font-black
                                          shadow-lg shadow-slate-900/20
-                                         hover:scale-[1.02] active:scale-95 transition">
+                                         hover:bg-slate-800 hover:scale-[1.02]
+                                         active:scale-95 transition
+                                         cursor-pointer">
                             Probar 7 días gratis
                             <IconArrowRight size={16} strokeWidth={2.4} />
                         </button>
@@ -216,13 +245,14 @@ export function LandingPage() {
                                     ))}
                                 </ul>
                                 <button type="button"
-                                        onClick={() => openAssistant({
-                                            source: "landing",
-                                            ctxPlan: p.id as any,
-                                        })}
+                                        onClick={() => handleProbar(p.id)}
+                                        title={`Empezar con el plan ${p.name}`}
+                                        aria-label={`Probar el plan ${p.name} 7 días gratis`}
                                         className="mt-6 w-full h-11 inline-flex items-center justify-center
                                                    rounded-xl bg-slate-900 text-white text-[13.5px] font-black
-                                                   active:scale-95 transition">
+                                                   hover:bg-slate-800
+                                                   active:scale-95 transition
+                                                   cursor-pointer">
                                     Elegir {p.name} · Probar 7 días
                                 </button>
                             </div>
