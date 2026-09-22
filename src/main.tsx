@@ -78,18 +78,23 @@ console.log("[MOZONA] cargado en", new Date().toISOString());
     }
 })();
 
-// ★ Forzar al Service Worker a actualizarse inmediatamente
+// ★ v4.0.7-no-sw: Desregistrar CUALQUIER service worker viejo que pueda
+//   estar cacheando bundles sin las credenciales Supabase. El SW del PWA
+//   está deshabilitado (vite.config.ts: disable: true), así que no
+//   necesitamos uno nuevo. Solo limpiamos los viejos.
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistrations().then(regs => {
         regs.forEach(reg => {
-            reg.update().catch(() => {});
+            // ★ Unregister + limpiar caches del SW
+            reg.unregister().then(() => {
+                if (typeof caches !== "undefined") {
+                    caches.keys().then(keys => {
+                        keys.forEach(k => caches.delete(k));
+                    });
+                }
+            }).catch(() => {});
         });
     });
-    if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.ready.then(reg => {
-            reg.waiting?.postMessage({ type: "SKIP_WAITING" });
-        });
-    }
 }
 
 const root = document.getElementById("root");
