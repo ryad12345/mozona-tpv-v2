@@ -1,5 +1,9 @@
 // =====================================================================
-// MOZONA TPV — main.tsx (entry point) v4.0.7-active-defense
+// MOZONA TPV — main.tsx (entry point) v4.0.7-no-demo
+// =====================================================================
+// ★ v4.0.7-no-demo: AUTO-RECUPERACIÓN cuando se ve "Modo demo".
+//   Si el bundle cargado no tiene las env vars (caché vieja), fuerza
+//   recarga con cache-busting y limpia TODOS los storages.
 // =====================================================================
 
 import { StrictMode } from "react";
@@ -7,6 +11,49 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles/globals.css";
 import { activateActiveDefense } from "./lib/security/activeDefense";
+
+// ★ v4.0.7-no-demo: Detector de bundle viejo SIN env vars
+(function detectStaleBundle() {
+    if (typeof window === "undefined") return;
+    const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+    const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "";
+
+    // Si las env vars NO están, el bundle es viejo. Forzar recarga.
+    if (!ANON_KEY.startsWith("sb_publishable_") || !SUPABASE_URL.startsWith("https://")) {
+        console.warn("[MOZONA] Bundle viejo detectado (sin env vars). Forzando recarga...");
+
+        // Limpiar TODO el storage
+        try {
+            if (typeof localStorage !== "undefined") {
+                localStorage.clear();
+            }
+            if (typeof sessionStorage !== "undefined") {
+                sessionStorage.clear();
+            }
+            // Limpiar caches
+            if (typeof caches !== "undefined") {
+                caches.keys().then(keys => {
+                    keys.forEach(k => caches.delete(k));
+                });
+            }
+            // Limpiar service workers
+            if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                    regs.forEach(r => r.unregister());
+                });
+            }
+        } catch (e) {}
+
+        // Forzar recarga con cache-busting (timestamp único)
+        const cb = "?v=" + Date.now();
+        setTimeout(() => {
+            window.location.href = window.location.pathname + cb;
+        }, 100);
+
+        // No continuar cargando React
+        throw new Error("Recargando bundle con env vars...");
+    }
+})();
 
 const BUILD_HASH = import.meta.env.VITE_BUILD_HASH ?? "dev";
 console.log(
