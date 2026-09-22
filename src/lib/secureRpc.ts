@@ -229,17 +229,79 @@ export async function rpcAiSaveVoiceOrder(order: Record<string, any>): Promise<R
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// EMAIL VERIFICATION (v4.0.7-password-native: ELIMINADO)
+// EMAIL VERIFICATION (v4.0.7-resend-otp)
 // ═══════════════════════════════════════════════════════════════════════
-// ★ v4.0.7-password-native: El sistema OTP custom fue ELIMINADO.
-//   Ahora se usa Supabase Auth nativo (signUp + signInWithPassword).
-//   No requiere SMTP ni envío de emails.
-//   Las funciones rpc_generate_email_code / rpc_verify_email_code
-//   ya no se usan desde el cliente. La SQL sigue válida (por si se
-//   quiere usar desde un backend en el futuro) pero está documentada
-//   como DEPRECATED.
+// ★ v4.0.7-resend-otp: Restaurado el flujo OTP con envío via Resend API.
+//   Flujo:
+//     1. Cliente llama rpcSendOtpCode(email) → genera código 6 dígitos,
+//        guarda en email_verification_codes y crea registro en email_outbox
+//     2. Cliente invoca Edge Function 'send-email' (Deno) que hace polling
+//        de email_outbox y envía via https://api.resend.com/emails
+//     3. Usuario recibe email con plantilla HTML profesional
+//     4. Usuario introduce código → rpcVerifyOtpCode(email, code)
 // ═══════════════════════════════════════════════════════════════════════
 
-// Marcador de sección para grep — no exporta nada.
-// Mantener este comentario sirve para que un grep sobre "EMAIL VERIFICATION"
-//   siga encontrando esta sección aunque ya no tenga código útil.
+export interface SendOtpResult {
+    ok: boolean;
+    code_id?: string;
+    outbox_id?: string;
+    expires_at?: string;
+    error?: string;
+}
+
+export interface VerifyOtpResult {
+    ok: boolean;
+    verified?: boolean;
+    error?: string;
+}
+
+export async function rpcSendOtpCode(
+    email: string,
+    purpose: "signup" | "login" | "reset" = "signup",
+    userName?: string | null
+): Promise<SendOtpResult> {
+    if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    try {
+        const { data, error } = await supabase.rpc("rpc_send_otp_code", {
+            p_email: email,
+            p_purpose: purpose,
+            p_user_name: userName ?? null,
+        });
+        if (error) return { ok: false, error: error.message };
+        return data as SendOtpResult;
+    } catch (e: any) {
+        return { ok: false, error: e?.message };
+    }
+}
+
+export async function rpcVerifyOtpCode(
+    email: string,
+    code: string,
+    purpose: "signup" | "login" | "reset" = "signup"
+): Promise<VerifyOtpResult> {
+    if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    try {
+        const { data, error } = await supabase.rpc("rpc_verify_otp_code", {
+            p_email: email,
+            p_code: code,
+            p_purpose: purpose,
+        });
+        if (error) return { ok: false, error: error.message };
+        return data as VerifyOtpResult;
+    } catch (e: any) {
+        return { ok: false, error: e?.message };
+    }
+}
+
+export async function rpcTriggerSendEmail(): Promise<{ ok: boolean; error?: string; data?: any }> {
+    if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    try {
+        const { data, error } = await supabase.functions.invoke("send-email", {
+            body: {},
+        });
+        if (error) return { ok: false, error: error.message };
+        return { ok: true, data };
+    } catch (e: any) {
+        return { ok: false, error: e?.message };
+    }
+}

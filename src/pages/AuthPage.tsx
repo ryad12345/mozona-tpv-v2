@@ -1,23 +1,23 @@
 // =====================================================================
-// MOZONA TPV — AuthPage (v4.0.7-password-native)
+// MOZONA TPV — AuthPage (v4.0.7-resend-otp)
 // =====================================================================
-// Autenticación NATIVA de Supabase con email + contraseña.
-// Sin código OTP intermedio. Sin dependencia de SMTP.
+// Verificación por código OTP con envío via Resend API.
 //
 // FLUJOS:
-//   - signup: introduce email + password + nombre del local → signUp →
-//     login automático → onboarding (/welcome)
-//   - login:  introduce email + password → signInWithPassword → /welcome
-//   - forgot: introduce email → mensaje informativo (sin SMTP, no envia email)
+//   - signup: introduce email + password + nombre del local → envía OTP
+//     → pantalla 6 dígitos → verificacion → crea cuenta → onboarding (/welcome)
+//   - login:  introduce email + password → login normal sin OTP (usuarios
+//     recurrentes entran directamente con su sesion)
+//   - forgot: envía OTP para reset
 //
 // VIP BYPASS:
 //   - chalohiahmd1980@gmail.com y rofixinsta@gmail.com: acceso directo
-//     sin necesidad de cuenta previa.
+//     sin OTP, sin necesidad de cuenta previa.
 //
-// MIGRACIÓN:
-//   - Eliminada pantalla OTP completa
-//   - Eliminada dependencia de email_verification_codes
-//   - Eliminadas RPCs rpc_generate_email_code / rpc_verify_email_code
+// SMTP/EMAIL:
+//   - Requiere Edge Function `send-email` desplegada en Supabase
+//   - Requiere RESEND_API_KEY en Supabase Edge Function Secrets
+//   - SQL #52 contiene la tabla email_outbox y las RPCs
 // =====================================================================
 
 import { useEffect, useState, useMemo, useRef } from "react";
@@ -36,6 +36,11 @@ import {
     IconCheck,
 } from "../components/icons";
 import { useRateLimit } from "../hooks/useRateLimit";
+import {
+    rpcSendOtpCode,
+    rpcVerifyOtpCode,
+    rpcTriggerSendEmail,
+} from "../lib/secureRpc";
 
 // ★ Email regex estricto (formato + dominios sospechosos)
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
@@ -127,6 +132,22 @@ export function AuthPage() {
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+    // ★ v4.0.7-resend-otp: Estado del flujo OTP
+    const [needsOtp, setNeedsOtp] = useState(false);
+    const [otpCode, setOtpCode] = useState("");
+    const [otpEmail, setOtpEmail] = useState("");
+    const [otpPurpose, setOtpPurpose] = useState<"signup" | "login" | "reset">("signup");
+    const [otpSending, setOtpSending] = useState(false);
+    const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+    // ★ v4.0.7-resend-otp: Estado pendiente del signup (para crear cuenta tras OTP)
+    const [pendingSignup, setPendingSignup] = useState<{
+        email: string;
+        password: string;
+        name: string;
+        businessName: string;
+    } | null>(null);
+
     // ★ VIP bypass automático
     const isVipEmail = useMemo(() => isVipOrAdmin(email), [email]);
 
@@ -191,21 +212,12 @@ export function AuthPage() {
         setBusy(true);
 
         try {
-            if (mode === "forgot") {
-                // ★ Sin SMTP configurado: mostramos mensaje informativo
-                //    sin intentar enviar email.
-                setMsg({
-                    kind: "ok",
-                    text: "Si tu cuenta existe, te enviamos instrucciones para restablecer la contrasena. Si no las recibes, contacta con soporte.",
-                });
-                setBusy(false);
-                return;
-            }
-
             if (mode === "signup") {
                 await handleSignup();
             } else if (mode === "login") {
                 await handleLogin();
+            } else if (mode === "forgot") {
+                await handleForgot();
             }
         } catch (e: any) {
             setBusy(false);
@@ -217,121 +229,84 @@ export function AuthPage() {
         }
     };
 
-    // ★ v4.0.7-password-native: SIGNUP con signUp + signInWithPassword
+    // ★ v4.0.7-resend-otp: SIGNUP con verificación OTP
     const handleSignup = async () => {
-        if (!supabase) {
-            setMsg({ kind: "err", text: "Servicio no disponible. Reintenta en unos segundos." });
+        const submitEmail = email.trim();
+        const submitPassword = pwd;
+
+        // 1) Validar password duplicado
+        if (pwd !== pwd2) {
             setBusy(false);
+            setMsg({ kind: "err", text: "Las contrasenas no coinciden." });
             return;
         }
 
-        // 1) Crear user en Supabase Auth
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-            email: email.trim(),
-            password: pwd,
-            options: {
-                data: {
-                    name: name.trim(),
-                    business_name: businessName.trim() || name.trim(),
-                },
-            },
+        // 2) Generar código OTP y enviar email
+        setMsg({ kind: "ok", text: "Enviando codigo de verificacion a tu correo..." });
+        setOtpSending(true);
+
+        const otpResult = await rpcSendOtpCode(submitEmail, "signup", name.trim() || null);
+        setOtpSending(false);
+
+        if (!otpResult.ok) {
+            // VIP bypass: si es VIP y el envio falla, continuar sin OTP
+            if (isVipOrAdmin(submitEmail)) {
+                setMsg({ kind: "ok", text: "Acceso VIP. Creando cuenta sin OTP..." });
+                await performActualSignup(submitEmail, submitPassword, name.trim(), businessName.trim() || name.trim());
+                return;
+            }
+            setBusy(false);
+            setMsg({
+                kind: "err",
+                text: `No pudimos enviar el codigo: ${otpResult.error || "reintenta"}. Si persiste, contacta con soporte.`,
+            });
+            return;
+        }
+
+        // 3) Disparar envio en background (Edge Function)
+        rpcTriggerSendEmail().catch(() => {});
+
+        // 4) Mostrar pantalla OTP
+        setPendingSignup({
+            email: submitEmail,
+            password: submitPassword,
+            name: name.trim(),
+            businessName: businessName.trim() || name.trim(),
         });
-
-        if (signUpErr) {
-            // Si el usuario ya existe, intentamos login directo
-            const isAlreadyExists =
-                signUpErr.message?.toLowerCase().includes("already") ||
-                signUpErr.status === 422 ||
-                signUpErr.status === 400;
-
-            if (isAlreadyExists) {
-                await handleLogin();
-                return;
-            }
-
-            setBusy(false);
-            setMsg({
-                kind: "err",
-                text: `No pudimos crear tu cuenta: ${signUpErr.message || "intenta con otra contrasena"}.`,
-            });
-            return;
-        }
-
-        const userId = signUpData?.user?.id;
-        if (!userId) {
-            // Supabase puede requerir confirmacion email si esta activado
-            // ★ VIP bypass: si es VIP y no hay userId, continuar
-            if (isVipOrAdmin(email)) {
-                setMsg({ kind: "ok", text: "Cuenta VIP creada. Entrando..." });
-                setTimeout(() => nav("/welcome", { replace: true }), 400);
-                return;
-            }
-            setBusy(false);
-            setMsg({
-                kind: "err",
-                text: "Supabase no devolvio un ID de usuario. Es posible que la confirmacion por email este activada. Contacta con soporte.",
-            });
-            return;
-        }
-
-        // 2) Login automatico (sin necesidad de email de confirmacion)
-        //    Si Supabase requiere confirmacion, el signIn puede fallar.
-        //    En ese caso, pedimos al usuario que vaya a login.
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password: pwd,
+        setOtpEmail(submitEmail);
+        setOtpPurpose("signup");
+        setOtpCode("");
+        setNeedsOtp(true);
+        setBusy(false);
+        const masked = submitEmail.replace(/(.{2}).*(@.*)/, "$1•••$2");
+        setMsg({
+            kind: "ok",
+            text: `Te enviamos un codigo de 6 digitos a ${masked}. Revisa tu bandeja de entrada.`,
         });
-
-        if (signInErr) {
-            setBusy(false);
-            // Si requiere confirmacion email, mensaje claro
-            if (
-                signInErr.message?.toLowerCase().includes("confirm") ||
-                signInErr.message?.toLowerCase().includes("not confirmed") ||
-                signInErr.message?.toLowerCase().includes("verify")
-            ) {
-                setMsg({
-                    kind: "err",
-                    text: "Supabase requiere confirmacion de email. En el panel de Supabase (Authentication → Providers → Email), desactiva 'Confirm email' para que los usuarios entren sin verificacion.",
-                });
-                return;
-            }
-            setMsg({
-                kind: "err",
-                text: "Cuenta creada. Inicia sesion con tu correo y contrasena.",
-            });
-            setMode("login");
-            setPwd("");
-            setPwd2("");
-            return;
-        }
-
-        // 3) Login exitoso: notificar Telegram y navegar
-        setMsg({ kind: "ok", text: "Cuenta creada. Entrando..." });
-        await notifySignupTelegram(name.trim(), email.trim(), userId);
-        rate.reset();
-        setTimeout(() => nav("/welcome", { replace: true }), 400);
     };
 
-    // ★ v4.0.7-password-native: LOGIN con signInWithPassword
+    // ★ v4.0.7-resend-otp: LOGIN (sin OTP para usuarios existentes)
     const handleLogin = async () => {
+        const submitEmail = email.trim();
+        const submitPassword = pwd;
+
         if (!supabase) {
-            setMsg({ kind: "err", text: "Servicio no disponible. Reintenta en unos segundos." });
             setBusy(false);
+            setMsg({ kind: "err", text: "Servicio no disponible. Reintenta en unos segundos." });
             return;
         }
 
         const { error } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password: pwd,
+            email: submitEmail,
+            password: submitPassword,
         });
 
         if (error) {
-            // ★ v4.0.7: BYPASS VIP TOTAL
-            if (isVipOrAdmin(email)) {
+            // ★ VIP bypass
+            if (isVipOrAdmin(submitEmail)) {
                 const mockUser = {
-                    id: "vip-" + btoa(email).slice(0, 20),
-                    email: email.trim(),
+                    id: "vip-" + btoa(submitEmail).slice(0, 20),
+                    email: submitEmail,
                     user_metadata: { name: "VIP Access", vip: true },
                     app_metadata: { provider: "vip-bypass" },
                     aud: "authenticated",
@@ -348,17 +323,196 @@ export function AuthPage() {
 
             rate.recordFailure();
             setBusy(false);
-            setMsg({
-                kind: "err",
-                text: error.message?.toLowerCase().includes("invalid")
-                    ? "El correo o la contrasena no coinciden."
-                    : error.message || "No pudimos iniciar sesion. Reintenta.",
-            });
+            const m = error.message?.toLowerCase() || "";
+            if (m.includes("invalid") || m.includes("credentials")) {
+                setMsg({
+                    kind: "err",
+                    text: "El correo o la contrasena no coinciden. Si aun no tienes cuenta, pulsa 'Empieza gratis'.",
+                });
+            } else {
+                setMsg({ kind: "err", text: error.message || "No pudimos iniciar sesion." });
+            }
             return;
         }
 
         // Login exitoso
         setMsg({ kind: "ok", text: "Sesion iniciada. Entrando..." });
+        rate.reset();
+        setTimeout(() => nav("/welcome", { replace: true }), 400);
+    };
+
+    // ★ v4.0.7-resend-otp: FORGOT PASSWORD via OTP
+    const handleForgot = async () => {
+        const submitEmail = email.trim();
+        if (!submitEmail) {
+            setBusy(false);
+            setMsg({ kind: "err", text: "Introduce tu correo electronico." });
+            return;
+        }
+
+        setBusy(false);
+        setMsg({ kind: "ok", text: "Enviando codigo de recuperacion..." });
+        setOtpSending(true);
+
+        const otpResult = await rpcSendOtpCode(submitEmail, "reset", null);
+        setOtpSending(false);
+
+        if (!otpResult.ok) {
+            setMsg({
+                kind: "err",
+                text: `No pudimos enviar el codigo: ${otpResult.error || "reintenta"}.`,
+            });
+            return;
+        }
+
+        rpcTriggerSendEmail().catch(() => {});
+
+        setOtpEmail(submitEmail);
+        setOtpPurpose("reset");
+        setOtpCode("");
+        setNeedsOtp(true);
+        const masked = submitEmail.replace(/(.{2}).*(@.*)/, "$1•••$2");
+        setMsg({
+            kind: "ok",
+            text: `Te enviamos un codigo de recuperacion a ${masked}.`,
+        });
+    };
+
+    // ★ v4.0.7-resend-otp: VERIFICAR código OTP
+    const handleVerifyOtp = async () => {
+        if (otpCode.length !== 6) {
+            setMsg({ kind: "err", text: "Introduce los 6 digitos del codigo." });
+            return;
+        }
+
+        setBusy(true);
+        setMsg({ kind: "ok", text: "Verificando codigo..." });
+
+        const result = await rpcVerifyOtpCode(otpEmail, otpCode, otpPurpose);
+        if (!result.ok || !result.verified) {
+            setBusy(false);
+            setMsg({ kind: "err", text: result.error || "El codigo no es correcto o ha expirado." });
+            return;
+        }
+
+        // Código verificado
+        if (otpPurpose === "signup" && pendingSignup) {
+            // Crear la cuenta con los datos pendientes
+            setMsg({ kind: "ok", text: "Codigo verificado. Creando tu cuenta..." });
+            await performActualSignup(
+                pendingSignup.email,
+                pendingSignup.password,
+                pendingSignup.name,
+                pendingSignup.businessName
+            );
+        } else if (otpPurpose === "reset") {
+            // Reset password: pedir nueva contraseña
+            setBusy(false);
+            setMsg({
+                kind: "ok",
+                text: "Codigo verificado. Ahora introduce tu nueva contrasena.",
+            });
+            setMode("login");
+            setNeedsOtp(false);
+            setPwd("");
+        } else {
+            setBusy(false);
+            setMsg({ kind: "ok", text: "Codigo verificado." });
+            setNeedsOtp(false);
+        }
+    };
+
+    // ★ Realiza el signup en Supabase Auth tras OTP verificado
+    const performActualSignup = async (
+        submitEmail: string,
+        submitPassword: string,
+        submitName: string,
+        submitBusinessName: string
+    ) => {
+        if (!supabase) {
+            setBusy(false);
+            setMsg({ kind: "err", text: "Supabase no configurado." });
+            return;
+        }
+
+        // 1) Crear user en Supabase Auth
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+            email: submitEmail,
+            password: submitPassword,
+            options: {
+                data: {
+                    name: submitName,
+                    business_name: submitBusinessName,
+                },
+            },
+        });
+
+        if (signUpErr) {
+            const isAlreadyExists =
+                signUpErr.message?.toLowerCase().includes("already") ||
+                signUpErr.status === 422;
+
+            if (isAlreadyExists) {
+                // User ya existe: hacer login directo
+                const { error: loginErr } = await supabase.auth.signInWithPassword({
+                    email: submitEmail,
+                    password: submitPassword,
+                });
+                if (loginErr) {
+                    setBusy(false);
+                    setMsg({
+                        kind: "err",
+                        text: "Esta cuenta ya existe y la contrasena no coincide. Inicia sesion con tu contrasena original.",
+                    });
+                    setNeedsOtp(false);
+                    return;
+                }
+                setMsg({ kind: "ok", text: "Sesion iniciada. Entrando..." });
+                setNeedsOtp(false);
+                setTimeout(() => nav("/welcome", { replace: true }), 400);
+                return;
+            }
+
+            setBusy(false);
+            setMsg({
+                kind: "err",
+                text: `No pudimos crear tu cuenta: ${signUpErr.message || "intenta con otra contrasena"}.`,
+            });
+            return;
+        }
+
+        const userId = signUpData?.user?.id;
+        if (!userId) {
+            setBusy(false);
+            setNeedsOtp(false);
+            setMsg({
+                kind: "err",
+                text: "Supabase no devolvio un ID de usuario. Contacta con soporte.",
+            });
+            return;
+        }
+
+        // 2) Login automatico (sin requerir email confirmation porque usamos OTP)
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: submitEmail,
+            password: submitPassword,
+        });
+
+        if (signInErr) {
+            setBusy(false);
+            setMsg({
+                kind: "err",
+                text: "Cuenta creada pero no pudimos iniciar sesion. Inicia sesion manualmente con tu correo y contrasena.",
+            });
+            setMode("login");
+            setNeedsOtp(false);
+            return;
+        }
+
+        // 3) Login exitoso: notificar y navegar
+        setMsg({ kind: "ok", text: "Cuenta creada. Entrando..." });
+        setNeedsOtp(false);
+        await notifySignupTelegram(submitName, submitEmail, userId);
         rate.reset();
         setTimeout(() => nav("/welcome", { replace: true }), 400);
     };
@@ -412,6 +566,126 @@ export function AuthPage() {
     // ★ VIP sin tenant: mostrar UI de espera
     if (waitingForTenant) {
         return <WaitingForTenantView auth={auth} />;
+    }
+
+    // ★ v4.0.7-resend-otp: Pantalla de verificacion OTP (6 digitos)
+    if (needsOtp) {
+        const maskedEmail = otpEmail.replace(/(.{2}).*(@.*)/, "$1•••$2");
+        return (
+            <AuthShell justApproved={justApproved}>
+                <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center text-3xl shadow-lg">
+                        🔐
+                    </div>
+                    <h1 className="text-[24px] font-black text-slate-900 mb-2 tracking-tight">
+                        Verifica tu correo
+                    </h1>
+                    <p className="text-[13px] text-slate-600 mb-6">
+                        Te hemos enviado un codigo de 6 digitos a<br />
+                        <span className="font-bold text-slate-800">{maskedEmail}</span>
+                    </p>
+
+                    <div className="flex justify-center gap-2 mb-4">
+                        {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <input
+                                key={i}
+                                ref={(el) => { otpInputRefs.current[i] = el; }}
+                                type="text"
+                                maxLength={1}
+                                value={otpCode[i] || ""}
+                                onChange={(e) => {
+                                    const newCode = otpCode.split("");
+                                    newCode[i] = e.target.value.replace(/\D/g, "").slice(-1);
+                                    const finalCode = newCode.join("");
+                                    setOtpCode(finalCode);
+                                    if (e.target.value && i < 5) {
+                                        otpInputRefs.current[i + 1]?.focus();
+                                    }
+                                    // Auto-verificar cuando se completa
+                                    if (finalCode.length === 6) {
+                                        setTimeout(() => handleVerifyOtp(), 200);
+                                    }
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Backspace" && !otpCode[i] && i > 0) {
+                                        otpInputRefs.current[i - 1]?.focus();
+                                    }
+                                }}
+                                onPaste={(e) => {
+                                    e.preventDefault();
+                                    const pasted = (e.clipboardData.getData("text") || "")
+                                        .replace(/\D/g, "")
+                                        .slice(0, 6);
+                                    if (pasted.length === 6) {
+                                        setOtpCode(pasted);
+                                        setTimeout(() => handleVerifyOtp(), 200);
+                                    }
+                                }}
+                                className="w-11 h-14 text-center text-[22px] font-black rounded-xl border-2 border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none transition"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                autoFocus={i === 0}
+                            />
+                        ))}
+                    </div>
+
+                    <button
+                        onClick={handleVerifyOtp}
+                        disabled={busy || otpCode.length !== 6}
+                        className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-700 hover:to-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[14px] shadow-lg transition flex items-center justify-center gap-2"
+                    >
+                        {busy ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                Verificando...
+                            </>
+                        ) : (
+                            "Confirmar codigo"
+                        )}
+                    </button>
+
+                    <button
+                        onClick={async () => {
+                            // Reenviar codigo
+                            setMsg({ kind: "ok", text: "Reenviando codigo..." });
+                            setOtpSending(true);
+                            const r = await rpcSendOtpCode(otpEmail, otpPurpose, otpPurpose === "signup" ? pendingSignup?.name : null);
+                            setOtpSending(false);
+                            if (r.ok) {
+                                rpcTriggerSendEmail().catch(() => {});
+                                setOtpCode("");
+                                otpInputRefs.current[0]?.focus();
+                                setMsg({ kind: "ok", text: "Codigo reenviado. Revisa tu correo." });
+                            } else {
+                                setMsg({ kind: "err", text: `No pudimos reenviar: ${r.error}` });
+                            }
+                        }}
+                        disabled={otpSending}
+                        className="mt-3 text-[12.5px] text-violet-600 hover:text-violet-800 font-bold transition disabled:opacity-50"
+                    >
+                        {otpSending ? "Reenviando..." : "Reenviar codigo"}
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setNeedsOtp(false);
+                            setOtpCode("");
+                            setPendingSignup(null);
+                            setMsg(null);
+                        }}
+                        className="mt-2 block w-full text-[12.5px] text-slate-500 hover:text-slate-700 transition"
+                    >
+                        ← Cambiar de correo
+                    </button>
+
+                    {msg && <Banner msg={msg} />}
+
+                    <p className="text-[11.5px] text-slate-400 mt-5">
+                        El codigo caduca en 15 minutos
+                    </p>
+                </div>
+            </AuthShell>
+        );
     }
 
     // ★ Pantalla principal: Login / Signup / Forgot
@@ -609,6 +883,16 @@ export function AuthPage() {
             <div className="mt-5 pt-4 border-t border-slate-100 text-center">
                 <p className="text-[10.5px] text-slate-400 inline-flex items-center gap-1 justify-center">
                     <IconLock size={10} strokeWidth={2} /> Tus datos viajan cifrados de extremo a extremo
+                </p>
+                <p className="mt-2">
+                    <a
+                        href="/help.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-slate-400 hover:text-violet-600 underline transition"
+                    >
+                        ¿Problemas para entrar?
+                    </a>
                 </p>
             </div>
         </AuthShell>
