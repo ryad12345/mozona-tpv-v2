@@ -182,6 +182,14 @@
             <div class="warning">
                 <strong>Importante:</strong> Esta migración es independiente del resto. Si tienes aplicados SQL #43, #44, #45, #46 y #48, esta se añade limpiamente sobre ellos. Si no, este SQL es autocontenido y crea todo lo necesario.
             </div>
+
+            <div class="success">
+                <strong>⚠️ Paso adicional crítico en Supabase (Authentication):</strong><br><br>
+                Para que el registro funcione sin enviar emails (no tienes SMTP configurado), ve a:<br>
+                <code>Authentication → Providers → Email → Confirm email</code><br>
+                y <strong>DESACTÍVALO</strong>.<br><br>
+                Sin esto, Supabase exigirá confirmación de email y los nuevos usuarios no podrán iniciar sesión aunque hayan introducido bien la contraseña.
+            </div>
         </div>
 
         <div class="section">

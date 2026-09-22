@@ -229,56 +229,17 @@ export async function rpcAiSaveVoiceOrder(order: Record<string, any>): Promise<R
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// EMAIL VERIFICATION
+// EMAIL VERIFICATION (v4.0.7-password-native: ELIMINADO)
+// ═══════════════════════════════════════════════════════════════════════
+// ★ v4.0.7-password-native: El sistema OTP custom fue ELIMINADO.
+//   Ahora se usa Supabase Auth nativo (signUp + signInWithPassword).
+//   No requiere SMTP ni envío de emails.
+//   Las funciones rpc_generate_email_code / rpc_verify_email_code
+//   ya no se usan desde el cliente. La SQL sigue válida (por si se
+//   quiere usar desde un backend en el futuro) pero está documentada
+//   como DEPRECATED.
 // ═══════════════════════════════════════════════════════════════════════
 
-export interface EmailCodeResult {
-    ok: boolean;
-    id?: string;
-    expires_at?: string;
-    error?: string;
-    // ★ v4.0.7-no-mockups: 'code' ELIMINADO del response.
-    //   El codigo solo se envia al email real, nunca al cliente.
-}
-
-export async function rpcGenerateEmailCode(
-    email: string,
-    purpose: "signup" | "login" | "reset" = "signup"
-): Promise<EmailCodeResult> {
-    if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    try {
-        const { data, error } = await supabase.rpc("rpc_generate_email_code", {
-            p_email: email,
-            p_purpose: purpose,
-        });
-        if (error) return { ok: false, error: error.message };
-        return data as EmailCodeResult;
-    } catch (e: any) {
-        return { ok: false, error: e?.message };
-    }
-}
-
-export interface VerifyResult {
-    ok: boolean;
-    verified?: boolean;
-    error?: string;
-}
-
-export async function rpcVerifyEmailCode(
-    email: string,
-    code: string,
-    purpose: "signup" | "login" | "reset" = "signup"
-): Promise<VerifyResult> {
-    if (!supabase) return { ok: false, error: "Supabase no configurado" };
-    try {
-        const { data, error } = await supabase.rpc("rpc_verify_email_code", {
-            p_email: email,
-            p_code: code,
-            p_purpose: purpose,
-        });
-        if (error) return { ok: false, error: error.message };
-        return data as VerifyResult;
-    } catch (e: any) {
-        return { ok: false, error: e?.message };
-    }
-}
+// Marcador de sección para grep — no exporta nada.
+// Mantener este comentario sirve para que un grep sobre "EMAIL VERIFICATION"
+//   siga encontrando esta sección aunque ya no tenga código útil.

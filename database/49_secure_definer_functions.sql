@@ -591,15 +591,24 @@ $$;
 GRANT EXECUTE ON FUNCTION public.rpc_ai_save_voice_order(UUID, JSONB) TO authenticated, anon;
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 5. EMAIL VERIFICATION CON CÓDIGO OTP
+-- 5. EMAIL VERIFICATION CON CÓDIGO OTP (DEPRECATED — v4.0.7-password-native)
 -- ═══════════════════════════════════════════════════════════════════════
+-- ★ v4.0.7-password-native: Este sistema fue ELIMINADO del frontend.
+--   Se mantiene la SQL por compatibilidad / reversibilidad pero
+--   NO SE USA desde el cliente. El nuevo flujo usa Supabase Auth nativo:
+--   signUp({ email, password }) + signInWithPassword.
+--
+-- Si quieres limpiar la BD:
+--   DROP TABLE IF EXISTS public.email_verification_codes;
+--   DROP FUNCTION IF EXISTS public.rpc_generate_email_code;
+--   DROP FUNCTION IF EXISTS public.rpc_verify_email_code;
 
--- Tabla de códigos OTP
+-- Tabla de códigos OTP (mantenida para compatibilidad)
 CREATE TABLE IF NOT EXISTS public.email_verification_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT NOT NULL,
     code TEXT NOT NULL,
-    purpose TEXT NOT NULL DEFAULT 'signup',  -- 'signup' | 'login' | 'reset'
+    purpose TEXT NOT NULL DEFAULT 'signup',
     expires_at TIMESTAMPTZ NOT NULL,
     used_at TIMESTAMPTZ,
     attempts INT NOT NULL DEFAULT 0,
@@ -617,7 +626,6 @@ DROP POLICY IF EXISTS pol_evc_insert ON public.email_verification_codes;
 DROP POLICY IF EXISTS pol_evc_update ON public.email_verification_codes;
 DROP POLICY IF EXISTS pol_evc_delete ON public.email_verification_codes;
 
--- Solo lectura publica para verificar codigos
 CREATE POLICY pol_evc_select ON public.email_verification_codes FOR SELECT TO anon, authenticated USING (true);
 CREATE POLICY pol_evc_insert ON public.email_verification_codes FOR INSERT TO anon, authenticated WITH CHECK (true);
 CREATE POLICY pol_evc_update ON public.email_verification_codes FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
