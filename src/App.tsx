@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 // ★ Páginas ligeras (carga inmediata: landing, auth, pricing)
 import { AuthPage } from "./pages/AuthPage";
 import { LandingPage } from "./pages/LandingPage";
+import DirectTPVPage from "./pages/DirectTPVPage";
 // ★ v3.1.6: PricingPage import eliminado
 //   La ruta /pricing ahora redirige a / (landing)
 // ★ Páginas pesadas (lazy loading: TPV, settings, waiter)
@@ -156,6 +157,8 @@ export function App() {
                         <Suspense fallback={<PageLoader />}>
                             <Routes>
                                 {/* Públicas */}
+                                <Route path="/tpv-direct" element={<DirectTPVPage />} />
+                                <Route path="/direct"     element={<DirectTPVPage />} />
                                 <Route path="/"        element={<LandingPage />} />
                                 {/* ★ v3.1.6: /pricing ELIMINADO — redirige a / */}
                                 <Route path="/pricing" element={<Navigate to="/" replace />} />
