@@ -5,6 +5,7 @@
 // pricing preview, FAQ, footer, CTA principal a /auth.
 // =====================================================================
 
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
     IconStore, IconUser, IconReceipt, IconShield, IconSparkles,
@@ -46,6 +47,18 @@ const FAQS = [
 export function LandingPage() {
     const auth = useAuth();
     const navigate = useNavigate();
+
+    // ★ v4.0.7-direct-access: Si el 404.html nos trajo aquí desde una ruta
+    //    como /tpv-direct o /direct, respetamos esa intención y redirigimos.
+    useEffect(() => {
+        try {
+            const intended = sessionStorage.getItem("mozona.intendedRoute");
+            if (intended && intended !== "/" && intended !== "/index.html") {
+                sessionStorage.removeItem("mozona.intendedRoute");
+                navigate(intended, { replace: true });
+            }
+        } catch {}
+    }, [navigate]);
 
     // ★ v4.0.7-cta-fix: handler único para todos los botones "Probar"
     //    - Si está autenticado: va directo al TPV (/app)
