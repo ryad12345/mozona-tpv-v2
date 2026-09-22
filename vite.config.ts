@@ -85,7 +85,7 @@ export default defineConfig({
     },
     envPrefix: ["VITE_", "TAURI_"],
     build: {
-        target: "es2015",
+        target: "es2022",
         minify: "esbuild",
         sourcemap: false,
         rollupOptions: {

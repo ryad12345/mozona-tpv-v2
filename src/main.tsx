@@ -1,15 +1,16 @@
 // =====================================================================
-// MOZONA TPV — main.tsx (entry point)
+// MOZONA TPV — main.tsx (entry point) v4.0.7-active-defense
 // =====================================================================
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles/globals.css";
+import { activateActiveDefense } from "./lib/security/activeDefense";
 
 const BUILD_HASH = import.meta.env.VITE_BUILD_HASH ?? "dev";
 console.log(
-    "%cMOZONA TPV v4.0.3-auth-luxe%c build: %c" + BUILD_HASH + "%c",
+    "%cMOZONA TPV v4.0.7-defense-24-7%c build: %c" + BUILD_HASH + "%c",
     "background:#7c3aed;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold",
     "color:#64748b",
     "color:#10b981;font-weight:bold",
@@ -25,16 +26,14 @@ console.log("[MOZONA] cargado en", new Date().toISOString());
     const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
     const HAS_NEW_KEY = ANON_KEY.startsWith("sb_publishable_");
 
-    if (!HAS_NEW_KEY) return;  // Si la key actual es JWT, no hacemos nada
+    if (!HAS_NEW_KEY) return;
 
     let cleaned = 0;
 
-    // 1. Limpiar tokens Supabase obsoletos (formato JWT viejo)
     for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (!key) continue;
 
-        // Tokens Supabase (sb-*) con JWT eyJ cuando la key nueva es publishable
         if (key.startsWith("sb-") && key.includes("auth-token")) {
             try {
                 const raw = localStorage.getItem(key);
@@ -45,7 +44,6 @@ console.log("[MOZONA] cargado en", new Date().toISOString());
             } catch {}
         }
 
-        // Cache de sesion vieja con tokens eyJ
         if (key === "pos_current_user") {
             try {
                 const raw = localStorage.getItem(key);
@@ -56,7 +54,6 @@ console.log("[MOZONA] cargado en", new Date().toISOString());
             } catch {}
         }
 
-        // Caches de versiones anteriores que ya no se usan
         const OBSOLETE_KEYS = [
             "mozona.tenantSettings",
             "mozona.products",
@@ -100,7 +97,6 @@ if (!root) {
     throw new Error("No se encontro el elemento #root");
 }
 
-// ★ Hard error screen: si algo falla antes de que React monte, mostramos fallback humano
 function showHardErrorScreen(reason: string) {
     if (!root) return;
     root.innerHTML = `
@@ -114,6 +110,9 @@ function showHardErrorScreen(reason: string) {
     `;
 }
 
+// ★ Activa sistema de defensa 24/7 ANTES del render (atrapa errores durante init)
+activateActiveDefense().catch(() => {});
+
 try {
     createRoot(root).render(
         <StrictMode>
@@ -125,14 +124,12 @@ try {
     showHardErrorScreen(String(err?.message || err));
 }
 
-// ★ Captura errores async post-mount
 window.addEventListener("error", (e) => {
-    // Solo si el error es DESPUES del mount y React no lo capturo
     const msg = String(e.message || "");
     if (msg.includes("Minified React error")) {
         showHardErrorScreen(msg);
     }
 });
-window.addEventListener("unhandledrejection", (e) => {
-    // No hacemos nada para promesas: el ErrorBoundary los maneja
+window.addEventListener("unhandledrejection", () => {
+    // Manejado por Auto-Healer
 });

@@ -19,6 +19,7 @@ export function PaymentPanel(props: PaymentPanelProps) {
   const { total = 0, onCharge, onPay, onChargeVeriFactu, onClearTable, onEmitInvoice } = props;
   const [receivedAmount, setReceivedAmount] = useState<string>('0');
   const [changeInfo, setChangeInfo] = useState<{ received: number; change: number } | null>(null);
+  const [chargeError, setChargeError] = useState<string | null>(null);
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -54,11 +55,10 @@ export function PaymentPanel(props: PaymentPanelProps) {
     // Prioridad: onCharge > onPay > onChargeVeriFactu
     const callback = onCharge ?? onPay ?? onChargeVeriFactu;
     if (typeof callback === 'function') {
-      console.log('★ [PaymentPanel] ejecutando callback de cobro ★');
       callback('cash', recNum, calculatedChange);
     } else {
-      console.error('★ [PaymentPanel] NO hay callback de cobro definido! ★');
-      alert('❌ No se puede cobrar: callback de cobro no definido. Recarga la página.');
+      console.warn('[PaymentPanel] NO hay callback de cobro definido');
+      setChargeError('Recarga la página para poder cobrar.');
     }
 
     // Mantener quieto en pantalla durante 6 segundos y vaciar mesa
@@ -76,6 +76,19 @@ export function PaymentPanel(props: PaymentPanelProps) {
 
   return (
     <div className="h-full flex flex-col justify-between p-2 min-h-0 select-none">
+      {chargeError && (
+        <div className="mb-2 p-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+          <span className="font-bold">Atención:</span>
+          <span>{chargeError}</span>
+          <button
+            onClick={() => setChargeError(null)}
+            className="ml-auto text-rose-600 hover:text-rose-900 font-bold"
+            aria-label="Cerrar aviso"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* Display Principal */}
       <div className="bg-slate-900 text-white p-3 rounded-2xl flex flex-col justify-center shrink-0 shadow-inner">
         {changeInfo ? (

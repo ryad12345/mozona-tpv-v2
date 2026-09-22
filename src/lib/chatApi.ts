@@ -19,7 +19,8 @@ import { resolveRealTenantId } from "./waiters";
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════
 
-const SUPABASE_URL = "https://hcqkpokodrqimkulporw.supabase.co";
+import { SUPABASE_URL } from "./constants";
+
 const EDGE_FN_URL  = `${SUPABASE_URL}/functions/v1/admin-ops`;
 
 export interface ChatQueryRequest {

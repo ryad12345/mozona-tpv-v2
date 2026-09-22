@@ -9,11 +9,7 @@
 // Asi, cuando Vercel se recupere, vuelve a usarlo automaticamente.
 // =====================================================================
 
-const SUPABASE_URL =
-    (import.meta.env.VITE_SUPABASE_URL as string) || "https://hcqkpokodrqimkulporw.supabase.co";
-
-const SUPABASE_ANON_KEY =
-    (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./constants";
 
 // ★ Estado del cluster Vercel
 let vercelHealthy: boolean | null = null;

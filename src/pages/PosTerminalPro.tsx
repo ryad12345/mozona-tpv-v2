@@ -575,15 +575,8 @@ export function PosTerminalPro() {
             console.error("[performCharge] Detalle técnico (solo consola):", persistError);
             setToast({
                 kind: "err",
-                msg: `❌ ${verb} Mesa ${tableNum} · ${round2(sub)}€. No se pudo registrar la venta. Por favor, inténtalo de nuevo o contacta con soporte si el problema continúa.`,
+                msg: `${verb} Mesa ${tableNum} · ${round2(sub)}€. No se pudo registrar la venta. Por favor, inténtalo de nuevo o contacta con soporte si el problema continúa. La mesa ya está libre.`,
             });
-            // ★★ ALERT NATIVO con lenguaje humano ★★
-            alert(`❌ No pudimos registrar la venta\n\n` +
-                  `Mesa: ${tableNum}\n` +
-                  `Importe: ${round2(sub)} €\n\n` +
-                  `La mesa ya está libre para el siguiente cliente. ` +
-                  `Anota los productos de esta venta en papel y contacta con soporte para recuperarla. ` +
-                  `Sentimos las molestias.`);
         } else {
             setToast({
                 kind: "ok",

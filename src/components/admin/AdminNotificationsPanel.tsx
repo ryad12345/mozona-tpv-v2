@@ -27,6 +27,7 @@ export function AdminNotificationsPanel() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [approving, setApproving] = useState<string | null>(null);
+    const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
     const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
     const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
@@ -80,10 +81,10 @@ export function AdminNotificationsPanel() {
             });
             const result = await r.json();
             if (!result.ok) {
-                alert("Error al aprobar: " + (result.error || "desconocido"));
+                setMsg({ kind: "err", text: "No pudimos aprobar la solicitud. Reintenta en unos segundos." });
                 return;
             }
-            alert("✅ Alta aprobada. Trial de 7 días activado para el cliente.");
+            setMsg({ kind: "ok", text: "Alta aprobada. Trial de 7 días activado para el cliente." });
             // Marcar la notificación como leída
             await fetch(`${supabaseUrl}/rest/v1/admin_notifications?id=eq.${notifId}`, {
                 method: "PATCH",
@@ -96,7 +97,7 @@ export function AdminNotificationsPanel() {
             });
             fetchNotifs();
         } catch (e) {
-            alert("Error: " + String(e));
+            setMsg({ kind: "err", text: "Conexión interrumpida. Reintenta." });
         } finally {
             setApproving(null);
         }
@@ -107,6 +108,17 @@ export function AdminNotificationsPanel() {
 
     return (
         <div className="w-full max-w-2xl mx-auto p-4 space-y-4">
+            {msg && (
+                <div
+                    className={`p-3 rounded-xl text-sm font-bold ${
+                        msg.kind === "ok"
+                            ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                            : "bg-rose-50 border border-rose-200 text-rose-800"
+                    }`}
+                >
+                    {msg.text}
+                </div>
+            )}
             <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center text-white shadow-lg">
                     <IconShield size={22} strokeWidth={2.2} />

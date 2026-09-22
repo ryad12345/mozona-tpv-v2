@@ -288,7 +288,10 @@ function VoiceAssistant({ tenantId }: { tenantId?: string }) {
             setRecording(true);
         } catch (e: any) {
             console.warn("[AIStudio] mic access error:", e);
-            alert("No pudimos acceder al micrófono. Revisa los permisos del navegador y vuelve a intentarlo.");
+            setResponse({
+                ok: false,
+                error: "No pudimos acceder al micrófono. Revisa los permisos del navegador y vuelve a intentarlo.",
+            });
         }
     };
 

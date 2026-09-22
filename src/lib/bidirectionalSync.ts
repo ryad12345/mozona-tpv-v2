@@ -18,6 +18,7 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { safeFetch } from "./safeFetch";
 import { resolveRealTenantId } from "./waiters";
+import { SUPABASE_URL as SUPABASE_URL_VAL, SUPABASE_ANON_KEY } from "./constants";
 
 const PENDING_KEY = "mozona.pending_sync";
 const CACHE_PREFIX = "mozona.sync.cache.";
@@ -263,8 +264,8 @@ function getUserJwt(): string | null {
 }
 
 async function fetchWithJwt(table: string, options: RequestInit, returnRepresentation = false): Promise<any> {
-    const ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
-    const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "https://hcqkpokodrqimkulporw.supabase.co";
+    const ANON_KEY = SUPABASE_ANON_KEY;
+    const SUPABASE_URL = SUPABASE_URL_VAL;
     const jwt = getUserJwt();
 
     const headers: any = {
