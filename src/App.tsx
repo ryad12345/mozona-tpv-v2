@@ -40,6 +40,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { DesktopGuard } from "./components/DesktopGuard";
 import { SubscriptionGuard } from "./components/ProtectedRoute";
 import { ChatPro } from "./components/ChatPro";
+import { RouteAwareChatPro } from "./components/RouteAwareChatPro";
 import { PrintStyles } from "./components/settings/PrintStyles";
 
 // ★ Spinner reutilizable para Suspense
@@ -202,8 +203,9 @@ export function App() {
                                 <Route path="*"        element={<Navigate to="/" replace />} />
                             </Routes>
                         </Suspense>
-                    {/* ★ v4.0.7-cleanup: SOLO ChatPro (eliminado FloatingAssistantButton duplicado) */}
-                    <ChatPro />
+                    {/* ★ v4.0.7-no-chat-outside-tpv: ChatPro SOLO en /app (TPV activo).
+                         Fuera del TPV (landing, auth, onboarding, etc.) está oculto. */}
+                    <RouteAwareChatPro />
                     </BrowserRouter>
                 </WebSocketProvider>
                 </ThemeProvider>

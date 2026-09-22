@@ -1,5 +1,5 @@
 // =====================================================================
-// MOZONA TPV — OnboardingWizardPage (/setup/onboarding)
+// MOZONA TPV — OnboardingWizardPage (/setup/onboarding) v4.0.7-onboarding-fix
 // =====================================================================
 // Wizard de primera configuración. Se muestra solo si
 // tenant.onboarding_completed === false.
@@ -8,9 +8,9 @@
 // Paso 2: Dirección y facturación (dirección, CP, ciudad, IVA por defecto)
 //
 // Al terminar:
-//   - Guarda en tenants (defensivo: ignora columnas que no existan)
+//   - Guarda en tenants via rpc_save_tenant_full (SECURITY DEFINER, bypasa RLS anon)
 //   - Marca onboarding_completed = true
-//   - Redirige a /app
+//   - Redirige a /app (sin bucles, sin redirecciones hacia atrás)
 //
 // Mantiene intacta la sesión del usuario y la lógica VIP.
 // =====================================================================
@@ -18,7 +18,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { isSupabaseConfigured } from "../lib/supabase";
+import { rpcSaveTenantFull } from "../lib/secureRpc";
 import { IconCheck, IconStore, IconArrowRight, IconArrowLeft } from "../components/icons";
 
 interface FormData {
@@ -86,48 +87,45 @@ export function OnboardingWizardPage() {
         setSaving(true);
         setError(null);
         try {
-            // Guardar TODO (defensivo: si falla una columna, reintenta sin ella)
-            const allPatch = {
-                name:                  form.name.trim(),
-                cif_nif:               form.cif_nif.trim() || null,
-                phone:                 form.phone.trim()   || null,
-                address:               [form.address.trim(), form.postal_code.trim(), form.city.trim()]
-                                       .filter(Boolean).join(", ") || null,
-                default_iva:           Number(form.default_iva) || 10,
-                onboarding_completed:  true,
+            // ★ v4.0.7-onboarding-fix: Usa RPC SECURITY DEFINER que bypasa RLS anon.
+            //   Antes fallaba con "new row violates row-level security policy" porque
+            //   el cliente anon_key no tiene sesion auth.uid(). Ahora la SQL function
+            //   valida el tenant via auth.uid() del JWT o via vip_emails bypass.
+            const fullAddress = [form.address.trim(), form.postal_code.trim(), form.city.trim()]
+                .filter(Boolean).join(", ") || null;
+
+            const patch: Record<string, any> = {
+                name:                 form.name.trim(),
+                cif_nif:              form.cif_nif.trim() || null,
+                phone:                form.phone.trim()   || null,
+                address:              fullAddress,
+                postal_code:          form.postal_code.trim() || null,
+                city:                 form.city.trim() || null,
+                default_iva:          Number(form.default_iva) || 10,
+                onboarding_completed: true,
             };
-            // Primer intento: full patch
-            let { error: e1 } = await supabase
-                .from("tenants")
-                .update(allPatch)
-                .eq("id", auth.tenant.id);
-            // ★ v3.4.8: Capturar más variaciones de errores de columna faltante
-            //   - "column ... does not exist" (Postgres)
-            //   - "Could not find the 'X' column of 'Y' in the schema cache" (PostgREST)
-            const columnMissing = !!e1 && /column.*does not exist|could not find the.*column|schema cache/i.test(e1.message);
-            if (columnMissing) {
-                console.warn("[Onboarding] columna default_iva no existe, reintento sin ella:", e1?.message);
-                const { default_iva, ...rest } = allPatch as any;
-                const r2 = await supabase.from("tenants").update(rest).eq("id", auth.tenant.id);
-                e1 = r2.error;
-                if (e1 && columnMissing) {
-                    console.warn("[Onboarding] reintento mínimo:", e1.message);
-                    const minimal = {
-                        name:                 form.name.trim(),
-                        onboarding_completed: true,
-                    };
-                    const r3 = await supabase.from("tenants").update(minimal).eq("id", auth.tenant.id);
-                    e1 = r3.error;
-                }
-            }
-            if (e1) {
+
+            const result = await rpcSaveTenantFull(patch);
+
+            if (!result.ok) {
+                console.warn("[Onboarding] save fallo:", result.error);
                 setError("No pudimos guardar la información. Por favor, inténtalo de nuevo.");
                 setSaving(false);
                 return;
             }
-            // Refrescar tenant en AuthContext
-            await auth.refresh?.();
-            // Redirigir a /app
+
+            // ★ v4.0.7-onboarding-fix: Actualizar tenant LOCALMENTE ANTES de navegar.
+            //   Sin esto, ProtectedRoute ve onboarding_completed=false (cache viejo)
+            //   y redirige al wizard → BUCLE INFINITO.
+            auth.patchTenant?.({
+                ...patch,
+                onboarding_completed: true,
+            });
+
+            // Refrescar en background (best-effort, sin bloquear la navegacion)
+            auth.refresh?.()?.catch(() => {});
+
+            // Redirigir a /app limpio
             nav("/app", { replace: true });
         } catch (e: any) {
             console.warn("[Onboarding] save error:", e);

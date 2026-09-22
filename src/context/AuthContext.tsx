@@ -42,6 +42,7 @@ export interface AuthContextValue {
     tenantRole?: any;
     profile?:    any;
     refresh?:    () => Promise<void>;
+    patchTenant?: (patch: Record<string, any>) => void;
     createTenant?: (...args: any[]) => Promise<any>;
     redeemInvite?: (code: string) => Promise<{
         ok:        boolean;
@@ -675,6 +676,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         refresh, createTenant, redeemInvite, signInWithGoogle,
         signIn, signInWithPassword, signOut, logout, signUp,
         setMockSession,
+        // ★ v4.0.7-onboarding-fix: patchTenant permite actualizar el tenant local
+        //   sin esperar al refresh de red. Usado por el wizard de onboarding para
+        //   evitar el bucle "redirect a /app → ProtectedRoute ve completed=false → redirect a wizard"
+        patchTenant: useCallback((patch: Record<string, any>) => {
+            setTenant((prev: any) => prev ? { ...prev, ...patch } : prev);
+        }, []),
     }), [user, session, tenant, loading, signIn, signUp, signOut, refresh,
          createTenant, redeemInvite, signInWithGoogle, setMockSession]);
 

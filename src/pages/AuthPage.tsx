@@ -165,11 +165,11 @@ export function AuthPage() {
             setNeedsOtp(true);
             setOtpCode("");
 
-            // ★ Si tenemos dev_code (modo dev), mostrar pista
-            const devHint = json.code ? ` (Codigo de prueba: ${json.code})` : "";
+            // ★ v4.0.7-no-mockups: NUNCA mostrar codigo de prueba en pantalla.
+            //    El codigo solo se envia al email real del usuario.
             setMsg({
                 kind: "ok",
-                text: `Te enviamos un codigo de 6 digitos a ${masked}.${devHint}`,
+                text: `Te enviamos un codigo de 6 digitos a ${masked}. Revisa tu bandeja de entrada.`,
             });
         } catch (e: any) {
             setBusy(false);

@@ -79,6 +79,28 @@ export async function rpcLoadTenantSettings(): Promise<RpcResult<any>> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// TENANT CORE (para onboarding wizard)
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function rpcSaveTenantFull(patch: Record<string, any>): Promise<RpcResult> {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) return { ok: false, error: "Sin tenant activo" };
+    if (!supabase) return { ok: false, error: "Supabase no configurado" };
+    try {
+        const { data, error } = await supabase.rpc("rpc_save_tenant_full", {
+            p_tenant_id: tenantId,
+            p_patch: patch,
+        });
+        if (error) return { ok: false, error: error.message };
+        const result = data as any;
+        if (result && "ok" in result) return result as RpcResult;
+        return { ok: true, data: result };
+    } catch (e: any) {
+        return { ok: false, error: e?.message };
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -213,9 +235,10 @@ export async function rpcAiSaveVoiceOrder(order: Record<string, any>): Promise<R
 export interface EmailCodeResult {
     ok: boolean;
     id?: string;
-    code?: string;        // Solo en dev: codigo visible para pruebas
     expires_at?: string;
     error?: string;
+    // ★ v4.0.7-no-mockups: 'code' ELIMINADO del response.
+    //   El codigo solo se envia al email real, nunca al cliente.
 }
 
 export async function rpcGenerateEmailCode(

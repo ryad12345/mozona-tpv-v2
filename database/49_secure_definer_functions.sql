@@ -651,9 +651,9 @@ BEGIN
     RETURN jsonb_build_object(
         'ok', true,
         'id', v_id,
-        'code', v_code,
-        'expires_at', v_expires,
-        'dev_code', v_code  -- Solo en dev: devolver codigo para mostrar en UI
+        'expires_at', v_expires
+        -- ★ v4.0.7-no-mockups: 'code' y 'dev_code' ELIMINADOS del response.
+        --   El codigo OTP SOLO se envia al email real del usuario.
     );
 END;
 $$;
@@ -705,6 +705,75 @@ $$;
 GRANT EXECUTE ON FUNCTION public.rpc_verify_email_code(TEXT, TEXT, TEXT) TO anon, authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════
+-- 5.5 SAVE TENANT (para onboarding wizard) — RPC SECURITY DEFINER
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Valida acceso via:
+--   1) auth.uid() = owner_id del tenant, O
+--   2) email del usuario autenticado está en app_settings.vip_emails
+CREATE OR REPLACE FUNCTION public.rpc_save_tenant_full(
+    p_tenant_id UUID,
+    p_patch JSONB
+)
+RETURNS JSONB
+SECURITY DEFINER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_actor UUID := auth.uid();
+    v_actor_email TEXT;
+    v_vip_list TEXT;
+    v_result JSONB;
+BEGIN
+    -- Si no hay actor (anon), permitir UPDATE solo si es un usuario VIP conocido
+    -- vía la configuracion global. En el flujo de onboarding el usuario ya está
+    -- autenticado via signInWithPassword (Supabase genera JWT con auth.uid).
+
+    IF v_actor IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'Sin sesion activa');
+    END IF;
+
+    -- Verificar acceso: owner del tenant
+    IF NOT EXISTS (
+        SELECT 1 FROM public.tenants
+        WHERE id = p_tenant_id AND owner_id = v_actor
+    ) THEN
+        -- Fallback: VIP bypass via app_settings.vip_emails
+        SELECT u.email INTO v_actor_email
+        FROM auth.users u WHERE u.id = v_actor;
+
+        SELECT value INTO v_vip_list
+        FROM public.app_settings WHERE key = 'vip_emails';
+
+        IF v_actor_email IS NULL OR v_vip_list IS NULL OR
+           POSITION(v_actor_email IN v_vip_list) = 0 THEN
+            RETURN jsonb_build_object('ok', false, 'error', 'Sin acceso al tenant');
+        END IF;
+    END IF;
+
+    -- Construir UPDATE solo con columnas permitidas (whitelist)
+    UPDATE public.tenants SET
+        name                 = COALESCE(p_patch->>'name',                 name),
+        cif_nif              = COALESCE(p_patch->>'cif_nif',              cif_nif),
+        phone                = COALESCE(p_patch->>'phone',                phone),
+        address              = COALESCE(p_patch->>'address',              address),
+        postal_code          = COALESCE(p_patch->>'postal_code',          postal_code),
+        city                 = COALESCE(p_patch->>'city',                 city),
+        default_iva          = COALESCE((p_patch->>'default_iva')::numeric, default_iva),
+        onboarding_completed = COALESCE((p_patch->>'onboarding_completed')::boolean, onboarding_completed),
+        business_name        = COALESCE(p_patch->>'business_name',        business_name),
+        business_type        = COALESCE(p_patch->>'business_type',        business_type),
+        updated_at           = now()
+    WHERE id = p_tenant_id
+    RETURNING to_jsonb(tenants.*) INTO v_result;
+
+    RETURN jsonb_build_object('ok', true, 'data', v_result);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.rpc_save_tenant_full(UUID, JSONB) TO authenticated, anon;
+
 -- 6. AUDITORIA: verificar que todo funciona
 -- ═══════════════════════════════════════════════════════════════════════
 
