@@ -283,17 +283,10 @@ module.exports = async (req, res) => {
                 "👇 *Pulsa para aprobar o rechazar:*",
             ].filter(Boolean).join("\n");
 
-            const inlineKeyboard = {
-                inline_keyboard: [
-                    [{ text: "✅ APROBAR (1 CLICK)", callback_data: `approve:${tenantId}` }],
-                    [{ text: "❌ Rechazar", callback_data: `reject:${tenantId}` }],
-                    [{ text: "🔍 Ver detalles", callback_data: `view:${tenantId}` }],
-                ],
-            };
             await sendTelegram(BOT_TOKEN, CHAT_ID, md, inlineKeyboard);
         }
 
-        return safeJson(200, {
+     return safeJson(200, {
             ok: true,
             tenantId,
             userId,
