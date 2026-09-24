@@ -19,11 +19,28 @@ function escapeMd(s: string): string {
     return String(s).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&").slice(0, 200);
 }
 
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-};
+// ★ v4.0.7-secure: CORS estricto (whitelist de orígenes)
+const ALLOWED_ORIGINS = new Set([
+    "https://mozonatpv.site",
+    "https://www.mozonatpv.site",
+    "https://mozona-tpv-v2-real.pages.dev",
+    "http://localhost:5173",
+    "http://localhost:4173",
+]);
+
+function getCorsHeaders(origin: string | null) {
+    const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : Array.from(ALLOWED_ORIGINS)[0];
+    return {
+        "Access-Control-Allow-Origin": allowedOrigin,
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "86400",
+        "Vary": "Origin",
+    };
+}
+
+const corsHeaders = getCorsHeaders(null);
 
 function json(payload: any, status = 200) {
     return new Response(JSON.stringify(payload), {
@@ -33,7 +50,7 @@ function json(payload: any, status = 200) {
 }
 
 Deno.serve(async (req: Request) => {
-    if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+    if (req.method === "OPTIONS") return new Response("ok", { headers: getCorsHeaders(req.headers.get("origin")) });
 
     try {
         const body = await req.json().catch(() => ({}));

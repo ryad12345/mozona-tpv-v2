@@ -26,11 +26,28 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const ADMIN_CHAT_ID = Deno.env.get("TELEGRAM_CHAT_ID") ?? "";
 
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-email",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// ★ v4.0.7-secure: CORS estricto (whitelist de orígenes)
+const ALLOWED_ORIGINS = new Set([
+    "https://mozonatpv.site",
+    "https://www.mozonatpv.site",
+    "https://mozona-tpv-v2-real.pages.dev",
+    "http://localhost:5173",
+    "http://localhost:4173",
+]);
+
+function getCorsHeaders(origin: string | null) {
+    const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : Array.from(ALLOWED_ORIGINS)[0];
+    return {
+        "Access-Control-Allow-Origin": allowedOrigin,
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "86400",
+        "Vary": "Origin",
+    };
+}
+
+const corsHeaders = getCorsHeaders(null);
 
 const sbHeaders = {
     apikey: SERVICE_KEY,
@@ -467,16 +484,40 @@ async function chatQuery(intent: string, tenantId: string) {
 // ─── MAIN DISPATCHER ───────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-    if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+    if (req.method === "OPTIONS") return new Response("ok", { headers: getCorsHeaders(req.headers.get("origin")) });
 
     try {
-        const body = await req.json().catch(() => ({}));
-        const action = String(body.action || "");
-        const actorEmail = String(body.actorEmail || req.headers.get("x-admin-email") || "system");
+        // ★ v4.0.7-secure: Validación JWT REAL contra Supabase Auth
+        const authHeader = req.headers.get("authorization") || "";
+        const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
         if (!SUPABASE_URL || !SERVICE_KEY) {
-            return json({ ok: false, error: "Edge Function no configurada (SUPABASE_URL/SERVICE_ROLE_KEY faltan)" });
+            return json({ ok: false, error: "Edge Function no configurada" });
         }
+
+        if (!token) {
+            return json({ ok: false, error: "Authorization Bearer token requerido" }, 401);
+        }
+
+        const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${token}` },
+        });
+
+        if (!userResp.ok) {
+            return json({ ok: false, error: "Token inválido o expirado" }, 401);
+        }
+
+        const user: any = await userResp.json();
+        const actorEmail = String(user?.email || "").toLowerCase();
+
+        // ★ Whitelist de admins permitidos
+        const ALLOWED_ADMINS = ["rofixinsta@gmail.com"];
+        if (!ALLOWED_ADMINS.includes(actorEmail)) {
+            return json({ ok: false, error: "Acceso denegado: usuario no es admin", actor: actorEmail }, 403);
+        }
+
+        const body = await req.json().catch(() => ({}));
+        const action = String(body.action || "");
 
         let result: any;
 

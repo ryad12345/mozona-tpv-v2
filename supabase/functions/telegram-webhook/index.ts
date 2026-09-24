@@ -12,6 +12,7 @@ const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const ADMIN_CHAT_ID = String(Deno.env.get("TELEGRAM_CHAT_ID") ?? "");
+const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
 
 const sbHeaders = {
     apikey: SERVICE_KEY,
@@ -114,6 +115,17 @@ async function rejectTenant(tenantId: string): Promise<{ ok: boolean; error?: st
 Deno.serve(async (req: Request) => {
     try {
         if (req.method === "OPTIONS") return new Response("ok");
+
+        // ★ v4.0.7-secure: Validar X-Telegram-Bot-Api-Secret-Token
+        if (WEBHOOK_SECRET) {
+            const provided = req.headers.get("x-telegram-bot-api-secret-token") || "";
+            if (provided !== WEBHOOK_SECRET) {
+                return new Response(
+                    JSON.stringify({ ok: false, error: "Invalid webhook secret" }),
+                    { status: 403, headers: { "Content-Type": "application/json" } }
+                );
+            }
+        }
 
         const body = await req.json().catch(() => ({}));
 

@@ -91,9 +91,12 @@ async function logEmail(payload: any): Promise<void> {
 }
 
 Deno.serve(async (req: Request) => {
-    // ★ Preflight CORS — SIEMPRE responder (default 200, igual que register-tenant)
+    // ★ Preflight CORS — SIEMPRE responder
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
+        return new Response("ok", {
+            status: 204,
+            headers: corsHeaders,
+        });
     }
 
     try {
