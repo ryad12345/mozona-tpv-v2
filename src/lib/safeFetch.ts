@@ -1,9 +1,14 @@
 // =====================================================================
-// MOZONA TPV — safeFetch (v4.0.7-json-safe)
+// MOZONA TPV — safeFetch (v4.0.7-json-safe + v4.0.7-jwt-auto)
 // =====================================================================
 // Helper de fetch que NUNCA lanza SyntaxError por respuestas no-JSON.
 // Verifica content-type antes de parsear y devuelve un objeto
 // estructurado consistente en caso de error.
+//
+// ★ v4.0.7-jwt-auto: Si la URL va a Supabase REST (/rest/v1/), inyecta
+// automáticamente el JWT del usuario activo en Authorization. Esto
+// desbloquea RLS para queries autenticadas sin que cada componente
+// tenga que añadir el header manualmente.
 // =====================================================================
 
 export interface SafeFetchOptions extends RequestInit {
@@ -20,6 +25,41 @@ export interface SafeFetchResult<T = any> {
     _rawPreview?: string;
 }
 
+// ★ v4.0.7-jwt-auto: detectar Supabase REST y auto-inyectar JWT
+function shouldAutoInjectJWT(url: string): boolean {
+    return typeof url === "string" &&
+        url.includes(".supabase.co/rest/v1/") &&
+        !url.includes("/auth/v1/");
+}
+
+async function buildAuthHeaders(original: HeadersInit | undefined): Promise<HeadersInit> {
+    const headers: Record<string, string> = {};
+    if (original instanceof Headers) {
+        original.forEach((v, k) => { headers[k] = v; });
+    } else if (Array.isArray(original)) {
+        for (const [k, v] of original) headers[k] = v;
+    } else if (original) {
+        Object.assign(headers, original);
+    }
+
+    // Solo inyectar si NO hay Authorization ya (no pisar lo del usuario)
+    if (!headers["Authorization"] && !headers["authorization"]) {
+        try {
+            const { supabase, isSupabaseConfigured } = await import("./supabase");
+            if (isSupabaseConfigured) {
+                const { data } = await supabase.auth.getSession();
+                const token = data.session?.access_token;
+                if (token) {
+                    headers["Authorization"] = `Bearer ${token}`;
+                }
+            }
+        } catch {
+            // ignore — usar anon key si existe
+        }
+    }
+    return headers;
+}
+
 /**
  * Fetch seguro que nunca lanza SyntaxError.
  * Si la respuesta no es JSON válido, devuelve { ok: false, error: "..." }
@@ -31,6 +71,12 @@ export async function safeFetch<T = any>(
 ): Promise<SafeFetchResult<T>> {
     const { timeoutMs = 15000, ...fetchOptions } = options;
 
+    // ★ v4.0.7-jwt-auto: Inyectar JWT si va a Supabase REST
+    let finalOptions = { ...fetchOptions };
+    if (shouldAutoInjectJWT(url)) {
+        finalOptions.headers = await buildAuthHeaders(fetchOptions.headers);
+    }
+
     try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), timeoutMs);
@@ -38,7 +84,7 @@ export async function safeFetch<T = any>(
         let response: Response;
         try {
             response = await fetch(url, {
-                ...fetchOptions,
+                ...finalOptions,
                 signal: controller.signal,
             });
         } finally {

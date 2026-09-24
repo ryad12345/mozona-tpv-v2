@@ -9,6 +9,7 @@ import {
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { isVipOrAdmin, isSuperAdminEmail } from "../lib/vip";
 import { safeFetch } from "../lib/safeFetch";
+import { syncTenantFromAuth } from "../lib/tenantSync";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -188,6 +189,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const fetchTenant = async (userId: string, email: string) => {
             if (!isSupabaseConfigured) return;
 
+            // ★ v4.0.7-tenant-sync: sincronizar ANTES de resolver (limpia LocalStorage si hay tenant ajeno)
+            try {
+                await syncTenantFromAuth({ force: false });
+            } catch { /* continuar */ }
+
             // ★ v4.0.7: Si es VIP, intentar cargar tenant desde Supabase directo
             const isVipUser = email && (
                 email.toLowerCase() === "chalohiahmd1980@gmail.com" ||
@@ -212,6 +218,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         const arr = r1.data as any[];
                         if (arr && arr[0] && mounted) {
                             setTenant(arr[0]);
+                            // ★ v4.0.7-tenant-sync: persistir tenant_id validado
+                            try { localStorage.setItem("mozona.current_tenant_id", arr[0].id); } catch {}
                             return;
                         }
                     }
@@ -224,6 +232,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         const arr = r2.data as any[];
                         if (arr && arr[0] && mounted) {
                             setTenant(arr[0]);
+                            // ★ v4.0.7-tenant-sync: persistir tenant_id validado
+                            try { localStorage.setItem("mozona.current_tenant_id", arr[0].id); } catch {}
                             return;
                         }
                     }
@@ -273,6 +283,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
 
         const init = async () => {
+            // ★ v4.0.7-tenant-sync: Sincronizar tenant_id con JWT ANTES de hidratar
+            // Esto evita errores 400 cuando el LocalStorage tiene un tenant de otro user
+            try {
+                await syncTenantFromAuth({ force: false });
+            } catch (e) {
+                console.warn("[AuthContext] syncTenantFromAuth init:", String(e));
+            }
+
             // 1) Hidratar desde localStorage (rápido)
             const cached = loadFromStorage();
             if (cached && mounted) {
@@ -567,6 +585,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setUser(u);
                 setSession(s);
                 saveToStorage(u, s);
+
+                // ★ v4.0.7-tenant-sync: sincronizar tenant tras cambio de sesión
+                try {
+                    const syncResult = await syncTenantFromAuth({ force: true });
+                    if (syncResult.action === "cleared" || syncResult.action === "synced") {
+                        console.log("[AuthContext] refresh: tenant sincronizado", syncResult);
+                    }
+                } catch (e) {
+                    console.warn("[AuthContext] syncTenantFromAuth refresh:", String(e));
+                }
                 // ★ v3.4.11: Recargar tenant también vía endpoint server-side
                 try {
                     if (u.email) {
@@ -583,7 +611,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
                                 );
                                 if (tr.ok) {
                                     const arr = tr.data as any[];
-                                    if (arr && arr[0]) setTenant(arr[0]);
+                                    if (arr && arr[0]) {
+                                        setTenant(arr[0]);
+                                        // ★ v4.0.7-tenant-sync: persistir
+                                        try { localStorage.setItem("mozona.current_tenant_id", arr[0].id); } catch {}
+                                    }
                                 }
                             }
                         }
