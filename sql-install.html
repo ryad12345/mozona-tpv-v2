@@ -207,6 +207,64 @@
                     <p>Tabla email_outbox + RPCs para generar, verificar y enviar códigos OTP via Resend API.</p>
                     <a href="/database/52_email_outbox_resend.sql" download>⬇️ Descargar SQL #52</a>
                 </div>
+                <div class="download-card" style="border-color:#f59e0b;background:linear-gradient(135deg,#1f2937 0%,#422006 100%)">
+                    <div class="num" style="color:#fbbf24">SQL #53 — AUTO-ENVIO EMAIL (NUEVO)</div>
+                    <h4 style="color:#fde68a">Trigger automático email_outbox → send-email</h4>
+                    <p>Trigger PostgreSQL que llama automáticamente a la Edge Function cuando se inserta una fila. Elimina la dependencia del frontend. Combinar con Webhook UI (recomendado).</p>
+                    <a href="/database/53_email_outbox_auto_trigger.sql" download style="background:linear-gradient(135deg,#f59e0b,#d97706)">⬇️ Descargar SQL #53</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="section" style="background:linear-gradient(135deg,#7c2d12 0%,#1f2937 100%);border:2px solid #f59e0b">
+            <h2 style="color:#fbbf24">⚡ FIX CRÍTICO: Email OTP no llega — Cómo solucionarlo en 2 minutos</h2>
+            <div class="warning">
+                <strong>Síntoma:</strong> La pantalla "Verifica tu correo" aparece pero el email nunca llega.<br>
+                <strong>Causa:</strong> La Edge Function <code>send-email</code> solo se dispara si el frontend la llama. Si el usuario cierra la app o hay un error de red, el email se queda en cola (estado <code>pending</code>) sin enviarse.<br>
+                <strong>Solución DEFINITIVA:</strong> Configurar un Database Webhook en Supabase (2 minutos, sin tocar SQL).
+            </div>
+
+            <div class="step">
+                <div class="step-num">A</div>
+                <div class="step-content">
+                    <h3>Método RECOMENDADO: Database Webhook (2 minutos)</h3>
+                    <p>Ve al panel de Supabase → <strong>Database</strong> → <strong>Webhooks</strong> → <strong>Create a new hook</strong>:</p>
+                    <ul style="margin:10px 0 10px 30px;color:#cbd5e1;line-height:1.7">
+                        <li><strong>Name:</strong> <code>auto-send-email</code></li>
+                        <li><strong>Table:</strong> <code>email_outbox</code></li>
+                        <li><strong>Events:</strong> ☑ INSERT (solo insert)</li>
+                        <li><strong>Type:</strong> <code>Supabase Edge Function</code></li>
+                        <li><strong>Function:</strong> <code>send-email</code></li>
+                    </ul>
+                    <p><strong>Save.</strong> A partir de ahora CADA INSERT en <code>email_outbox</code> dispara automáticamente la Edge Function, sin depender del frontend.</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">B</div>
+                <div class="step-content">
+                    <h3>Alternativa: Aplicar SQL #53 (trigger pg_net)</h3>
+                    <p>Si el Webhook UI no funciona por algún motivo, descarga <a href="/database/53_email_outbox_auto_trigger.sql" download style="color:#fbbf24">SQL #53</a> y aplícalo en SQL Editor. Esto crea un trigger PostgreSQL con <code>pg_net</code> que llama a la Edge Function automáticamente.</p>
+                    <p><strong>Después de aplicarlo</strong>, ejecuta esta función UNA vez (como superadmin en SQL Editor) para configurar la <code>service_role_key</code>:</p>
+                    <pre style="background:#000;padding:14px;border-radius:8px;color:#fbbf24;font-size:12px;overflow:auto">SELECT rpc_set_email_trigger_config(
+    'https://hcqkpokodrqimkulporw.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...tu-service-role-key-completa...'
+);</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">C</div>
+                <div class="step-content">
+                    <h3>Comprobar que funciona</h3>
+                    <p>Tras configurar el webhook (o aplicar SQL #53):</p>
+                    <ul style="margin:10px 0 10px 30px;color:#cbd5e1;line-height:1.7">
+                        <li>En Supabase → Edge Functions → <code>send-email</code> → Logs, deberías ver invocaciones cada vez que se genera un OTP</li>
+                        <li>En Supabase → Table Editor → <code>email_outbox</code>, el estado debería cambiar de <code>pending</code> a <code>sent</code> en segundos</li>
+                        <li>El email debería llegar a la bandeja en menos de 30 segundos</li>
+                        <li>El frontend ahora también hace reintentos (3 intentos con backoff exponencial) como fallback</li>
+                    </ul>
+                </div>
             </div>
         </div>
 
