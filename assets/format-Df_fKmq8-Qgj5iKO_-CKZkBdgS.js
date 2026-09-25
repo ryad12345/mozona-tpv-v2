@@ -1,0 +1,1 @@
+const t=new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR",minimumFractionDigits:2,maximumFractionDigits:2}),i=new Intl.NumberFormat("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2}),r=m=>t.format(m),n=m=>i.format(m),o=m=>Math.round(m*100)/100;export{n,o,r};
