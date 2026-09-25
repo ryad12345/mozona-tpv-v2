@@ -508,7 +508,7 @@ export interface TenantFull {
     cif_nif:         string | null;
     address:         string | null;
     phone:           string | null;
-    email:           string | null;
+    contact_email:   string | null;
     owner_id:        string | null;
     plan:            string | null;
     activation_status: string | null;
