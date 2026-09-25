@@ -519,7 +519,7 @@ export async function fetchTenantFull(tenantId: string): Promise<TenantFull | nu
     try {
         const { data, error } = await supabase
             .from("tenants")
-            .select("id, business_name, cif_nif, address, phone, email, owner_id, plan, activation_status")
+            .select("id, business_name, cif_nif, address, phone, contact_email, owner_id, plan, activation_status")
             .eq("id", tenantId)
             .maybeSingle();
         if (error) throw error;
