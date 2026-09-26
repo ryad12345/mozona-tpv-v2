@@ -99,3 +99,5 @@ export default defineConfig({
         chunkSizeWarningLimit: 1500,
     },
 });
+
+// Force rebuild trigger: Sat Sep 26 13:06:01 UTC 2026
