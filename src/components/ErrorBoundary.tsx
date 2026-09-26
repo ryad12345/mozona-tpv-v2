@@ -149,8 +149,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
     render() {
         if (this.state.hasError) {
+            // ★ v4.0.7-no-loop-fix: ErrorBoundary FULLSCREEN REAL.
+            //   - fixed inset-0 z-[99999] cubre TODA la UI
+            //   - style inline garantiza cobertura aunque Tailwind falle
+            //   - role="alertdialog" aria-modal="true" para accesibilidad
             return (
-                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+                <div
+                    className="fixed inset-0 z-[99999] flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4"
+                    style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
+                    role="alertdialog"
+                    aria-modal="true"
+                >
                     <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8">
                         <div className="text-center mb-6">
                             <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center text-4xl">

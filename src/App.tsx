@@ -105,9 +105,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     render() {
         if (this.state.error) {
             if (this.props.fallback) return this.props.fallback(this.state.error, this.reset);
-            // ★ v4.0.7-no-loop-fix: UI más amigable con auto-recovery
+            // ★ v4.0.7-no-loop-fix: ErrorBoundary FULLSCREEN REAL.
+            //   - fixed inset-0 z-[99999] para cubrir TODA la UI
+            //   - backdrop sólido sin dejar ver la app detrás
+            //   - Auto-recovery a 5s sin atrapar al usuario
             return (
-                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+                <div
+                    className="fixed inset-0 z-[99999] flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4"
+                    style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
+                    role="alertdialog"
+                    aria-modal="true"
+                >
                     <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
                         <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center text-4xl">
                             ⚠️

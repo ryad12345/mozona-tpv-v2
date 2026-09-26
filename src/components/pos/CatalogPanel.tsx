@@ -220,10 +220,23 @@ export function CatalogPanel(props: any) {
           <div className="col-span-full py-12 text-center text-slate-400 text-xs font-semibold">
             {productsList.length === 0 ? (
               <div>
-                <p className="mb-1">📭 No hay productos en este tenant.</p>
-                <p className="text-[10.5px] text-slate-500 mt-1">
-                  Ve a Settings → 🍽️ Productos o ejecuta database/15_seed_products.sql
-                </p>
+                {/* ★ v4.0.7-no-loop-fix: estado vacío amigable, sin mencionar SQL ni romper ciclo React */}
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center text-3xl">
+                    🍽️
+                  </div>
+                  <p className="text-[14px] font-bold text-slate-700">Tu carta está vacía</p>
+                  <p className="text-[11px] text-slate-500 max-w-[220px] leading-relaxed">
+                    Empieza añadiendo tus primeros productos desde el panel de configuración.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => (window.location.href = "/settings")}
+                    className="mt-2 px-4 py-2 rounded-lg bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[11px] font-bold hover:from-violet-700 hover:to-blue-700 transition shadow-sm"
+                  >
+                    Ir a Configuración
+                  </button>
+                </div>
               </div>
             ) : (
               "No hay platos en esta categoría."
