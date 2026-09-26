@@ -20,7 +20,7 @@ const stripe = STRIPE_SECRET_KEY
 
 const CORS = {
     "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey",
+    "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey, x-application-name, x-application-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type":                  "application/json",
 };

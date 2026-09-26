@@ -23,7 +23,7 @@ const TELEGRAM_CHAT_ID = Deno.env.get("TELEGRAM_CHAT_ID") ?? "";
 
 const cors = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-application-name, x-application-version",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
 };
 

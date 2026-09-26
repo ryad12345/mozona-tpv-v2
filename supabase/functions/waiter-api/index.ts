@@ -29,7 +29,7 @@ const WAITER_SECRET = Deno.env.get("WAITER_SECRET") ?? "mozona-default-secret";
 
 const CORS = {
     "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey, x-waiter-token",
+    "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey, x-waiter-token, x-application-name, x-application-version",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Content-Type":                  "application/json",
 };

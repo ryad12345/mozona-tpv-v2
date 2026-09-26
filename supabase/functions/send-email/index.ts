@@ -18,7 +18,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // ★ v4.0.7-cors-fix: Headers CORS COMPLETOS para TODOS los métodos
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-email, x-request-id",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-email, x-request-id, x-application-name, x-application-version",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Max-Age": "86400", // 24h cache preflight
 };
