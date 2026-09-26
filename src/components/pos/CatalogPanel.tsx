@@ -1,26 +1,83 @@
 import React, { useRef, useState, useEffect } from 'react';
 
 const FALLBACK_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+const TARGET_USER_EMAIL = "chalohiahmd1980@gmail.com";
+const STORAGE_KEY = `pos_custom_products_${TARGET_USER_EMAIL}`;
 
 export function CatalogPanel(props: any) {
   const categoriesRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
-  // FIX: usar SIEMPRE props.products (de Supabase vía usePosData).
-  // Antes: leía de localStorage 'pos_custom_products_*' lo que causaba
-  // desincronización entre Settings y TPV.
-  const [productsList, setProductsList] = useState<any[]>(props.products || []);
+
+  // ★ v4.0.7-caja-fix: Cargar productos con fallback multi-fuente
+  //   1. props.products (de usePosData → Supabase)
+  //   2. localStorage 'pos_custom_products_<email>' (donde ItemsPanel guarda)
+  //   3. Cualquier key de localStorage que contenga "product|menu|carta"
+  function loadFromLocalStorage(): any[] {
+    try {
+      if (typeof localStorage === "undefined") return [];
+      // key con email (donde ItemsPanel guarda)
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch {}
+      }
+      // Cualquier key que contenga 'products|menu|carta' en localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && /pos_custom_products|pos_products|product\.|menu|carta/i.test(key)) {
+          try {
+            const v = localStorage.getItem(key);
+            if (v) {
+              const parsed = JSON.parse(v);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  const LS_FALLBACK = React.useMemo(() => loadFromLocalStorage(), []);
+  const [productsList, setProductsList] = useState<any[]>(() => {
+    if (Array.isArray(props.products) && props.products.length > 0) return props.products;
+    if (LS_FALLBACK.length > 0) return LS_FALLBACK;
+    return [];
+  });
   const [internalCategory, setInternalCategory] = useState<string>('all');
 
   useEffect(() => {
-    // FORZAR repintar cuando llegan productos reales de Supabase
+    // FORZAR repintar cuando llegan productos reales de Supabase.
+    // Si no hay, intentar fallback localStorage; si tampoco, mantener lista vacía.
     if (Array.isArray(props.products) && props.products.length > 0) {
       setProductsList(props.products);
-      console.log("[CatalogPanel] productos actualizados:", props.products.length);
+      console.log("[CatalogPanel] productos desde props (Supabase):", props.products.length);
     } else if (Array.isArray(props.products) && props.products.length === 0) {
-      setProductsList([]);
+      // props vacío → intentar localStorage como fallback antes de mostrar vacío
+      const ls = loadFromLocalStorage();
+      if (ls.length > 0) {
+        setProductsList(ls);
+        console.log("[CatalogPanel] productos desde localStorage (fallback):", ls.length);
+      } else {
+        setProductsList([]);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify((props.products || []).map((p: any) => p.id))]);
+
+  // También cargar de localStorage al montar (caso: BD vacía, items en localStorage)
+  useEffect(() => {
+    if (productsList.length === 0) {
+      const ls = loadFromLocalStorage();
+      if (ls.length > 0) {
+        setProductsList(ls);
+        console.log("[CatalogPanel] productos cargados desde localStorage al montar:", ls.length);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeCategory = props.selectedCategory !== undefined ? props.selectedCategory : internalCategory;
 
