@@ -503,26 +503,47 @@ export async function getCurrentTenantId(): Promise<string | null> {
 // =====================================================================
 
 export interface TenantFull {
-    id:              string;
-    business_name:   string | null;
-    cif_nif:         string | null;
-    address:         string | null;
-    phone:           string | null;
-    email:           string | null;
-    owner_id:        string | null;
-    plan:            string | null;
-    activation_status: string | null;
+    id:                 string;
+    business_name:      string | null;
+    cif_nif:            string | null;
+    address:            string | null;
+    phone:              string | null;
+    contact_email:      string | null;  // ★ real column name in tenants table
+    owner_id:           string | null;
+    plan:               string | null;
+    activation_status:  string | null;
 }
 
 export async function fetchTenantFull(tenantId: string): Promise<TenantFull | null> {
     if (!supabase) return null;
     try {
+        // ★ v4.0.7-quirúrgico-fix: usar 'contact_email' (la columna real en Supabase)
+        //   Antes usaba 'email' que NO existe en tenants → HTTP 400
         const { data, error } = await supabase
             .from("tenants")
-            .select("id, business_name, cif_nif, address, phone, email, owner_id, plan, activation_status")
+            .select("id, business_name, cif_nif, address, phone, contact_email, owner_id, plan, activation_status")
             .eq("id", tenantId)
             .maybeSingle();
-        if (error) throw error;
+        if (error) {
+            // Si la columna contact_email no existe (algunos entornos viejos), intentar fallback
+            if (error.code === "42703") {
+                console.warn("[bidirectionalSync] columna contact_email no existe, fallback email");
+                const fallback = await supabase
+                    .from("tenants")
+                    .select("id, business_name, cif_nif, address, phone, owner_id, plan, activation_status")
+                    .eq("id", tenantId)
+                    .maybeSingle();
+                if (fallback.error) throw fallback.error;
+                if (fallback.data) {
+                    try {
+                        localStorage.setItem(`mozona.tenant.${tenantId}`, JSON.stringify(fallback.data));
+                    } catch {}
+                    return { ...(fallback.data as any), contact_email: null } as TenantFull;
+                }
+                return null;
+            }
+            throw error;
+        }
         if (!data) return null;
 
         // Cache en localStorage para acceso rápido
