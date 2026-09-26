@@ -120,6 +120,33 @@ export class ErrorBoundary extends Component<Props, State> {
         setTimeout(() => window.location.reload(), 100);
     };
 
+    // ★ v4.0.7-no-loop-fix: Timer para auto-recovery
+    private _autoReloadTimer: ReturnType<typeof setTimeout> | null = null;
+    componentDidMount() {
+        if (this.state.hasError && !this._autoReloadTimer) {
+            try {
+                this._autoReloadTimer = setTimeout(() => {
+                    try { window.location.reload(); } catch (_) {}
+                }, 5000);
+            } catch (_) {}
+        }
+    }
+    componentWillUnmount() {
+        if (this._autoReloadTimer) {
+            clearTimeout(this._autoReloadTimer);
+            this._autoReloadTimer = null;
+        }
+    }
+    componentDidUpdate(_prev: Props, prevState: State) {
+        if (this.state.hasError && !prevState.hasError && !this._autoReloadTimer) {
+            try {
+                this._autoReloadTimer = setTimeout(() => {
+                    try { window.location.reload(); } catch (_) {}
+                }, 5000);
+            } catch (_) {}
+        }
+    }
+
     render() {
         if (this.state.hasError) {
             return (
@@ -130,12 +157,13 @@ export class ErrorBoundary extends Component<Props, State> {
                                 ⚠️
                             </div>
                             <h1 className="text-[22px] font-black text-slate-900 mb-2">
-                                Algo se ha desconfigurado
+                                Re-conectando…
                             </h1>
                             <p className="text-[14px] text-slate-600 leading-relaxed">
-                                La aplicacion se ha detenido para proteger tus datos.
+                                Recargando automáticamente en 5 segundos.
                                 Esto puede pasar tras actualizaciones o por una conexion inestable.
                             </p>
+                            <div className="w-10 h-10 mx-auto mt-4 border-[3px] border-slate-200 border-t-blue-600 rounded-full animate-spin" />
                         </div>
 
                         {/* Botón principal */}
@@ -143,7 +171,7 @@ export class ErrorBoundary extends Component<Props, State> {
                             onClick={this.handleSoftReset}
                             className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-700 hover:to-blue-700 text-white font-black text-[14px] shadow-lg transition"
                         >
-                            🔄 Reiniciar aplicacion
+                            🔄 Reintentar ahora
                         </button>
 
                         {/* Opciones avanzadas */}

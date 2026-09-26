@@ -69,6 +69,7 @@ interface ErrorBoundaryState {
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     state: ErrorBoundaryState = { error: null };
+    private _autoReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
     static getDerivedStateFromError(error: Error): ErrorBoundaryState {
         return { error };
@@ -78,14 +79,33 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         if (typeof console !== "undefined") {
             console.error("[ErrorBoundary]", error, info);
         }
+        // ★ v4.0.7-no-loop-fix: Auto-recovery después de 5s.
+        //   En lugar de atrapar al usuario en una pantalla de error,
+        //   recargamos automáticamente para que la app se rehidrate.
+        try {
+            if (this._autoReloadTimer) clearTimeout(this._autoReloadTimer);
+            this._autoReloadTimer = setTimeout(() => {
+                try { window.location.reload(); } catch (_) {}
+            }, 5000);
+        } catch (_) {}
     }
 
-    reset = () => this.setState({ error: null });
+    componentWillUnmount() {
+        if (this._autoReloadTimer) clearTimeout(this._autoReloadTimer);
+    }
+
+    reset = () => {
+        if (this._autoReloadTimer) {
+            clearTimeout(this._autoReloadTimer);
+            this._autoReloadTimer = null;
+        }
+        this.setState({ error: null });
+    };
 
     render() {
         if (this.state.error) {
             if (this.props.fallback) return this.props.fallback(this.state.error, this.reset);
-            // ★ v4.0.2-hotfix: Zero-Tech UI (sin rastro del error tecnico)
+            // ★ v4.0.7-no-loop-fix: UI más amigable con auto-recovery
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
                     <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
@@ -93,18 +113,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                             ⚠️
                         </div>
                         <h1 className="text-[22px] font-black text-slate-900 mb-2">
-                            Algo se ha desconfigurado
+                            Re-conectando…
                         </h1>
                         <p className="text-[14px] text-slate-600 mb-6 leading-relaxed">
-                            La aplicacion se ha detenido para proteger tus datos.
-                            Esto puede pasar tras actualizaciones o por una conexion inestable.
+                            Estamos recargando la aplicación automáticamente en 5 segundos.
+                            Si no, pulsa el botón.
                         </p>
+                        <div className="w-10 h-10 mx-auto mb-4 border-[3px] border-slate-200 border-t-blue-600 rounded-full animate-spin" />
                         <button
                             type="button"
                             onClick={() => { this.reset(); window.location.reload(); }}
                             className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-700 hover:to-blue-700 text-white font-black text-[14px] shadow-lg transition"
                         >
-                            Reiniciar aplicacion
+                            Reintentar ahora
                         </button>
                         <p className="text-[11.5px] text-slate-400 mt-4">
                             Si el problema continua, contacta con soporte.<br/>

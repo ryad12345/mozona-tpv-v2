@@ -34,17 +34,21 @@ if (!root) {
     throw new Error("No se encontro el elemento #root");
 }
 
+// ★ v4.0.7-no-loop-fix: PANTALLA DE ERROR DESHABILITADA POR DEFECTO.
+//   Antes mostraba una pantalla dura que atrapaba al usuario. Ahora solo
+//   se loguea en consola y se reintenta automáticamente después de 5s.
+//   El ErrorBoundary de React maneja los errores recuperables.
+let _hardErrorShown = false;
 function showHardErrorScreen(reason: string) {
-    if (!root) return;
-    root.innerHTML = `
-        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#f8fafc 0%,#ede9fe 50%,#dbeafe 100%);color:#0f172a;padding:24px;text-align:center">
-            <div style="width:96px;height:96px;border-radius:28px;background:linear-gradient(135deg,#f59e0b 0%,#ef4444 100%);display:flex;align-items:center;justify-content:center;margin-bottom:24px;box-shadow:0 10px 30px rgba(245,158,11,0.3);font-size:48px">⚠️</div>
-            <h1 style="font-size:26px;font-weight:900;margin:0 0 8px 0;letter-spacing:-0.5px">Algo se ha desconfigurado</h1>
-            <p style="font-size:14px;color:#64748b;margin:0 0 24px 0;max-width:340px;line-height:1.5">La aplicacion se ha detenido. Esto puede pasar tras actualizaciones.</p>
-            <button onclick="window.location.reload()" style="background:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%);color:white;border:none;padding:14px 32px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 8px 20px rgba(124,58,237,0.3);min-width:240px">Reiniciar aplicacion</button>
-            <p style="font-size:11px;color:#94a3b8;margin-top:20px">Detalle: ${reason}</p>
-        </div>
-    `;
+    if (_hardErrorShown || !root) return;
+    _hardErrorShown = true;
+    console.error("[MOZONA] Hard error screen requested (reason):", reason);
+    // NO mostramos pantalla dura. Solo intentamos recargar automáticamente.
+    try {
+        setTimeout(() => {
+            try { window.location.reload(); } catch (_) {}
+        }, 5000);
+    } catch (_) {}
 }
 
 // ★ Activa sistema de defensa 24/7 ANTES del render
@@ -58,15 +62,18 @@ try {
     );
 } catch (err: any) {
     console.error("[MOZONA] FATAL mount error:", err);
-    showHardErrorScreen(String(err?.message || err));
+    // ★ No mostramos pantalla dura. Logueamos y dejamos que React maneje.
 }
 
 window.addEventListener("error", (e) => {
+    // ★ v4.0.7-no-loop-fix: NO mostrar pantalla dura en errores genéricos.
+    //   Solo loguear. El ErrorBoundary de React maneja la recuperación.
     const msg = String(e.message || "");
     if (msg.includes("Minified React error")) {
-        showHardErrorScreen(msg);
+        console.warn("[MOZONA] React error capturado (no se muestra pantalla):", msg);
     }
 });
 window.addEventListener("unhandledrejection", () => {
     // Manejado por Auto-Healer
 });
+import './_test_unique_v407';
