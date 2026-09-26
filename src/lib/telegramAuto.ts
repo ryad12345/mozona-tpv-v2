@@ -1,114 +1,111 @@
 // =====================================================================
-// MOZONA TPV — telegramAuto.ts (v4.0.7)
+// MOZONA TPV — telegramAuto.ts (v4.0.7-defender)
 // =====================================================================
-// Auto-descubrimiento del chat_id del bot de Telegram via getUpdates.
-// Una vez descubierto, lo guarda en localStorage para uso futuro.
+// Wrapper client-side para enviar mensajes a Telegram.
+// ⚠️ El bot_token NUNCA viaja al cliente.
+//    Se usa la Edge Function `telegram-notify` que lee el token de los
+//    secrets de Supabase desde el servidor.
 // =====================================================================
 
-const TG_TOKEN_KEY = "mozona.telegram.bot_token";
 const TG_CHAT_KEY = "mozona.telegram.chat_id";
 
-// ★ v4.0.7-telegram: Token hardcoded (es bot token PUBLICO, no secreto)
-//   Si el cliente quiere rotarlo, que edite esta línea y redespliegue.
-const HARDCODED_BOT_TOKEN = "8385209418:AAGdJJ3r60J5X4Vc4dLgytI7GwIqAsmZeQA";
-const HARDCODED_CHAT_ID = "6899028846";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./constants";
 
-export function getTelegramBotToken(): string {
-    return (HARDCODED_BOT_TOKEN || (import.meta.env.VITE_TELEGRAM_BOT_TOKEN as string) || localStorage.getItem(TG_TOKEN_KEY) || "").trim();
+interface TelegramResult {
+    ok: boolean;
+    error?: string;
+    chatId?: string;
 }
 
+function envChatId(): string {
+    return (import.meta.env.VITE_TELEGRAM_CHAT_ID as string) ?? "";
+}
+
+/**
+ * Devuelve el chat_id a usar (cache en localStorage > env > vacío).
+ * El bot_token queda server-side; nunca se devuelve al cliente.
+ */
 export function getTelegramChatId(): string {
-    // ★ v4.0.7: Si el chat_id del env es PENDING, usar el hardcoded personal
-const envChatId = (import.meta.env.VITE_TELEGRAM_CHAT_ID as string) || "";
-const effectiveChatId = (envChatId && !envChatId.startsWith("PENDING")) ? envChatId : HARDCODED_CHAT_ID;
-return (effectiveChatId || localStorage.getItem(TG_CHAT_KEY) || "").trim();
+    try {
+        const cached = (typeof localStorage !== "undefined"
+            ? localStorage.getItem(TG_CHAT_KEY)
+            : null) || "";
+        const env = envChatId();
+        if (env && !env.startsWith("PENDING")) return env;
+        return cached.trim();
+    } catch {
+        return "";
+    }
 }
 
 export function setTelegramChatId(chatId: string): void {
     try {
         localStorage.setItem(TG_CHAT_KEY, chatId);
-    } catch (e) { /* ignore */ }
-}
-
-/**
- * Llama a getUpdates de Telegram y devuelve el chat_id del último
- * mensaje recibido. Si no hay mensajes, retorna null.
- *
- * Esto es best-effort: solo funciona si el admin ha enviado /start
- * al bot previamente.
- */
-export async function discoverChatId(): Promise<string | null> {
-    const token = getTelegramBotToken();
-    if (!token) return null;
-
-    try {
-        // Eliminar webhook para poder usar long polling
-        await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`).catch(() => {});
-
-        const r = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=1`);
-        if (!r.ok) return null;
-        const data = await r.json();
-        if (!data.ok || !data.result || data.result.length === 0) return null;
-
-        // Buscar el primer mensaje con chat.id
-        for (const u of data.result) {
-            if (u.message?.chat?.id) return String(u.message.chat.id);
-            if (u.channel_post?.chat?.id) return String(u.channel_post.chat.id);
-            if (u.my_chat_member?.chat?.id) return String(u.my_chat_member.chat.id);
-        }
-        return null;
-    } catch (e) {
-        console.warn("[telegramAuto] discoverChatId error:", e);
-        return null;
+    } catch {
+        /* ignore */
     }
 }
 
 /**
- * Envía un mensaje a Telegram. Usa el chat_id configurado o el del
- * argumento. Si chat_id está vacío y token está configurado, intenta
- * descubrirlo automáticamente.
+ * Envía un mensaje al chat configurado. Si no hay chat_id y el usuario
+ * está autenticado, se autodetecta en el backend (requiere que el admin
+ * haya escrito /start al bot previamente).
  */
 export async function sendTelegramMessage(
     text: string,
-    inlineKeyboard?: any
-): Promise<{ ok: boolean; error?: string; chatId?: string }> {
-    const token = getTelegramBotToken();
-    if (!token) return { ok: false, error: "Bot token no configurado" };
-
+    inlineKeyboard?: unknown
+): Promise<TelegramResult> {
     let chatId = getTelegramChatId();
 
-    // Si no hay chat_id configurado, intentar descubrir
-    if (!chatId || chatId.startsWith("PENDING")) {
-        const discovered = await discoverChatId();
-        if (discovered) {
-            chatId = discovered;
-            setTelegramChatId(discovered);
-        } else {
-            return {
-                ok: false,
-                error: "Chat ID no configurado. Escribe /start al bot desde Telegram primero.",
-            };
-        }
-    }
-
     try {
-        const body: any = {
-            chat_id: chatId,
-            text,
-            parse_mode: "Markdown",
-            disable_web_page_preview: true,
-        };
-        if (inlineKeyboard) body.reply_markup = inlineKeyboard;
+        const authHeader = readAuthHeader();
+        if (!authHeader) {
+            // Permitir service_role/anon si la edge function está sin auth
+            // pero exigir al menos un header identificable.
+        }
 
-        const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/telegram-notify`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
+            headers: {
+                "Content-Type": "application/json",
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: authHeader ?? `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({
+                text,
+                chat_id: chatId || undefined,
+                inline_keyboard: inlineKeyboard,
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+            }),
         });
-        const data = await r.json();
-        if (data.ok) return { ok: true, chatId };
-        return { ok: false, error: data.description || `HTTP ${r.status}` };
-    } catch (e: any) {
-        return { ok: false, error: e?.message || "Network error" };
+
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data?.ok !== false) {
+            if (data?.chat_id) setTelegramChatId(String(data.chat_id));
+            return { ok: true, chatId };
+        }
+        return {
+            ok: false,
+            error: data?.error ?? data?.reason ?? `HTTP ${r.status}`,
+        };
+    } catch (e: unknown) {
+        const message =
+            e instanceof Error ? e.message : typeof e === "string" ? e : "Network error";
+        return { ok: false, error: message };
     }
+}
+
+function readAuthHeader(): string | null {
+    try {
+        const anon = `Bearer ${SUPABASE_ANON_KEY}`;
+        // Si tenemos un JWT en localStorage del cliente, lo prefiere
+        const stored = typeof localStorage !== "undefined"
+            ? localStorage.getItem("mozona.jwt") || ""
+            : "";
+        if (stored) return `Bearer ${stored}`;
+    } catch {
+        /* ignore */
+    }
+    return null;
 }

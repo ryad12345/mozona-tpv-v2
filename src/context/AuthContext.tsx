@@ -10,6 +10,7 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { isVipOrAdmin, isSuperAdminEmail } from "../lib/vip";
 import { safeFetch } from "../lib/safeFetch";
 import { syncTenantFromAuth } from "../lib/tenantSync";
+import { setDefenseTenant } from "../lib/security/defenseBot";
 
 // ---------------------------------------------------------------------
 // Tipos
@@ -172,6 +173,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser]       = useState<AuthUser | null>(null);
     const [session, setSession] = useState<AuthSession | null>(null);
     const [tenant, setTenant]   = useState<any | null>(null);  // ★ v3.4.7
+
+// Helper interno: actualiza el tenant_id en el robot de defensa
+function syncDefenseTenant(t: any) {
+    if (t?.id) setDefenseTenant(t.id);
+    else setDefenseTenant(null);
+}
     const [loading, setLoading] = useState<boolean>(true);
 
     // Carga inicial: cache local + verificación con Supabase
@@ -394,6 +401,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         return () => { mounted = false; };
     }, []);
+
+    // ★ v4.0.7-defense-v2: sincronizar tenantId con robot de defensa
+    useEffect(() => {
+        syncDefenseTenant(tenant);
+    }, [tenant?.id]);
 
     // -----------------------------------------------------------------
     // SignIn REAL con Supabase

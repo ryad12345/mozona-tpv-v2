@@ -6,6 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles/globals.css";
+import { activateDefenseBot } from "./lib/security/defenseBot";
 import { activateActiveDefense } from "./lib/security/activeDefense";
 
 const BUILD_HASH = import.meta.env.VITE_BUILD_HASH ?? "dev";
@@ -52,6 +53,10 @@ function showHardErrorScreen(reason: string) {
 }
 
 // ★ Activa sistema de defensa 24/7 ANTES del render
+// v2: defenseBot tiene honeypots, watchdogs de DB/Perf/Memory,
+//     recuperación automática y reportes via Telegram Edge Function.
+activateDefenseBot().catch(() => {});
+// Compat: activa también activeDefense original (idempotente)
 activateActiveDefense().catch(() => {});
 
 try {

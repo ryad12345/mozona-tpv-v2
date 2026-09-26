@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { safeLocalGet, safeLocalSet } from '../../lib/safeJson';
 
 export function TablesPanel() {
   const [tablesCount, setTablesCount] = useState<number>(16);
 
   useEffect(() => {
-    const saved = localStorage.getItem('pos_tables_total');
-    if (saved) setTablesCount(parseInt(saved, 10));
+    const saved = safeLocalGet('pos_tables_total');
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 32) {
+        setTablesCount(parsed);
+      }
+    }
   }, []);
 
   const updateCount = (val: number) => {
     const next = Math.max(1, Math.min(32, val));
     setTablesCount(next);
-    localStorage.setItem('pos_tables_total', next.toString());
+    safeLocalSet('pos_tables_total', next.toString());
   };
 
   return (

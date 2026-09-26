@@ -3,6 +3,7 @@ import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { saveProduct, deleteProduct, type ProductInput } from '../../lib/catalog';
 import { resolveRealTenantId } from '../../lib/waiters';
+import { safeJsonParse } from '../../lib/safeJson';
 
 export interface CustomProduct {
   id: string;
@@ -379,9 +380,13 @@ export function ItemsPanel() {
       try {
         const realId = await resolveRealTenantId(auth.tenant?.id);
         if (!realId || !supabase) {
-          // Sin Supabase: fallback a localStorage
-          const saved = localStorage.getItem(STORAGE_KEY);
-          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+          // Sin Supabase: fallback a localStorage con try/catch
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            setItems(saved ? safeJsonParse(saved, RESTAURANT_MENU) : RESTAURANT_MENU);
+          } catch {
+            setItems(RESTAURANT_MENU);
+          }
           setLoading(false);
           return;
         }
@@ -394,9 +399,13 @@ export function ItemsPanel() {
         if (dbErr) {
           console.warn("[ItemsPanel] load error:", dbErr.message);
           setError(`BD: ${dbErr.message} (code ${dbErr.code})`);
-          // Fallback a localStorage
-          const saved = localStorage.getItem(STORAGE_KEY);
-          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+          // Fallback a localStorage con try/catch
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            setItems(saved ? safeJsonParse(saved, RESTAURANT_MENU) : RESTAURANT_MENU);
+          } catch {
+            setItems(RESTAURANT_MENU);
+          }
         } else if (!data || data.length === 0) {
           console.log("[ItemsPanel] sin productos en BD, usando seed");
           setItems(RESTAURANT_MENU);
@@ -416,8 +425,13 @@ export function ItemsPanel() {
         console.warn("[ItemsPanel] exception:", e);
         if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e));
-          const saved = localStorage.getItem(STORAGE_KEY);
-          setItems(saved ? JSON.parse(saved) : RESTAURANT_MENU);
+          // Fallback seguro a localStorage
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            setItems(saved ? safeJsonParse(saved, RESTAURANT_MENU) : RESTAURANT_MENU);
+          } catch {
+            setItems(RESTAURANT_MENU);
+          }
         }
       }
       if (!cancelled) setLoading(false);
