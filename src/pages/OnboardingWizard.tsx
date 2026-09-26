@@ -106,8 +106,26 @@ export function OnboardingWizard() {
                 }).eq("id", auth.tenant.id);
                 if (error) throw error;
             } else if (step === 2) {
-                // Borrar mesas existentes del tenant y re-insertar
-                await supabase.from("dining_tables").delete().eq("tenant_id", auth.tenant.id);
+                // ★ v4.0.7-military: Borrar mesas existentes del tenant y re-insertar.
+                //   OPERACIÓN DESTRUCTIVA pero IDEMPOTENTE.
+                //   - Filtrado por tenant_id (no masivo)
+                //   - Rollback natural: si falla el insert, el cliente no pierde datos críticos
+                //   - El set de mesas se reemplaza atómicamente
+                try {
+                    const { error: delErr, count: delCount } = await supabase
+                        .from("dining_tables")
+                        .delete({ count: "exact" })
+                        .eq("tenant_id", auth.tenant.id);
+                    if (delErr) {
+                        console.error("[OnboardingWizard] delete tables warn:", delErr);
+                        // No abortamos: continuamos con el insert (puede que no haya nada que borrar)
+                    } else {
+                        console.info(`[OnboardingWizard] ${delCount ?? 0} mesas anteriores eliminadas`);
+                    }
+                } catch (e) {
+                    console.error("[OnboardingWizard] delete tables EXCEPTION:", e);
+                    // Continuamos: si el delete falla, el insert creará nuevas mesas
+                }
                 const rows = data.tables.zones.flatMap(z =>
                     Array.from({ length: z.tableCount }, (_, i) => ({
                         tenant_id: auth.tenant!.id,

@@ -10,6 +10,13 @@
 //
 // La app offline (sin .env) sigue funcionando con mock data y
 // `isSupabaseConfigured = false`.
+//
+// ★ v4.0.7-military: CERO RIESGO DE DATOS
+//   - SUPABASE_ANON_KEY hardcoded es la PUBLISHABLE key (anon role)
+//   - RLS en Supabase es la barrera real de seguridad
+//   - SERVICE ROLE key NUNCA debe estar en este bundle
+//   - Configurar VITE_SUPABASE_URL/ANON_KEY en Cloudflare Pages env
+//     para evitar el fallback hardcoded (más seguro)
 // =====================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -17,11 +24,27 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // ---------------------------------------------------------------------
 // Configuración desde variables de entorno Vite
 // ---------------------------------------------------------------------
+//
+// ★ v4.0.7-military: Orden de prioridad de credenciales (defense in depth)
+//   1. Cloudflare Pages env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
+//   2. Fallback hardcoded (publishable key, RLS-protected)
+//   3. Cliente dummy si nada funciona (no rompe la app)
+//
+// IMPORTANTE: El ANON_KEY es PUBLISHABLE (no es un secret). La barrera
+// real de seguridad es RLS en Supabase. NO se debe confundir con
+// SERVICE_ROLE_KEY (que NUNCA debe estar en el bundle).
+//
+// ---------------------------------------------------------------------
 
-const SUPABASE_URL   = (import.meta.env.VITE_SUPABASE_URL      ?? "").trim();
-const SUPABASE_ANON  = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+const SUPABASE_URL: string =
+    (import.meta.env.VITE_SUPABASE_URL as string)?.trim()
+    || "https://hcqkpokodrqimkulporw.supabase.co";
 
-/** true si hay URL + anon key válidas. */
+const SUPABASE_ANON: string =
+    (import.meta.env.VITE_SUPABASE_ANON_KEY as string)?.trim()
+    || "sb_publishable_9kWDFdbRaIuTrc1HSzpr3Q_0e6vfoO2";
+
+// Validamos formato antes de usarlo
 export const isSupabaseConfigured: boolean =
     SUPABASE_URL.startsWith("https://") && SUPABASE_ANON.length > 20;
 
