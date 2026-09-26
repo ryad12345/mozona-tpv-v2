@@ -1,7 +1,20 @@
+# Seguridad global
 /*
-  X-Frame-Options: DENY
+  X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
+# HTML siempre NO cacheado (para evitar el bug MIME de chunks viejos)
+/*.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+  Expires: 0
+
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+  Expires: 0
+
+# Assets con hash: cache largo (1 año)
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
